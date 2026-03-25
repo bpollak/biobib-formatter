@@ -1,9 +1,42 @@
+'use client';
+
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+
+const FAQ_ITEMS = [
+  {
+    q: 'What file formats are accepted?',
+    a: 'Only .docx files. LaTeX and PDF support is coming in a future release.',
+  },
+  {
+    q: 'What formatting rules does this check?',
+    a: 'Over 60 rules from the GEPA Preparation and Submission Manual, including margins, fonts, spacing, pagination, title page format, abstract requirements, and more.',
+  },
+  {
+    q: 'Will this change my content?',
+    a: 'No. The tool only checks and corrects formatting (margins, fonts, spacing, indentation). Your text, figures, and references are never modified.',
+  },
+  {
+    q: 'Can this replace the GEPA formatting review?',
+    a: 'Not yet. This is a pre-check tool to help you catch and fix issues before your official GEPA submission. Final review is still done by GEPA advisors.',
+  },
+  {
+    q: 'Is my document stored?',
+    a: 'Documents are processed in memory and automatically deleted after your session. Nothing is permanently stored.',
+  },
+  {
+    q: 'What about accessibility (WCAG 2.1)?',
+    a: 'Basic accessibility checks are included. Full WCAG 2.1 Level AA validation is planned for a future release.',
+  },
+];
 
 const CATEGORIES = [
   {
@@ -180,6 +213,44 @@ export default function AboutPage() {
                 <Divider sx={{ mt: 3 }} />
               )}
             </Box>
+          ))}
+          <Divider sx={{ mt: 4, mb: 4 }} />
+
+          {/* FAQ Section */}
+          <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+            Frequently Asked Questions
+          </Typography>
+          {FAQ_ITEMS.map(({ q, a }) => (
+            <Accordion
+              key={q}
+              disableGutters
+              elevation={0}
+              sx={{
+                border: '1px solid #E0E7EF',
+                borderRadius: '8px !important',
+                mb: 1.5,
+                '&:before': { display: 'none' },
+                '&.Mui-expanded': { borderColor: '#00629b' },
+              }}
+            >
+              <AccordionSummary
+                expandIcon={<ExpandMoreIcon sx={{ color: '#00629b' }} />}
+                sx={{
+                  px: 3,
+                  py: 1,
+                  '& .MuiAccordionSummary-content': { my: 1.5 },
+                  '&.Mui-expanded': { backgroundColor: '#EEF5FB' },
+                  borderRadius: '8px',
+                }}
+              >
+                <Typography sx={{ fontWeight: 600, color: '#182B49' }}>{q}</Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ px: 3, pb: 2.5 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {a}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
           ))}
         </Container>
       </Box>
