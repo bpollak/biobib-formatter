@@ -1,9 +1,7 @@
 'use client';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Link from '@mui/material/Link';
-import Divider from '@mui/material/Divider';
 
 export default function Footer() {
   return (
@@ -11,66 +9,91 @@ export default function Footer() {
       component="footer"
       sx={{
         backgroundColor: '#182B49',
-        color: '#FFFFFF',
+        color: '#ffffff',
         pt: 4,
         pb: 3,
         mt: 'auto',
       }}
     >
-      <Box sx={{ maxWidth: 1200, mx: 'auto', px: { xs: 2, sm: 3 } }}>
-        {/* Top row: address + links */}
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            justifyContent: 'space-between',
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            gap: 2,
-            mb: 2,
-          }}
-        >
-          {/* Address */}
-          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.8125rem' }}>
+      <Box
+        sx={{
+          maxWidth: 1170,
+          mx: 'auto',
+          px: { xs: 2, sm: 3 },
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', md: 'center' },
+          gap: 3,
+        }}
+      >
+        {/* Left: address + links + copyright */}
+        <Box>
+          <Box sx={{ fontSize: '0.875rem', color: '#ffffff', mb: 1, lineHeight: 1.7 }}>
             UC San Diego&nbsp;&nbsp;9500 Gilman Dr.&nbsp;&nbsp;La Jolla, CA 92093&nbsp;&nbsp;(858) 534-2230
-          </Typography>
+          </Box>
 
-          {/* Links */}
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          {/* Footer links */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0,
+              mb: 1.5,
+              flexWrap: 'wrap',
+            }}
+          >
             {[
               { label: 'Accessibility', href: 'https://www.ucsd.edu/accessibility/' },
               { label: 'Privacy', href: 'https://www.ucsd.edu/privacy/' },
               { label: 'Terms of Use', href: 'https://www.ucsd.edu/legal/' },
-            ].map(({ label, href }) => (
-              <Link
-                key={label}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                underline="hover"
-                sx={{ color: 'rgba(255,255,255,0.75)', fontSize: '0.8125rem', '&:hover': { color: '#FFFFFF' } }}
-              >
-                {label}
-              </Link>
+            ].map(({ label, href }, i) => (
+              <Box key={label} sx={{ display: 'flex', alignItems: 'center' }}>
+                {i > 0 && (
+                  <Box
+                    component="span"
+                    sx={{
+                      display: 'inline-block',
+                      width: '1px',
+                      height: '0.875rem',
+                      backgroundColor: 'rgba(255,255,255,0.4)',
+                      mx: 1.5,
+                    }}
+                  />
+                )}
+                <Link
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: '#ffffff',
+                    fontSize: '0.8125rem',
+                    textDecoration: 'underline',
+                    fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
+                    '&:hover': { color: 'rgba(255,255,255,0.8)' },
+                  }}
+                >
+                  {label}
+                </Link>
+              </Box>
             ))}
+          </Box>
+
+          <Box sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)' }}>
+            Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
           </Box>
         </Box>
 
-        <Divider sx={{ borderColor: 'rgba(255,255,255,0.15)', mb: 2 }} />
-
-        {/* Bottom row: copyright + powered by */}
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: { xs: 'column', sm: 'row' },
-            justifyContent: 'space-between',
-            alignItems: { xs: 'flex-start', sm: 'center' },
-            gap: 1,
-          }}
-        >
-          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.75rem' }}>
-            Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
-          </Typography>
-
+        {/* Right: UCSD logo */}
+        <Box sx={{ flexShrink: 0 }}>
+          <Link href="https://ucsd.edu" target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://cdn.ucsd.edu/developer/decorator/5.0.2/img/ucsd-footer-logo-white.png"
+              alt="UC San Diego"
+              style={{ height: 44, display: 'block' }}
+            />
+          </Link>
         </Box>
       </Box>
     </Box>

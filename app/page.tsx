@@ -136,7 +136,7 @@ export default function HomePage() {
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header />
 
-      <Container maxWidth="md" sx={{ py: 5, flexGrow: 1, maxWidth: '900px !important' }}>
+      <Container maxWidth="lg" sx={{ py: 5, flexGrow: 1, maxWidth: '1170px !important' }}>
         {processing ? (
           <ProcessingView progress={progress} stage={stage} steps={steps} />
         ) : (
