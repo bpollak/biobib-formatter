@@ -70,9 +70,7 @@ export default function Footer() {
           <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.75rem' }}>
             Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
           </Typography>
-          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>
-            Powered by TritonAI
-          </Typography>
+
         </Box>
       </Box>
     </Box>
