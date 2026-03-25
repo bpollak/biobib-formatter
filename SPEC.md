@@ -676,6 +676,29 @@ dissertation-formatter/
 - Body background: `#ffffff`
 - Text: standard dark (`rgba(0,0,0,0.87)`)
 
+### Mobile Responsive Behavior (< 768px / `md` breakpoint)
+
+**Header — mobile:**
+- Teal stripe still appears at top
+- White title bar is **hidden** on mobile
+- Nav bar collapses horizontal links; instead shows:
+  - Left: hamburger `IconButton` with `MenuIcon` + "MENU" text (white, uppercase)
+  - Right: UC San Diego logo (36px tall)
+- Tapping hamburger opens an MUI `Drawer` sliding in from the left:
+  - Drawer background: `#00629b` (nav blue)
+  - Top bar background: `#004268` (darker blue) with "✕ Close Nav" button
+  - Nav links rendered as `List` / `ListItemButton` with dividers
+  - Tapping any link or clicking outside closes the drawer
+
+**Footer — mobile:**
+- Stacks vertically (column): address → copyright → links → UC San Diego logo at bottom
+- Achieved via `flexDirection: { xs: 'column', md: 'row' }`
+
+**Implementation notes:**
+- Uses MUI `useMediaQuery(theme.breakpoints.up('md'))` to detect desktop vs mobile
+- `@mui/icons-material` required for `MenuIcon`
+- Do NOT use MUI AppBar — use Box/styled components to match CMS V5 layout
+
 ### Key Rules
 - Do NOT use MUI AppBar for the header — use Box/styled components matching CMS V5 layout
 - Do NOT say "Powered by TritonAI" anywhere

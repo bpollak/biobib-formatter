@@ -27,10 +27,16 @@ export default function Footer() {
           gap: 3,
         }}
       >
-        {/* Left: address + links + copyright */}
-        <Box>
+        {/* Left / stacked: address + copyright + links */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {/* Address */}
           <Box sx={{ fontSize: '0.875rem', color: '#ffffff', mb: 1, lineHeight: 1.7 }}>
             UC San Diego&nbsp;&nbsp;9500 Gilman Dr.&nbsp;&nbsp;La Jolla, CA 92093&nbsp;&nbsp;(858) 534-2230
+          </Box>
+
+          {/* Copyright */}
+          <Box sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', mb: 1.5 }}>
+            Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
           </Box>
 
           {/* Footer links */}
@@ -39,7 +45,6 @@ export default function Footer() {
               display: 'flex',
               alignItems: 'center',
               gap: 0,
-              mb: 1.5,
               flexWrap: 'wrap',
             }}
           >
@@ -78,13 +83,9 @@ export default function Footer() {
               </Box>
             ))}
           </Box>
-
-          <Box sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)' }}>
-            Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
-          </Box>
         </Box>
 
-        {/* Right: UCSD logo */}
+        {/* Right / bottom: UCSD logo */}
         <Box sx={{ flexShrink: 0 }}>
           <Link href="https://ucsd.edu" target="_blank" rel="noopener noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
