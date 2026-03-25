@@ -1,0 +1,42 @@
+{
+  "name": "Dissertation Formatting Agent",
+  "slug": "dissertation-formatter",
+  "type": "web",
+  "ui": "mui",
+  "repo": "bpollak/dissertation-formatter",
+  "vercelUrl": "https://dissertation-formatter.vercel.app",
+  "createdAt": "2026-03-25T20:26:00.000Z",
+  "stages": {
+    "architect": {
+      "status": "complete",
+      "completedAt": "2026-03-25T20:33:00.000Z",
+      "model": "opus",
+      "output": "SPEC.md — 698 lines, 67 rules across 13 categories, 9 sections"
+    },
+    "builder": {
+      "status": "complete",
+      "completedAt": "2026-03-25T21:04:00.000Z",
+      "model": "sonnet",
+      "output": "MVP build — 65 files, all rules, pipeline, UI, API routes"
+    },
+    "evaluator": {
+      "status": "pending",
+      "notes": "Needs testing with real dissertation .docx files"
+    },
+    "deploy": {
+      "status": "complete",
+      "completedAt": "2026-03-25T21:14:00.000Z",
+      "url": "https://dissertation-formatter.vercel.app",
+      "method": "vercel-cli + github-integration"
+    }
+  },
+  "currentStage": "evaluator",
+  "stakeholders": {
+    "requestor": "Erica Lennard, Assistant Dean of Academic Affairs, GEPA",
+    "contacts": ["Norienne Saign", "Eliese Maxwell"],
+    "sponsor": "Brett Pollak"
+  },
+  "dataTier": "P2",
+  "hostingTier": "Tier 2",
+  "requirementsDoc": "docs/dissertation-formatting-agent-requirements-2026-03-25.md"
+}
