@@ -11,6 +11,10 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
+import Accordion from '@mui/material/Accordion';
+import AccordionSummary from '@mui/material/AccordionSummary';
+import AccordionDetails from '@mui/material/AccordionDetails';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import UploadZone from '@/components/UploadZone';
@@ -38,6 +42,51 @@ const STEPS: ProcessingStep[] = [
   { label: 'Checking references...', status: 'pending' },
   { label: 'Applying auto-fixes...', status: 'pending' },
   { label: 'Generating compliance report...', status: 'pending' },
+];
+
+const HOW_IT_WORKS = [
+  {
+    step: 1,
+    title: 'Upload',
+    description: 'Upload your dissertation or thesis as a .docx file. No account required.',
+  },
+  {
+    step: 2,
+    title: 'Review',
+    description: 'Our system checks 60+ GEPA formatting rules and auto-corrects what it can — margins, fonts, spacing, pagination, and more.',
+  },
+  {
+    step: 3,
+    title: 'Download',
+    description: 'Get your corrected document plus a detailed compliance report showing every rule checked.',
+  },
+];
+
+const FAQ_ITEMS = [
+  {
+    q: 'What file formats are accepted?',
+    a: 'Only .docx files. LaTeX and PDF support is coming in a future release.',
+  },
+  {
+    q: 'What formatting rules does this check?',
+    a: 'Over 60 rules from the GEPA Preparation and Submission Manual, including margins, fonts, spacing, pagination, title page format, abstract requirements, and more.',
+  },
+  {
+    q: 'Will this change my content?',
+    a: 'No. The tool only checks and corrects formatting (margins, fonts, spacing, indentation). Your text, figures, and references are never modified.',
+  },
+  {
+    q: 'Can this replace the GEPA formatting review?',
+    a: 'Not yet. This is a pre-check tool to help you catch and fix issues before your official GEPA submission. Final review is still done by GEPA advisors.',
+  },
+  {
+    q: 'Is my document stored?',
+    a: 'Documents are processed in memory and automatically deleted after your session. Nothing is permanently stored.',
+  },
+  {
+    q: 'What about accessibility (WCAG 2.1)?',
+    a: 'Basic accessibility checks are included. Full WCAG 2.1 Level AA validation is planned for a future release.',
+  },
 ];
 
 export default function HomePage() {
@@ -70,7 +119,6 @@ export default function HomePage() {
     advanceStep(0);
 
     try {
-      // Step 1: Upload
       const formData = new FormData();
       formData.append('file', file);
       formData.append('documentType', documentType);
@@ -87,7 +135,6 @@ export default function HomePage() {
       }
       const { sessionId } = await uploadRes.json();
 
-      // Animate through steps
       for (let i = 2; i <= 10; i++) {
         await new Promise(r => setTimeout(r, 200));
         advanceStep(i);
@@ -95,7 +142,6 @@ export default function HomePage() {
         setStage(STEPS[i]?.label || 'Checking...');
       }
 
-      // Step 2: Validate
       advanceStep(11);
       setStage('Applying auto-fixes...');
       setProgress(75);
@@ -120,7 +166,6 @@ export default function HomePage() {
       setProgress(100);
       setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
 
-      // Store results in sessionStorage and navigate
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
       router.push(`/results?sessionId=${sessionId}`);
     } catch (err) {
@@ -136,113 +181,211 @@ export default function HomePage() {
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header />
 
-      <Container maxWidth="lg" sx={{ py: 5, flexGrow: 1, maxWidth: '1170px !important' }}>
-        {processing ? (
-          <ProcessingView progress={progress} stage={stage} steps={steps} />
-        ) : (
-          <>
-            <Box sx={{ mb: 4 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 1 }}>
-                Check Your Dissertation Formatting
-              </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 650 }}>
-                Upload your .docx file to automatically validate UCSD GEPA formatting requirements.
-                We&apos;ll identify issues and apply auto-corrections where possible.
-              </Typography>
-            </Box>
+      <Box component="main" sx={{ flex: 1 }}>
+        <Container sx={{ py: 5, maxWidth: '1170px !important' }}>
+          {processing ? (
+            <ProcessingView progress={progress} stage={stage} steps={steps} />
+          ) : (
+            <>
+              {/* ── Page Title ── */}
+              <Box sx={{ mb: 5 }}>
+                <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 1 }}>
+                  Check Your Dissertation Formatting
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 650 }}>
+                  Upload your .docx file to automatically validate UCSD GEPA formatting requirements.
+                  We&apos;ll identify issues and apply auto-corrections where possible.
+                </Typography>
+              </Box>
 
-            {error && (
-              <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-                {error}
-              </Alert>
-            )}
-
-            <Paper elevation={2} sx={{ p: 4, mb: 3 }}>
-              <Typography variant="h6" sx={{ fontWeight: 600, color: '#182B49', mb: 3 }}>
-                Document Details
-              </Typography>
-
-              <Box sx={{ display: 'flex', gap: 3, mb: 3, flexWrap: 'wrap' }}>
-                <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 1, color: '#555' }}>
-                    Document Type
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={documentType}
-                    exclusive
-                    onChange={(_, val) => val && setDocumentType(val)}
-                    size="small"
-                  >
-                    <ToggleButton value="dissertation" sx={{ px: 2 }}>
-                      Dissertation
-                    </ToggleButton>
-                    <ToggleButton value="thesis" sx={{ px: 2 }}>
-                      Thesis
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </Box>
-                <Box>
-                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 1, color: '#555' }}>
-                    Degree Type
-                  </Typography>
-                  <ToggleButtonGroup
-                    value={degreeType}
-                    exclusive
-                    onChange={(_, val) => val && setDegreeType(val)}
-                    size="small"
-                  >
-                    <ToggleButton value="doctoral" sx={{ px: 2 }}>
-                      Doctoral
-                    </ToggleButton>
-                    <ToggleButton value="masters" sx={{ px: 2 }}>
-                      Master&apos;s
-                    </ToggleButton>
-                  </ToggleButtonGroup>
+              {/* ── How It Works ── */}
+              <Box id="how-it-works" sx={{ mb: 5 }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+                  How It Works
+                </Typography>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                    gap: 3,
+                  }}
+                >
+                  {HOW_IT_WORKS.map(({ step, title, description }) => (
+                    <Paper
+                      key={step}
+                      elevation={0}
+                      sx={{
+                        p: 3,
+                        border: '1px solid #E0E7EF',
+                        borderRadius: 2,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.5,
+                      }}
+                    >
+                      {/* Numbered circle */}
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          backgroundColor: '#00629b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Typography
+                          sx={{ color: '#fff', fontWeight: 700, fontSize: 18, lineHeight: 1 }}
+                        >
+                          {step}
+                        </Typography>
+                      </Box>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#182B49' }}>
+                        {title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {description}
+                      </Typography>
+                    </Paper>
+                  ))}
                 </Box>
               </Box>
 
-              <Divider sx={{ mb: 3 }} />
-
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5, color: '#555' }}>
-                Upload Document
-              </Typography>
-              <UploadZone onFileSelected={setFile} selectedFile={file} />
-            </Paper>
-
-            <Box sx={{ textAlign: 'center' }}>
-              <Button
-                variant="contained"
-                size="large"
-                disabled={!file}
-                onClick={handleSubmit}
-                sx={{
-                  px: 6,
-                  py: 1.5,
-                  backgroundColor: '#182B49',
-                  '&:hover': { backgroundColor: '#1e3a6e' },
-                  '&:disabled': { backgroundColor: '#B0BEC5' },
-                  fontSize: 16,
-                  fontWeight: 700,
-                }}
-              >
-                Check Formatting
-              </Button>
-              {!file && (
-                <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
-                  Upload a .docx file to continue
-                </Typography>
+              {/* ── Upload Form ── */}
+              {error && (
+                <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+                  {error}
+                </Alert>
               )}
-            </Box>
 
-            <Box sx={{ mt: 4, p: 2, backgroundColor: '#F5F7FA', borderRadius: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
-                📋 Checks 60+ UCSD GEPA formatting rules including margins, fonts, pagination, spacing, and more.
-                Auto-fixes ~20 rules. Generates a compliance report PDF.
-              </Typography>
-            </Box>
-          </>
-        )}
-      </Container>
+              <Paper elevation={2} sx={{ p: 4, mb: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: '#182B49', mb: 3 }}>
+                  Document Details
+                </Typography>
+
+                <Box sx={{ display: 'flex', gap: 3, mb: 3, flexWrap: 'wrap' }}>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 1, color: '#555' }}>
+                      Document Type
+                    </Typography>
+                    <ToggleButtonGroup
+                      value={documentType}
+                      exclusive
+                      onChange={(_, val) => val && setDocumentType(val)}
+                      size="small"
+                    >
+                      <ToggleButton value="dissertation" sx={{ px: 2 }}>
+                        Dissertation
+                      </ToggleButton>
+                      <ToggleButton value="thesis" sx={{ px: 2 }}>
+                        Thesis
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 600, mb: 1, color: '#555' }}>
+                      Degree Type
+                    </Typography>
+                    <ToggleButtonGroup
+                      value={degreeType}
+                      exclusive
+                      onChange={(_, val) => val && setDegreeType(val)}
+                      size="small"
+                    >
+                      <ToggleButton value="doctoral" sx={{ px: 2 }}>
+                        Doctoral
+                      </ToggleButton>
+                      <ToggleButton value="masters" sx={{ px: 2 }}>
+                        Master&apos;s
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                </Box>
+
+                <Divider sx={{ mb: 3 }} />
+
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5, color: '#555' }}>
+                  Upload Document
+                </Typography>
+                <UploadZone onFileSelected={setFile} selectedFile={file} />
+              </Paper>
+
+              <Box sx={{ textAlign: 'center', mb: 3 }}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  disabled={!file}
+                  onClick={handleSubmit}
+                  sx={{
+                    px: 6,
+                    py: 1.5,
+                    backgroundColor: '#182B49',
+                    '&:hover': { backgroundColor: '#1e3a6e' },
+                    '&:disabled': { backgroundColor: '#B0BEC5' },
+                    fontSize: 16,
+                    fontWeight: 700,
+                  }}
+                >
+                  Check Formatting
+                </Button>
+                {!file && (
+                  <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
+                    Upload a .docx file to continue
+                  </Typography>
+                )}
+              </Box>
+
+              <Box sx={{ mb: 5, p: 2, backgroundColor: '#F5F7FA', borderRadius: 2 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
+                  📋 Checks 60+ UCSD GEPA formatting rules including margins, fonts, pagination, spacing, and more.
+                  Auto-fixes ~20 rules. Generates a compliance report PDF.
+                </Typography>
+              </Box>
+
+              {/* ── FAQ ── */}
+              <Box id="faq" sx={{ mb: 4 }}>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+                  Frequently Asked Questions
+                </Typography>
+                {FAQ_ITEMS.map(({ q, a }) => (
+                  <Accordion
+                    key={q}
+                    disableGutters
+                    elevation={0}
+                    sx={{
+                      border: '1px solid #E0E7EF',
+                      borderRadius: '8px !important',
+                      mb: 1.5,
+                      '&:before': { display: 'none' },
+                      '&.Mui-expanded': { borderColor: '#00629b' },
+                    }}
+                  >
+                    <AccordionSummary
+                      expandIcon={<ExpandMoreIcon sx={{ color: '#00629b' }} />}
+                      sx={{
+                        px: 3,
+                        py: 1,
+                        '& .MuiAccordionSummary-content': { my: 1.5 },
+                        '&.Mui-expanded': { backgroundColor: '#EEF5FB' },
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <Typography sx={{ fontWeight: 600, color: '#182B49' }}>{q}</Typography>
+                    </AccordionSummary>
+                    <AccordionDetails sx={{ px: 3, pb: 2.5 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        {a}
+                      </Typography>
+                    </AccordionDetails>
+                  </Accordion>
+                ))}
+              </Box>
+            </>
+          )}
+        </Container>
+      </Box>
 
       <Footer />
     </Box>
