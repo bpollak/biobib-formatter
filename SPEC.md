@@ -671,7 +671,7 @@ dissertation-formatter/
 - Teal accent: `#2b92b9`
 - Nav blue: `#00629b`
 - Nav hover: `#004268`
-- Navy (footer, dark elements): `#182B49`
+- Footer background: `#00629b` (same as nav blue)
 - Gold accent: `#C69214`
 - Body background: `#ffffff`
 - Text: standard dark (`rgba(0,0,0,0.87)`)
