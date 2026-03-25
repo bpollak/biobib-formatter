@@ -1,100 +1,103 @@
 'use client';
 
 import Box from '@mui/material/Box';
-import Link from '@mui/material/Link';
 
 export default function Footer() {
+  const links = [
+    { label: 'Accessibility', href: 'https://accessibility.ucsd.edu/' },
+    { label: 'Privacy', href: 'https://ucsd.edu/about/privacy.html' },
+    { label: 'Terms of Use', href: 'https://ucsd.edu/about/terms-of-use.html' },
+    { label: 'Feedback', href: 'mailto:gepa@ucsd.edu' },
+  ];
+
   return (
     <Box
       component="footer"
       sx={{
         backgroundColor: '#182B49',
-        color: '#ffffff',
-        pt: 4,
-        pb: 3,
+        color: '#fff',
+        py: 3,
+        px: { xs: 2, sm: 3 },
         mt: 'auto',
+        fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
+        fontSize: '0.8125rem',
       }}
     >
       <Box
         sx={{
           maxWidth: 1170,
           mx: 'auto',
-          px: { xs: 2, sm: 3 },
           display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          justifyContent: 'space-between',
-          alignItems: { xs: 'flex-start', md: 'center' },
-          gap: 3,
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: { xs: 2, sm: 0 },
         }}
       >
-        {/* Left / stacked: address + copyright + links */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-          {/* Address */}
-          <Box sx={{ fontSize: '0.875rem', color: '#ffffff', mb: 1, lineHeight: 1.7 }}>
-            UC San Diego&nbsp;&nbsp;9500 Gilman Dr.&nbsp;&nbsp;La Jolla, CA 92093&nbsp;&nbsp;(858) 534-2230
+        {/* Left column */}
+        <Box sx={{ flex: '0 0 66.666%', maxWidth: { sm: '66.666%' } }}>
+          <Box component="p" sx={{ m: 0, lineHeight: 1.6 }}>
+            <Box component="span">
+              UC San Diego 9500 Gilman Dr. La Jolla, CA 92093 (858) 534-2230
+            </Box>
+            <br />
+            <Box component="span">
+              Copyright &copy;{' '}
+              <Box component="span">{new Date().getFullYear()}</Box>{' '}
+              Regents of the University of California. All rights reserved.
+            </Box>
           </Box>
-
-          {/* Copyright */}
-          <Box sx={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)', mb: 1.5 }}>
-            Copyright &copy; {new Date().getFullYear()} Regents of the University of California. All rights reserved.
-          </Box>
-
-          {/* Footer links */}
           <Box
+            component="ul"
             sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0,
-              flexWrap: 'wrap',
+              listStyle: 'none',
+              m: '0.5em 0 0',
+              p: 0,
+              '& li': {
+                display: 'inline',
+                borderRight: '1px solid #fff',
+                mr: '0.5em',
+                pr: '0.75em',
+                '&:last-child': {
+                  borderRight: 'none',
+                },
+              },
+              '& a': {
+                color: '#fff',
+                textDecoration: 'underline',
+                fontSize: '0.8125rem',
+                '&:hover': {
+                  color: 'rgba(255,255,255,0.8)',
+                },
+              },
             }}
           >
-            {[
-              { label: 'Accessibility', href: 'https://www.ucsd.edu/accessibility/' },
-              { label: 'Privacy', href: 'https://www.ucsd.edu/privacy/' },
-              { label: 'Terms of Use', href: 'https://www.ucsd.edu/legal/' },
-            ].map(({ label, href }, i) => (
-              <Box key={label} sx={{ display: 'flex', alignItems: 'center' }}>
-                {i > 0 && (
-                  <Box
-                    component="span"
-                    sx={{
-                      display: 'inline-block',
-                      width: '1px',
-                      height: '0.875rem',
-                      backgroundColor: 'rgba(255,255,255,0.4)',
-                      mx: 1.5,
-                    }}
-                  />
-                )}
-                <Link
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  sx={{
-                    color: '#ffffff',
-                    fontSize: '0.8125rem',
-                    textDecoration: 'underline',
-                    fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
-                    '&:hover': { color: 'rgba(255,255,255,0.8)' },
-                  }}
-                >
+            {links.map(({ label, href }) => (
+              <Box component="li" key={label}>
+                <a href={href} target="_blank" rel="noopener noreferrer">
                   {label}
-                </Link>
+                </a>
               </Box>
             ))}
           </Box>
         </Box>
 
-        {/* Right / bottom: UCSD logo */}
-        <Box sx={{ flexShrink: 0 }}>
-          <Link href="https://ucsd.edu" target="_blank" rel="noopener noreferrer">
+        {/* Right column — UCSD logo */}
+        <Box
+          sx={{
+            flex: '0 0 33.333%',
+            maxWidth: { sm: '33.333%' },
+            display: 'flex',
+            alignItems: { xs: 'flex-start', sm: 'flex-start' },
+            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+          }}
+        >
+          <a href="https://ucsd.edu/" target="_blank" rel="noopener noreferrer">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://cdn.ucsd.edu/developer/decorator/5.0.2/img/ucsd-footer-logo-white.png"
-              alt="UC San Diego"
-              style={{ height: 44, display: 'block' }}
+              alt="UCSD homepage"
+              style={{ width: 158, height: 30 }}
             />
-          </Link>
+          </a>
         </Box>
       </Box>
     </Box>
