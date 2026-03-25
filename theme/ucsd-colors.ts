@@ -1,0 +1,15 @@
+export const ucsdColors = {
+  navy: '#182B49',
+  gold: '#C69214',
+  lightGold: '#FFCD00',
+  blue: '#006A96',
+  cyan: '#00629B',
+  white: '#FFFFFF',
+  lightGray: '#F5F5F5',
+  medGray: '#E5E5E5',
+  darkGray: '#747678',
+  success: '#2E7D32',
+  error: '#C62828',
+  warning: '#E65100',
+  info: '#01579B',
+};
