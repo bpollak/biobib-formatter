@@ -647,7 +647,46 @@ dissertation-formatter/
 
 ---
 
-## 9. Tech Decisions
+## 9. UI/Brand Guidelines
+
+**All UI must follow the official UC San Diego CMS V5 department template: https://department.ucsd.edu/**
+
+### Header (3-part structure)
+1. **Teal stripe**: Thin decorative bar at top, background `#2b92b9`
+2. **Title bar**: White background, site name in BLACK uppercase Roboto (1.35rem, letter-spacing 1px) on left, UC San Diego logo on right. Height ~92px, padding 1.5em 0
+3. **Nav bar**: Background `#00629b` (UCSD blue, NOT navy), white text links, hover `#004268`, font-size 16px
+
+### Footer
+- Background: `#182B49` (navy)
+- Left column: Address "UC San Diego 9500 Gilman Dr. La Jolla, CA 92093 (858) 534-2230", then copyright, then links
+- Links: Accessibility | Privacy | Terms of Use — white, underlined, separated by pipe borders
+- Right column: White UCSD logo from `cdn.ucsd.edu/developer/decorator/5.0.2/img/ucsd-footer-logo-white.png`
+
+### Typography
+- Font: Roboto (loaded from Google Fonts)
+- Fallbacks: "Helvetica Neue", Arial, sans-serif
+- Site title: uppercase, letter-spacing 1px
+
+### Colors
+- Teal accent: `#2b92b9`
+- Nav blue: `#00629b`
+- Nav hover: `#004268`
+- Navy (footer, dark elements): `#182B49`
+- Gold accent: `#C69214`
+- Body background: `#ffffff`
+- Text: standard dark (`rgba(0,0,0,0.87)`)
+
+### Key Rules
+- Do NOT use MUI AppBar for the header — use Box/styled components matching CMS V5 layout
+- Do NOT say "Powered by TritonAI" anywhere
+- Header is WHITE with a teal stripe — not navy
+- The app should look like an official UCSD department tool, not a startup product
+
+### Reference
+- CSS source: `cdn.ucsd.edu/cms/decorator-5/styles/base.min.css`
+- Template source: `department.ucsd.edu`
+
+## 10. Tech Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|

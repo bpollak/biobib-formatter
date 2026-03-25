@@ -12,7 +12,7 @@
 - ~20 auto-fixable rules
 - Validation pipeline: parse → validate → fix → report
 - Results page with accordion checklist, changelog, manual fixes, download buttons
-- UCSD CMS V5-aligned branding (header, footer, institutional layout)
+- UCSD CMS V5 template (department.ucsd.edu) — teal stripe + white title bar + blue nav bar + navy footer with UCSD logo. Roboto font. See SPEC.md Section 9 for exact specs. All UI changes MUST maintain CMS V5 compliance.
 
 ## Design Decisions
 - JSZip for direct .docx XML manipulation (mammoth only for HTML preview)
