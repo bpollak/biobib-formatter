@@ -136,18 +136,18 @@ export default function HomePage() {
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header />
 
-      <Container maxWidth="md" sx={{ py: 5, flexGrow: 1 }}>
+      <Container maxWidth="md" sx={{ py: 5, flexGrow: 1, maxWidth: '900px !important' }}>
         {processing ? (
           <ProcessingView progress={progress} stage={stage} steps={steps} />
         ) : (
           <>
-            <Box sx={{ textAlign: 'center', mb: 4 }}>
+            <Box sx={{ mb: 4 }}>
               <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 1 }}>
                 Check Your Dissertation Formatting
               </Typography>
-              <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 550, mx: 'auto' }}>
+              <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 650 }}>
                 Upload your .docx file to automatically validate UCSD GEPA formatting requirements.
-                We'll identify issues and apply auto-corrections where possible.
+                We&apos;ll identify issues and apply auto-corrections where possible.
               </Typography>
             </Box>
 

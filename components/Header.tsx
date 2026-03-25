@@ -4,47 +4,70 @@ import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import Link from '@mui/material/Link';
 
 export default function Header() {
   return (
-    <AppBar position="static" sx={{ backgroundColor: '#182B49', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-      <Toolbar>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* UCSD Triton icon placeholder */}
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              backgroundColor: '#C69214',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 'bold',
-              fontSize: 16,
-              color: '#182B49',
-              flexShrink: 0,
-            }}
-          >
-            UC
-          </Box>
+    <Box component="header" sx={{ width: '100%' }}>
+      {/* Main header bar */}
+      <Box sx={{ backgroundColor: '#182B49', width: '100%' }}>
+        <Box
+          sx={{
+            maxWidth: 1200,
+            mx: 'auto',
+            px: { xs: 2, sm: 3 },
+            py: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          {/* Left: Site title */}
           <Box>
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{ color: '#FFFFFF', fontWeight: 700, lineHeight: 1.2 }}
-            >
-              Dissertation Formatting Agent
-            </Typography>
+            <Link href="/" underline="none" sx={{ display: 'block' }}>
+              <Typography
+                variant="h6"
+                component="div"
+                sx={{
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                  fontSize: { xs: '1rem', sm: '1.15rem' },
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Dissertation Formatting Agent
+              </Typography>
+            </Link>
             <Typography
               variant="caption"
-              sx={{ color: '#C69214', fontWeight: 500 }}
+              sx={{
+                color: 'rgba(255,255,255,0.75)',
+                fontWeight: 400,
+                fontSize: '0.75rem',
+                letterSpacing: '0.01em',
+              }}
             >
-              UC San Diego — Graduate Division (GEPA)
+              Graduate Division (GEPA)
             </Typography>
           </Box>
+
+          {/* Right: UC San Diego wordmark */}
+          <Box>
+            <Link href="https://ucsd.edu" target="_blank" rel="noopener noreferrer" underline="none">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="https://cdn.ucsd.edu/cms/decorator-5/styles/img/ucsd-footer-logo-white.png"
+                alt="UC San Diego"
+                style={{ height: 36, display: 'block' }}
+              />
+            </Link>
+          </Box>
         </Box>
-      </Toolbar>
-    </AppBar>
+      </Box>
+
+      {/* Gold accent line */}
+      <Box sx={{ height: 4, backgroundColor: '#C69214', width: '100%' }} />
+    </Box>
   );
 }

@@ -27,7 +27,7 @@ export const ucsdTheme = createTheme({
     },
   },
   typography: {
-    fontFamily: '"Helvetica Neue", Arial, sans-serif',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
     h1: {
       fontSize: '2.5rem',
       fontWeight: 600,
