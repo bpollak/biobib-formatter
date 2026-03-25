@@ -17,7 +17,7 @@ const NAV_LINKS = [
   { label: 'Home', href: '/' },
   { label: 'How It Works', href: '#how-it-works' },
   { label: 'FAQ', href: '#faq' },
-  { label: 'Contact GEPA', href: 'https://grad.ucsd.edu/academics/progress/dissertation-thesis.html' },
+  { label: 'About', href: '/about' },
 ];
 
 export default function Header() {
@@ -30,8 +30,7 @@ export default function Header() {
 
   return (
     <Box component="header" sx={{ width: '100%' }}>
-      {/* Top teal color bar */}
-      <Box sx={{ height: 8, backgroundColor: '#2b92b9', width: '100%' }} />
+
 
       {/* White title section — desktop only */}
       {isDesktop && (

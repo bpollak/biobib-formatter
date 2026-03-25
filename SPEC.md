@@ -668,7 +668,7 @@ dissertation-formatter/
 - Site title: uppercase, letter-spacing 1px
 
 ### Colors
-- Teal accent: `#2b92b9`
+
 - Nav blue: `#00629b`
 - Nav hover: `#004268`
 - Footer background: `#00629b` (same as nav blue)
