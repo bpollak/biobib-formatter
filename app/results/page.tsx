@@ -78,6 +78,8 @@ function ResultsPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'docx' | 'report' | null>(null);
+  const [correctedFileB64, setCorrectedFileB64] = useState<string | null>(null);
+  const [originalFileName, setOriginalFileName] = useState<string>('dissertation');
 
   useEffect(() => {
     if (!sessionId) {
@@ -86,9 +88,13 @@ function ResultsPageInner() {
       return;
     }
     const stored = sessionStorage.getItem(`results_${sessionId}`);
+    const storedFile = sessionStorage.getItem(`correctedFile_${sessionId}`);
+    const storedName = sessionStorage.getItem(`originalFileName_${sessionId}`);
     if (stored) {
       try {
         setResults(JSON.parse(stored));
+        if (storedFile) setCorrectedFileB64(storedFile);
+        if (storedName) setOriginalFileName(storedName);
       } catch {
         setError('Failed to load results');
       }
@@ -102,23 +108,45 @@ function ResultsPageInner() {
     if (!sessionId) return;
     setDownloading(type);
     try {
-      const res = await fetch(`/api/download/${type}?sessionId=${sessionId}`);
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Download failed');
+      if (type === 'docx') {
+        // Use base64-encoded corrected file stored in sessionStorage
+        if (!correctedFileB64) {
+          throw new Error('Corrected file not available. Please re-upload your document.');
+        }
+        const byteCharacters = atob(correctedFileB64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${originalFileName.replace(/\.docx$/i, '')}_corrected.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        // Report still uses the server endpoint (not session-dependent in the same way)
+        const res = await fetch(`/api/download/${sessionId}/report`);
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Download failed');
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${originalFileName.replace(/\.docx$/i, '')}_compliance_report.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download =
-        type === 'docx'
-          ? `${results?.metadata.fileName.replace('.docx', '') || 'dissertation'}_corrected.docx`
-          : `${results?.metadata.fileName.replace('.docx', '') || 'dissertation'}_compliance_report.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Download failed');
     } finally {

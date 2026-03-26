@@ -96,38 +96,27 @@ export default function HomePage() {
       formData.append('documentType', documentType);
       formData.append('degreeType', degreeType);
 
-      setProgress(15);
-      advanceStep(1);
-      setStage('Parsing document structure...');
+      // Animate steps while the single request runs
+      const animationPromise = (async () => {
+        const stepDelays = [300, 400, 400, 400, 400, 400, 400, 400, 500, 500, 600];
+        for (let i = 1; i <= 11; i++) {
+          await new Promise(r => setTimeout(r, stepDelays[i - 1] || 400));
+          advanceStep(i);
+          setProgress(5 + (i * 6));
+          setStage(STEPS[i]?.label || 'Checking...');
+        }
+      })();
 
-      const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json();
-        throw new Error(err.error || 'Upload failed');
+      // Fire the combined check request
+      const checkRes = await fetch('/api/check', { method: 'POST', body: formData });
+      if (!checkRes.ok) {
+        const err = await checkRes.json();
+        throw new Error(err.error || 'Processing failed');
       }
-      const { sessionId } = await uploadRes.json();
+      const { results, correctedFile, originalFileName } = await checkRes.json();
 
-      for (let i = 2; i <= 10; i++) {
-        await new Promise(r => setTimeout(r, 200));
-        advanceStep(i);
-        setProgress(15 + (i * 4));
-        setStage(STEPS[i]?.label || 'Checking...');
-      }
-
-      advanceStep(11);
-      setStage('Applying auto-fixes...');
-      setProgress(75);
-
-      const validateRes = await fetch('/api/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
-      if (!validateRes.ok) {
-        const err = await validateRes.json();
-        throw new Error(err.error || 'Validation failed');
-      }
-      const { results } = await validateRes.json();
+      // Wait for animation to finish (or skip ahead)
+      await animationPromise;
 
       advanceStep(12);
       setStage('Generating compliance report...');
@@ -138,7 +127,10 @@ export default function HomePage() {
       setProgress(100);
       setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
 
+      const sessionId = results.sessionId;
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
+      sessionStorage.setItem(`correctedFile_${sessionId}`, correctedFile);
+      sessionStorage.setItem(`originalFileName_${sessionId}`, originalFileName);
       router.push(`/results?sessionId=${sessionId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
