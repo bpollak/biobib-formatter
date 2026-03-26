@@ -653,7 +653,7 @@ dissertation-formatter/
 
 ### Header (3-part structure)
 1. **Teal stripe**: Thin decorative bar at top, background `#2b92b9`
-2. **Title bar**: White background, site name in BLACK uppercase Roboto (1.35rem, letter-spacing 1px) on left, UC San Diego logo on right. Height ~92px, padding 1.5em 0
+2. **Title bar**: White background, site name in BLACK uppercase Teko SemiBold (1.75rem) on left, UC San Diego logo on right. Height ~92px, padding 1.5em 0
 3. **Nav bar**: Background `#00629b` (UCSD blue, NOT navy), white text links, hover `#004268`, font-size 16px
 
 ### Footer
@@ -663,7 +663,16 @@ dissertation-formatter/
 - Right column: White UCSD logo from `cdn.ucsd.edu/developer/decorator/5.0.2/img/ucsd-footer-logo-white.png`
 
 ### Typography
-- Font: Roboto (loaded from Google Fonts)
+### Typography (UCSD Campus Standard from brand.ucsd.edu)
+- **Headings (H1-H5):** Teko SemiBold — condensed geometric sans-serif, ALL CAPS, loaded from `cdn.ucsd.edu/cms/decorator-5/styles/teko.css`. Substitute for Refrigerator Deluxe (brand headline font).
+- **Body text:** Roboto — regular + bold, loaded from Google Fonts. Substitute for Brix Sans (brand body font).
+- Font imports via CSS `@import` in globals.css (not `<link>` tags)
+- Teko is ONLY for headings. Nav links, buttons, labels, body text all use Roboto.
+- H1-H3: Teko SemiBold, uppercase, fontWeight 600
+- H4-H5: Teko SemiBold, uppercase
+- H6: Teko SemiBold (mixed case OK)
+- Body: Roboto, 12-16px for digital
+- Site title in header: Teko SemiBold
 - Fallbacks: "Helvetica Neue", Arial, sans-serif
 - Site title: uppercase, letter-spacing 1px
 
