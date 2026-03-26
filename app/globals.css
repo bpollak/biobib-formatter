@@ -1,3 +1,7 @@
+/* UCSD Campus Typography — https://brand.ucsd.edu */
+@import url("https://fonts.googleapis.com/css?family=Roboto:400,700");
+@import url("https://cdn.ucsd.edu/cms/decorator-5/styles/teko.css");
+
 :root {
   --background: #ffffff;
   --foreground: #171717;

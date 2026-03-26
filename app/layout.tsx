@@ -14,12 +14,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+      <head />
       <body style={{ margin: 0, padding: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <ThemeRegistry>{children}</ThemeRegistry>
       </body>

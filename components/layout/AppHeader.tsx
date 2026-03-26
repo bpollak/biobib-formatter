@@ -10,7 +10,17 @@ export const AppHeader = () => {
     <AppBar position="static" sx={{ bgcolor: '#182B49' }}>
       <Toolbar sx={{ px: 4 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-          <Typography variant="h6" color="white" sx={{ ml: 2, flexGrow: 1, textAlign: 'center' }}>
+          <Typography
+            variant="h6"
+            color="white"
+            sx={{
+              ml: 2,
+              flexGrow: 1,
+              textAlign: 'center',
+              fontFamily: "'Teko-SemiBold', sans-serif",
+              textTransform: 'uppercase',
+            }}
+          >
             UCSD Dissertation Formatting Agent
           </Typography>
         </Box>
