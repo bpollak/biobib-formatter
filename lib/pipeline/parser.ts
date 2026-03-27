@@ -184,9 +184,16 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
 
   for (const p of paragraphs) {
     if (p.fontFamily) allFonts.push(p.fontFamily);
-    // Only collect font sizes from paragraphs with actual text content —
-    // empty paragraphs and separator lines often have tiny sizes (e.g. 6pt)
-    if (p.fontSize && !p.isEmpty) allSizes.push(p.fontSize);
+    // Only collect font sizes from body text paragraphs —
+    // exclude headings, titles, subtitles, captions, empty paragraphs,
+    // and tiny separator lines (< 6pt). GEPA 10–12pt rule applies to body text only.
+    const isBodyText = !p.isEmpty
+      && !p.isHeading
+      && !p.isCaption
+      && !/^(Title|Subtitle)$/i.test(p.style)
+      && !/^(TOC\d|TableofFigures|Footer|Header)$/i.test(p.style)
+      && (!p.fontSize || p.fontSize >= 12); // 6pt = 12 half-points; skip separator lines
+    if (p.fontSize && isBodyText) allSizes.push(p.fontSize);
     if (p.color && p.color !== 'auto') allColors.push(p.color);
   }
 
@@ -262,8 +269,9 @@ function detectSections(paragraphs: ParagraphInfo[], metadata: DocumentMetadata)
     const text = paragraphs[i].text.trim().toLowerCase();
 
     // Title page: usually starts at 0, has "university of california"
+    // Extend range to 35 to capture committee section which may follow the main title content
     if (i === 0) {
-      const titleEnd = Math.min(20, paragraphs.length);
+      const titleEnd = Math.min(35, paragraphs.length);
       sections.push({
         type: 'title',
         startParagraphIndex: 0,
@@ -381,8 +389,8 @@ function detectSections(paragraphs: ParagraphInfo[], metadata: DocumentMetadata)
 function parseTitlePage(paragraphs: ParagraphInfo[], sections: SectionInfo[]): TitlePageInfo {
   const titleSection = sections.find(s => s.type === 'title');
   const titleParas = titleSection
-    ? paragraphs.slice(titleSection.startParagraphIndex, Math.min(titleSection.endParagraphIndex, 30))
-    : paragraphs.slice(0, 30);
+    ? paragraphs.slice(titleSection.startParagraphIndex, Math.min(titleSection.endParagraphIndex, 35))
+    : paragraphs.slice(0, 35);
 
   const texts = titleParas.map(p => p.text.trim());
   const allText = texts.join('\n');
@@ -392,8 +400,23 @@ function parseTitlePage(paragraphs: ParagraphInfo[], sections: SectionInfo[]): T
   const hasInLine = texts.some(t => /^in$/i.test(t));
   const hasbyLine = texts.some(t => /^by$/i.test(t));
 
-  // Detect committee section
-  const committeeLineIdx = texts.findIndex(t => /committee\s+in\s+charge/i.test(t));
+  // Detect committee section — match "Committee in Charge", "Committee in charge:",
+  // "Committee:", or lines with "Professor" prefix near the title page area
+  let committeeLineIdx = texts.findIndex(t => /committee\s+in\s+charge\s*:?/i.test(t));
+  if (committeeLineIdx === -1) {
+    committeeLineIdx = texts.findIndex(t => /^committee\s*:/i.test(t));
+  }
+  // Fallback: look for a cluster of "Professor" lines (at least 2 consecutive)
+  if (committeeLineIdx === -1) {
+    for (let ci = 0; ci < texts.length - 1; ci++) {
+      if (/^\s*professor\s+/i.test(texts[ci]) && /^\s*professor\s+/i.test(texts[ci + 1])) {
+        // Found professor cluster — the committee header is the preceding non-empty line
+        committeeLineIdx = ci > 0 ? ci - 1 : ci;
+        break;
+      }
+    }
+  }
+
   const committeeDetected = committeeLineIdx !== -1;
 
   let committeeChairFirst: boolean | undefined;
@@ -402,27 +425,50 @@ function parseTitlePage(paragraphs: ParagraphInfo[], sections: SectionInfo[]): T
   let committeeSingleSpaced: boolean | undefined;
 
   if (committeeDetected) {
-    // Look at indentation of paragraphs after "Committee in Charge"
-    const afterCommittee = titleParas.slice(committeeLineIdx + 1, committeeLineIdx + 10);
-    committeeIndented = afterCommittee.some(p => p.indentLeft && p.indentLeft >= 720);
-    committeeSingleSpaced = afterCommittee.every(p =>
+    // Look at paragraphs after the committee header line
+    const afterCommittee = titleParas.slice(committeeLineIdx + 1, committeeLineIdx + 12);
+    // Filter to actual committee member lines — must look like name entries
+    // Exclude: empty, notes, dates/years, footer content, non-name lines
+    const memberParas = afterCommittee.filter(p => {
+      const t = p.text.trim();
+      if (t.length <= 2) return false;
+      if (/^note:/i.test(t)) return false;
+      if (/^committee/i.test(t)) return false;
+      if (/^\d{4}$/.test(t)) return false; // year-only lines
+      if (/^DATE\b/.test(t)) return false; // merge fields
+      if (p.style === 'Footer' || p.style === 'Header') return false;
+      return true;
+    });
+
+    // Check indentation: accept either w:left or w:firstLine >= 720 (0.5")
+    committeeIndented = memberParas.some(p =>
+      (p.indentLeft && p.indentLeft >= 720) ||
+      (p.indentFirstLine && p.indentFirstLine >= 720)
+    );
+
+    // Check single-spacing: member lines should not have double spacing
+    // No explicit line spacing or <= 300 twips counts as single-spaced
+    committeeSingleSpaced = memberParas.every(p =>
       !p.lineSpacing || p.lineSpacing <= 300
     );
 
-    // Check if chair is mentioned
-    const memberParas = afterCommittee.filter(p => p.text.trim().length > 2);
-    committeeChairFirst = memberParas.some(p => /chair|co-chair/i.test(p.text));
+    // Check if chair/co-chair designation exists among the member lines
+    const firstMember = memberParas[0];
+    committeeChairFirst = firstMember
+      ? /chair|co-chair/i.test(firstMember.text)
+      : undefined;
 
-    // Check alphabetical order (by last word of each line)
-    if (memberParas.length > 2) {
-      const names = memberParas
-        .filter(p => !/chair|co-chair/i.test(p.text))
-        .map(p => {
-          const words = p.text.trim().split(/\s+/);
-          return words[words.length - 1].toLowerCase();
-        });
-      const sorted = [...names].sort();
-      committeeMembersAlphabetized = JSON.stringify(names) === JSON.stringify(sorted);
+    // Check alphabetical order of non-chair members (by last name)
+    const nonChairMembers = memberParas.filter(p => !/chair|co-chair/i.test(p.text));
+    if (nonChairMembers.length >= 2) {
+      const lastNames = nonChairMembers.map(p => {
+        // Strip trailing punctuation/parentheticals and get last word
+        const cleaned = p.text.trim().replace(/\s*\(.*?\)\s*$/, '').replace(/[,;.]+$/, '');
+        const words = cleaned.split(/\s+/);
+        return words[words.length - 1].toLowerCase();
+      });
+      const sorted = [...lastNames].sort();
+      committeeMembersAlphabetized = JSON.stringify(lastNames) === JSON.stringify(sorted);
     }
   }
 
