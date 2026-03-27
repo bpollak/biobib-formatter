@@ -51,6 +51,10 @@ export async function POST(request: NextRequest) {
 
     // Mark auto-fixed rules
     const fixedRuleIds = new Set(changes.map(c => c.ruleId));
+    // TEXT-002 checks the same colors as FONT-005 — if FONT-005 fixed them, TEXT-002 is also resolved
+    if (fixedRuleIds.has('FONT-005')) {
+      fixedRuleIds.add('TEXT-002');
+    }
     const finalRules: RuleResult[] = ruleResults.map(r => {
       if (fixedRuleIds.has(r.ruleId) && r.status === 'fail') {
         return { ...r, status: 'auto-fixed' as const };

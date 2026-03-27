@@ -184,7 +184,9 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
 
   for (const p of paragraphs) {
     if (p.fontFamily) allFonts.push(p.fontFamily);
-    if (p.fontSize) allSizes.push(p.fontSize);
+    // Only collect font sizes from paragraphs with actual text content —
+    // empty paragraphs and separator lines often have tiny sizes (e.g. 6pt)
+    if (p.fontSize && !p.isEmpty) allSizes.push(p.fontSize);
     if (p.color && p.color !== 'auto') allColors.push(p.color);
   }
 
@@ -505,8 +507,12 @@ function parsePageNumbering(documentXml: string, footerXmls: string[]): PageNumb
   // Check for page numbering format declarations
   const hasRoman = /<w:pgNumType[^>]*w:fmt="lowerRoman"/.test(documentXml) ||
                    /<w:pgNumType[^>]*fmt="lowerRoman"/.test(documentXml);
-  const hasArabic = /<w:pgNumType[^>]*w:fmt="decimal"/.test(documentXml) ||
-                    !/<w:pgNumType/.test(documentXml); // default is Arabic
+  // Arabic is the default when no w:fmt is specified. Detect it explicitly,
+  // or when a pgNumType element exists without a fmt attribute (Word default).
+  const pgNumTypeMatches = documentXml.match(/<w:pgNumType[^/]*\/>/g) || [];
+  const hasExplicitArabic = /<w:pgNumType[^>]*w:fmt="decimal"/.test(documentXml);
+  const hasDefaultArabic = pgNumTypeMatches.some(m => !/w:fmt=/.test(m));
+  const hasArabic = hasExplicitArabic || hasDefaultArabic || !/<w:pgNumType/.test(documentXml);
 
   // Check for start values
   const romanStart = /<w:pgNumType[^>]*w:start="3"/.test(documentXml);

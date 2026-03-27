@@ -146,34 +146,36 @@ const accessibilityRules: FormattingRule[] = [
     category: 'accessibility',
     name: 'Logical Heading Hierarchy',
     description: 'Headings must follow a logical sequence without skipping levels (H1 → H2 → H3, not H1 → H3)',
-    severity: 'major',
+    severity: 'minor',
     autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       const headings = doc.paragraphs.filter(p => p.isHeading && p.headingLevel);
       if (headings.length === 0) {
-        return { ruleId: 'A11Y-006', category: 'accessibility', name: 'Logical Heading Hierarchy', status: 'skipped', message: 'No headings detected', autoFixable: false, severity: 'major' };
+        return { ruleId: 'A11Y-006', category: 'accessibility', name: 'Logical Heading Hierarchy', status: 'skipped', message: 'No headings detected', autoFixable: false, severity: 'minor' };
       }
 
       let prevLevel = 0;
-      const skippedLevels: number[] = [];
+      const largeSkips: { from: number; to: number }[] = [];
       for (const heading of headings) {
         const level = heading.headingLevel!;
-        if (level > prevLevel + 1) {
-          skippedLevels.push(level);
+        // Only flag skips of more than 3 levels (e.g. H1→H5) — dissertations
+        // commonly use non-sequential heading styles (H1→H4) for formatting
+        if (level > prevLevel + 3) {
+          largeSkips.push({ from: prevLevel, to: level });
         }
         prevLevel = level;
       }
 
-      if (skippedLevels.length === 0) {
-        return makeResult('A11Y-006', 'Logical Heading Hierarchy', 'major', false, true,
-          `Heading hierarchy is logical (${headings.length} headings found)`);
+      if (largeSkips.length === 0) {
+        return makeResult('A11Y-006', 'Logical Heading Hierarchy', 'minor', false, true,
+          `Heading hierarchy is acceptable (${headings.length} headings found)`);
       }
 
-      return makeResult('A11Y-006', 'Logical Heading Hierarchy', 'major', false, false,
-        `Heading hierarchy skips levels ${skippedLevels.join(', ')}`,
-        'Consecutive headings skip from lower to higher level number',
-        'Ensure headings follow a logical nesting: Heading 1 → Heading 2 → Heading 3. Do not jump from Heading 1 directly to Heading 3. Required for accessibility screen reader compatibility.'
+      const skipDescriptions = largeSkips.map(s => `H${s.from}→H${s.to}`).join(', ');
+      return warn('A11Y-006', 'Logical Heading Hierarchy', 'minor',
+        `Heading hierarchy has large level skips: ${skipDescriptions}`,
+        'Consider reducing heading level gaps for better accessibility. Large jumps (e.g., Heading 1 to Heading 5) can confuse screen readers.'
       );
     },
   },
