@@ -145,7 +145,9 @@ const CATEGORIES: Category[] = [
       { id: 'TITLE-004', name: 'Committee Members Alphabetized', description: 'After the chair, remaining committee members must be listed alphabetically.', autoFixable: false, severity: 'major' },
       { id: 'TITLE-005', name: 'Committee List Indented 0.5"', description: 'Committee member names must be indented 0.5" from the "Committee in Charge" heading.', autoFixable: false, severity: 'major' },
       { id: 'TITLE-006', name: 'Committee List Single-Spaced', description: 'The committee list must be single-spaced.', autoFixable: false, severity: 'minor' },
-      { id: 'TITLE-007', name: 'Degree Year Matches Conferral Year', description: 'The year on the title page must match the quarter of degree conferral.', autoFixable: false, severity: 'major' },
+      { id: 'TITLE-007', name: 'Committee List Single-Spaced', description: 'The committee member list must be single-spaced.', autoFixable: false, severity: 'minor' },
+      { id: 'TITLE-008', name: 'Committee List Indented 0.5"', description: 'Committee member names must be indented 0.5" from the "Committee in Charge" heading.', autoFixable: false, severity: 'major' },
+      { id: 'TITLE-009', name: 'Degree Year Matches Conferral Year', description: 'The year on the title page must match the quarter of degree conferral.', autoFixable: false, severity: 'major' },
     ],
   },
   {
