@@ -23,28 +23,28 @@ const titlePageRules: FormattingRule[] = [
     name: 'University Name in All Caps',
     description: '"UNIVERSITY OF CALIFORNIA SAN DIEGO" must appear in all capital letters',
     severity: 'critical',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (!doc.titlePage.detected) {
-        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', true, false,
+        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', false, false,
           'Title page not detected',
           undefined,
           'Ensure the title page is the first page and contains "UNIVERSITY OF CALIFORNIA SAN DIEGO" in all capital letters at the top.'
         );
       }
       if (doc.titlePage.universityNameCorrect) {
-        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', true, true,
+        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', false, true,
           '"UNIVERSITY OF CALIFORNIA SAN DIEGO" found in all caps');
       }
       if (doc.titlePage.hasUniversityName) {
-        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', true, false,
+        return makeResult('TITLE-001', 'University Name in All Caps', 'critical', false, false,
           'University name found but not in all caps',
           undefined,
           'Change "University of California San Diego" to "UNIVERSITY OF CALIFORNIA SAN DIEGO" (all capitals) at the top of the title page.'
         );
       }
-      return makeResult('TITLE-001', 'University Name in All Caps', 'critical', true, false,
+      return makeResult('TITLE-001', 'University Name in All Caps', 'critical', false, false,
         '"UNIVERSITY OF CALIFORNIA SAN DIEGO" not found on title page',
         undefined,
         'Add "UNIVERSITY OF CALIFORNIA SAN DIEGO" in all capital letters at the top of the title page.'
@@ -178,7 +178,7 @@ const titlePageRules: FormattingRule[] = [
     name: 'Committee List Indented 0.5"',
     description: 'The committee member names must be indented 0.5" from the "Committee in Charge" label',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (!doc.titlePage.committeeDetected) {
@@ -186,10 +186,10 @@ const titlePageRules: FormattingRule[] = [
           'Committee section not detected — cannot verify indentation');
       }
       if (doc.titlePage.committeeIndented) {
-        return makeResult('TITLE-007', 'Committee List Indented 0.5"', 'major', true, true,
+        return makeResult('TITLE-007', 'Committee List Indented 0.5"', 'major', false, true,
           'Committee members are indented 0.5"');
       }
-      return makeResult('TITLE-007', 'Committee List Indented 0.5"', 'major', true, false,
+      return makeResult('TITLE-007', 'Committee List Indented 0.5"', 'major', false, false,
         'Committee member names may not be indented',
         undefined,
         'Select all committee member names under "Committee in Charge" and set left indentation to 0.5" via Home → Paragraph → Indentation.'
@@ -202,7 +202,7 @@ const titlePageRules: FormattingRule[] = [
     name: 'Committee List Single-Spaced',
     description: 'Committee member names must be single-spaced',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (!doc.titlePage.committeeDetected) {
@@ -210,10 +210,10 @@ const titlePageRules: FormattingRule[] = [
           'Committee section not detected — cannot verify spacing');
       }
       if (doc.titlePage.committeeSingleSpaced) {
-        return makeResult('TITLE-008', 'Committee List Single-Spaced', 'major', true, true,
+        return makeResult('TITLE-008', 'Committee List Single-Spaced', 'major', false, true,
           'Committee members are single-spaced');
       }
-      return makeResult('TITLE-008', 'Committee List Single-Spaced', 'major', true, false,
+      return makeResult('TITLE-008', 'Committee List Single-Spaced', 'major', false, false,
         'Committee member names may not be single-spaced',
         undefined,
         'Select committee member names and set line spacing to Single via Home → Paragraph → Line Spacing.'

@@ -96,13 +96,13 @@ export default function HomePage() {
       formData.append('documentType', documentType);
       formData.append('degreeType', degreeType);
 
-      // Animate steps while the single request runs
+      // Animate all 13 steps while the single request runs
       const animationPromise = (async () => {
-        const stepDelays = [300, 400, 400, 400, 400, 400, 400, 400, 500, 500, 600];
-        for (let i = 1; i <= 11; i++) {
+        const stepDelays = [300, 350, 350, 350, 350, 350, 350, 350, 400, 400, 450, 500];
+        for (let i = 1; i <= 12; i++) {
           await new Promise(r => setTimeout(r, stepDelays[i - 1] || 400));
           advanceStep(i);
-          setProgress(5 + (i * 6));
+          setProgress(5 + Math.round((i / 13) * 85));
           setStage(STEPS[i]?.label || 'Checking...');
         }
       })();
@@ -118,19 +118,34 @@ export default function HomePage() {
       // Wait for animation to finish (or skip ahead)
       await animationPromise;
 
-      advanceStep(12);
-      setStage('Generating compliance report...');
+      setStage('Finalizing...');
       setProgress(95);
 
-      await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 300));
 
       setProgress(100);
       setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
 
       const sessionId = results.sessionId;
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
-      sessionStorage.setItem(`correctedFile_${sessionId}`, correctedFile);
       sessionStorage.setItem(`originalFileName_${sessionId}`, originalFileName);
+
+      // For large files, use a Blob URL instead of sessionStorage to avoid quota errors
+      try {
+        sessionStorage.setItem(`correctedFile_${sessionId}`, correctedFile);
+      } catch {
+        // sessionStorage quota exceeded — store as Blob URL
+        const byteChars = atob(correctedFile);
+        const byteNums = new Uint8Array(byteChars.length);
+        for (let j = 0; j < byteChars.length; j++) {
+          byteNums[j] = byteChars.charCodeAt(j);
+        }
+        const blob = new Blob([byteNums], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
+        const blobUrl = URL.createObjectURL(blob);
+        sessionStorage.setItem(`correctedFileBlobUrl_${sessionId}`, blobUrl);
+      }
       router.push(`/results?sessionId=${sessionId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

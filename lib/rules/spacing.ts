@@ -58,7 +58,7 @@ const spacingRules: FormattingRule[] = [
     name: 'Block Quotes Single-Spaced',
     description: 'Long quotations (block quotes) should be single-spaced',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Look for paragraphs with significant indentation that might be block quotes
@@ -69,7 +69,7 @@ const spacingRules: FormattingRule[] = [
       );
 
       if (blockQuotes.length === 0) {
-        return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', true, true,
+        return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', false, true,
           'No block quotes detected, or all are correctly single-spaced');
       }
 
@@ -78,11 +78,11 @@ const spacingRules: FormattingRule[] = [
       );
 
       if (wrongSpacing.length === 0) {
-        return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', true, true,
+        return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', false, true,
           'Block quotes appear to be single-spaced');
       }
 
-      return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', true, false,
+      return makeResult('SPACE-002', 'Block Quotes Single-Spaced', 'major', false, false,
         `${wrongSpacing.length} block quote(s) may not be single-spaced`,
         undefined,
         'Select block quote text, then set line spacing to Single (1.0) via Home → Paragraph → Line Spacing.'
@@ -95,7 +95,7 @@ const spacingRules: FormattingRule[] = [
     name: 'Block Quotes Indented 0.5" Both Sides',
     description: 'Block quotes must be indented 0.5" on both left and right',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Heuristic: paragraphs that are very long (likely quotes) but may not have indentation
@@ -106,7 +106,7 @@ const spacingRules: FormattingRule[] = [
       );
 
       if (longParas.length === 0) {
-        return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', true, true,
+        return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', false, true,
           'No block quotes detected requiring indentation check');
       }
 
@@ -117,11 +117,11 @@ const spacingRules: FormattingRule[] = [
       );
 
       if (noIndent.length === 0) {
-        return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', true, true,
+        return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', false, true,
           'Block quote indentation appears correct');
       }
 
-      return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', true, false,
+      return makeResult('SPACE-003', 'Block Quotes Indented 0.5"', 'major', false, false,
         `${noIndent.length} potential block quote(s) may need indentation`,
         undefined,
         'For block quotes (6+ lines), set left and right indentation to 0.5" via Home → Paragraph → Indentation.'

@@ -124,18 +124,18 @@ const paginationRules: FormattingRule[] = [
     name: 'Page Numbers Centered at Bottom',
     description: 'Page numbers must be centered at the bottom of each page',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       const { pageNumbersAtBottom, pageNumbersCentered } = doc.pageNumbering;
       if (pageNumbersAtBottom && pageNumbersCentered) {
-        return makeResult('PAGE-006', 'Page Numbers Centered at Bottom', 'major', true, true,
+        return makeResult('PAGE-006', 'Page Numbers Centered at Bottom', 'major', false, true,
           'Page numbers are centered at the bottom');
       }
       const issues: string[] = [];
       if (!pageNumbersAtBottom) issues.push('not in footer');
       if (!pageNumbersCentered) issues.push('not centered');
-      return makeResult('PAGE-006', 'Page Numbers Centered at Bottom', 'major', true, false,
+      return makeResult('PAGE-006', 'Page Numbers Centered at Bottom', 'major', false, false,
         `Page number positioning issue: ${issues.join(', ')}`,
         undefined,
         'Click into the footer, select the page number, and center it. Page numbers must be centered and 0.5" from the bottom of the page.'

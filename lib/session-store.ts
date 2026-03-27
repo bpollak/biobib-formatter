@@ -1,20 +1,11 @@
 import { ProcessingSession, SessionStatus } from './types';
-import { SESSION_TTL_MS, SESSION_CLEANUP_INTERVAL_MS } from './constants';
 
 // In-memory session store
 const sessions = new Map<string, ProcessingSession>();
 
-// TTL cleanup — runs every minute, removes sessions older than 1 hour
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const cutoff = Date.now() - SESSION_TTL_MS;
-    for (const [id, session] of sessions) {
-      if (session.createdAt < cutoff) {
-        sessions.delete(id);
-      }
-    }
-  }, SESSION_CLEANUP_INTERVAL_MS);
-}
+// Note: TTL cleanup timer removed — on Vercel serverless, each function instance
+// has its own memory and timers don't persist between invocations.
+// Sessions are cleaned up lazily on access instead.
 
 export function getSession(id: string): ProcessingSession | undefined {
   return sessions.get(id);

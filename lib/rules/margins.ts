@@ -127,6 +127,46 @@ const marginRules: FormattingRule[] = [
       );
     },
   },
+  {
+    id: 'MARGIN-006',
+    category: 'margins',
+    name: 'Abstract Top Margin 2.5"',
+    description: 'The abstract page must have a 2.5" top margin (separate from body margins)',
+    severity: 'major',
+    autoFixable: false,
+    appliesTo: 'all',
+    check(doc: DocumentModel): RuleResult {
+      if (!doc.abstract.detected) {
+        return makeResult(
+          'MARGIN-006', 'margins', 'Abstract Top Margin 2.5"', 'major', false, false,
+          'Abstract section not detected — cannot check abstract top margin',
+          undefined,
+          'Add an Abstract section with a 2.5" top margin. Use a section break before the abstract page and set a custom top margin.'
+        );
+      }
+      const topMargin = doc.abstract.topMargin;
+      if (!topMargin) {
+        return makeResult(
+          'MARGIN-006', 'margins', 'Abstract Top Margin 2.5"', 'major', false, false,
+          'Could not determine abstract page top margin',
+          undefined,
+          'Set the abstract page top margin to 2.5". You may need to use a section break and custom margin for just that page.'
+        );
+      }
+      if (topMargin >= MARGIN_2_5_INCH) {
+        return makeResult(
+          'MARGIN-006', 'margins', 'Abstract Top Margin 2.5"', 'major', false, true,
+          `Abstract top margin is ${(topMargin / 1440).toFixed(2)}" (≥ 2.5")`
+        );
+      }
+      return makeResult(
+        'MARGIN-006', 'margins', 'Abstract Top Margin 2.5"', 'major', false, false,
+        `Abstract top margin is ${(topMargin / 1440).toFixed(2)}" — must be 2.5"`,
+        `Found: ${(topMargin / 1440).toFixed(2)}", required: 2.5"`,
+        'The abstract page must have a 2.5" top margin. Use a section break to isolate the abstract page, then set its top margin to 2.5" via Layout → Margins → Custom Margins.'
+      );
+    },
+  },
 ];
 
 export default marginRules;

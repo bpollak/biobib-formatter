@@ -47,17 +47,17 @@ const headingRules: FormattingRule[] = [
     name: 'No Colored Text',
     description: 'All text in the document must be black — no colored text allowed',
     severity: 'critical',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (!doc.styles.hasColoredText) {
-        return makeResult('TEXT-002', 'No Colored Text', 'critical', true, true,
+        return makeResult('TEXT-002', 'No Colored Text', 'critical', false, true,
           'All text appears to be black');
       }
       const coloredCount = doc.styles.colors.filter(
         c => c && c !== '000000' && c.toLowerCase() !== '000000' && c !== 'auto'
       ).length;
-      return makeResult('TEXT-002', 'No Colored Text', 'critical', true, false,
+      return makeResult('TEXT-002', 'No Colored Text', 'critical', false, false,
         `Found ${coloredCount} non-black color reference(s) in document text`,
         `Colors found: ${[...new Set(doc.styles.colors.filter(c => c !== '000000' && c !== 'auto'))].slice(0, 5).join(', ')}`,
         'Select all text (Ctrl+A) and set font color to "Automatic" (which renders as black). This will not affect images or figures.'
@@ -70,7 +70,7 @@ const headingRules: FormattingRule[] = [
     name: 'No Colored Hyperlinks',
     description: 'Hyperlinks must use black text, not the default blue color',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Detect blue/hyperlink colors
@@ -81,10 +81,10 @@ const headingRules: FormattingRule[] = [
         )
       );
       if (blueColors.length === 0) {
-        return makeResult('TEXT-003', 'No Colored Hyperlinks', 'major', true, true,
+        return makeResult('TEXT-003', 'No Colored Hyperlinks', 'major', false, true,
           'No blue/colored hyperlinks detected');
       }
-      return makeResult('TEXT-003', 'No Colored Hyperlinks', 'major', true, false,
+      return makeResult('TEXT-003', 'No Colored Hyperlinks', 'major', false, false,
         'Hyperlinks with non-black coloring detected',
         undefined,
         'Modify the "Hyperlink" character style: Home → Styles → right-click "Hyperlink" → Modify → set color to Black. Or select hyperlink text and set font color to black.'

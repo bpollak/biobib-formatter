@@ -5,6 +5,7 @@ import spacingRules from './spacing';
 import paginationRules from './pagination';
 import pageOrderRules from './page-order';
 import titlePageRules from './title-page';
+import approvalPageRules from './approval-page';
 import abstractRules from './abstract';
 import figuresTablesRules from './figures-tables';
 import referencesRules from './references';
@@ -20,6 +21,7 @@ export const allRules: FormattingRule[] = [
   ...paginationRules,
   ...pageOrderRules,
   ...titlePageRules,
+  ...approvalPageRules,
   ...abstractRules,
   ...figuresTablesRules,
   ...referencesRules,
@@ -34,6 +36,7 @@ export {
   paginationRules,
   pageOrderRules,
   titlePageRules,
+  approvalPageRules,
   abstractRules,
   figuresTablesRules,
   referencesRules,

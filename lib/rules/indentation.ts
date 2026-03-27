@@ -61,7 +61,7 @@ const indentationRules: FormattingRule[] = [
     name: 'No Block-Style Paragraphs',
     description: 'Body text should not use block paragraph style (no indent + extra space between paragraphs)',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       const bodyParas = doc.paragraphs.filter(p =>
@@ -74,7 +74,7 @@ const indentationRules: FormattingRule[] = [
       if (bodyParas.length === 0) {
         return {
           ruleId: 'INDENT-002', category: 'indentation', name: 'No Block-Style Paragraphs',
-          status: 'skipped', message: 'No body paragraphs detected', autoFixable: true, severity: 'major',
+          status: 'skipped', message: 'No body paragraphs detected', autoFixable: false, severity: 'major',
         };
       }
 
@@ -85,11 +85,11 @@ const indentationRules: FormattingRule[] = [
       );
 
       if (blockStyle.length === 0) {
-        return makeResult('INDENT-002', 'No Block-Style Paragraphs', 'major', true, true,
+        return makeResult('INDENT-002', 'No Block-Style Paragraphs', 'major', false, true,
           'No block-style paragraphs detected');
       }
 
-      return makeResult('INDENT-002', 'No Block-Style Paragraphs', 'major', true, false,
+      return makeResult('INDENT-002', 'No Block-Style Paragraphs', 'major', false, false,
         `${blockStyle.length} paragraph(s) may be using block formatting style`,
         'Block style detected: no first-line indent with extra space between paragraphs',
         'GEPA requires first-line indented paragraph style (0.5" indent, no extra space between paragraphs). Remove extra paragraph spacing and add first-line indentation to body text.'

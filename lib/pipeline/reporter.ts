@@ -4,7 +4,7 @@ import { UCSD_COLORS } from '../constants';
 
 export async function generateReportPDF(results: ValidationResults): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([612, 792]); // Letter size
+  let page = pdfDoc.addPage([612, 792]); // Letter size
   const { width, height } = page.getSize();
 
   // Fonts
@@ -75,8 +75,8 @@ export async function generateReportPDF(results: ValidationResults): Promise<Buf
     for (const change of results.changes.slice(0, 15)) { // Limit to 15 for space
       if (y < margin + 100) {
         // Add new page if needed
-        const newPage = pdfDoc.addPage([612, 792]);
-        y = newPage.getSize().height - margin;
+        page = pdfDoc.addPage([612, 792]);
+        y = page.getSize().height - margin;
         page.drawText('CHANGES APPLIED (continued)', {
           x: margin,
           y,
@@ -108,8 +108,8 @@ export async function generateReportPDF(results: ValidationResults): Promise<Buf
 
     for (const fix of results.manualFixes.slice(0, 15)) {
       if (y < margin + 100) {
-        const newPage = pdfDoc.addPage([612, 792]);
-        y = newPage.getSize().height - margin;
+        page = pdfDoc.addPage([612, 792]);
+        y = page.getSize().height - margin;
         page.drawText('MANUAL FIXES REQUIRED (continued)', {
           x: margin,
           y,

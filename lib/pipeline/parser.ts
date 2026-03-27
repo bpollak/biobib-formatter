@@ -82,17 +82,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       figures.push(figure);
     }
 
-    // Detect tables (we'll detect from raw XML)
-    const tableRegex = /<w:tbl/;
-    if (tableRegex.test(pXml)) {
-      tables.push({
-        index: tableCount++,
-        paragraphIndex: i,
-        hasCaption: false,
-        hasHeaderRow: /<w:tblHeader/.test(pXml),
-        isMultiPage: false, // heuristic: would need page break detection
-      });
-    }
+    // Table detection moved to document-level parsing below
 
     paragraphs.push({
       index: i,
@@ -164,15 +154,27 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
     }
   }
 
-  // Also detect tables from raw document XML more carefully
+  // Detect tables from document-level XML (w:tbl elements at body level)
   const tableXmlRegex = /<w:tbl>([\s\S]*?)<\/w:tbl>/g;
-  let tableMatch;
-  let tblIdx = 0;
-  while ((tableXmlRegex.exec(documentXml)) !== null) {
-    if (tblIdx < tables.length) {
-      tables[tblIdx].isMultiPage = false; // MVP: can't detect page breaks in table
-    }
-    tblIdx++;
+  let tblMatch;
+  while ((tblMatch = tableXmlRegex.exec(documentXml)) !== null) {
+    const tblContent = tblMatch[1];
+    const hasHeaderRow = /<w:tblHeader/.test(tblContent);
+    // Find the nearest paragraph index by locating the table position in XML
+    const tblPosition = tblMatch.index;
+    let nearestParagraphIndex = 0;
+    // Find how many paragraphs come before this table in the XML
+    const xmlBefore = documentXml.slice(0, tblPosition);
+    const pCountBefore = (xmlBefore.match(/<w:p[ >]/g) || []).length;
+    nearestParagraphIndex = Math.min(pCountBefore, paragraphs.length - 1);
+
+    tables.push({
+      index: tableCount++,
+      paragraphIndex: Math.max(0, nearestParagraphIndex),
+      hasCaption: false,
+      hasHeaderRow,
+      isMultiPage: false,
+    });
   }
 
   // Collect styles
@@ -186,13 +188,8 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
     if (p.color && p.color !== 'auto') allColors.push(p.color);
   }
 
-  // Also extract from styles.xml
-  const stylesMatch = /<w:rFonts[^>]*>/g;
-  let sm;
-  while ((sm = stylesMatch.exec(stylesXml)) !== null) {
-    const font = sm[0].match(/w:ascii="([^"]+)"/)?.[1];
-    if (font) allFonts.push(font);
-  }
+  // Only use fonts actually used in body text paragraphs, not style definitions
+  // (styles.xml may reference built-in fonts like Calibri that aren't actually used)
 
   const uniqueFonts = [...new Set(allFonts)].filter(Boolean);
   const uniqueSizes = [...new Set(allSizes)].filter(Boolean);
@@ -206,7 +203,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
 
   const sizeFreq: Record<number, number> = {};
   allSizes.forEach(s => { sizeFreq[s] = (sizeFreq[s] || 0) + 1; });
-  const dominantSize = parseInt(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || '24');
+  const dominantSize = Number(Object.entries(sizeFreq).sort((a, b) => b[1] - a[1])[0]?.[0] || '24');
 
   const styles: StyleInfo = {
     fonts: uniqueFonts,
@@ -226,8 +223,8 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   // Parse abstract
   const abstractInfo = parseAbstract(paragraphs, sections, margins);
 
-  // Parse page numbering
-  const pageNumbering = parsePageNumbering(documentXml);
+  // Parse page numbering (using footer XMLs for reliable detection)
+  const pageNumbering = parsePageNumbering(documentXml, files.footerXmls);
 
   // Parse references
   const references = parseReferences(paragraphs);
@@ -256,6 +253,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
 
 function detectSections(paragraphs: ParagraphInfo[], metadata: DocumentMetadata): SectionInfo[] {
   const sections: SectionInfo[] = [];
+  const assignedParagraphs = new Set<number>();
 
   let i = 0;
   while (i < paragraphs.length) {
@@ -273,17 +271,20 @@ function detectSections(paragraphs: ParagraphInfo[], metadata: DocumentMetadata)
         ),
         confidence: 'medium',
       });
+      for (let j = 0; j < titleEnd; j++) assignedParagraphs.add(j);
     }
 
-    if (/copyright\s*©?|all\s+rights\s+reserved/.test(text) ||
-        (paragraphs[i].isEmpty && i < 10)) {
+    // Copyright detection: require explicit copyright text (not just empty paragraphs)
+    if (/copyright\s*©?|all\s+rights\s+reserved/.test(text) && !assignedParagraphs.has(i)) {
+      const end = Math.min(i + 5, paragraphs.length);
       sections.push({
         type: 'copyright',
         startParagraphIndex: i,
-        endParagraphIndex: i + 5,
+        endParagraphIndex: end,
         detected: true,
-        confidence: 'medium',
+        confidence: 'high',
       });
+      for (let j = i; j < end; j++) assignedParagraphs.add(j);
     }
 
     if (/dissertation.*approval|thesis.*approval|committee\s+in\s+charge|the\s+dissertation.*by/i.test(text)) {
@@ -454,7 +455,17 @@ function parseAbstract(
       return { detected: false, wordCount: 0, paragraphIndices: [] };
     }
     
-    const abstractParas = paragraphs.slice(abstractIdx + 1, abstractIdx + 20);
+    // Find end boundary: stop at next section heading or large gap
+    let endIdx = Math.min(abstractIdx + 20, paragraphs.length);
+    for (let j = abstractIdx + 1; j < endIdx; j++) {
+      const pText = paragraphs[j].text.trim().toLowerCase();
+      if (paragraphs[j].isHeading ||
+          /^(chapter\s+\d|introduction|table\s+of\s+contents|acknowledgements?|vita|references|bibliography)$/i.test(pText)) {
+        endIdx = j;
+        break;
+      }
+    }
+    const abstractParas = paragraphs.slice(abstractIdx + 1, endIdx);
     const abstractText = abstractParas.map(p => p.text).join(' ');
     const wordCount = abstractText.trim().split(/\s+/).filter(Boolean).length;
     
@@ -465,9 +476,19 @@ function parseAbstract(
     };
   }
 
+  // Find actual end: stop at next section heading
+  let sectionEnd = abstractSection.endParagraphIndex;
+  for (let j = abstractSection.startParagraphIndex + 1; j < sectionEnd; j++) {
+    const pText = paragraphs[j].text.trim().toLowerCase();
+    if (paragraphs[j].isHeading ||
+        /^(chapter\s+\d|introduction|table\s+of\s+contents|acknowledgements?|vita|references|bibliography)$/i.test(pText)) {
+      sectionEnd = j;
+      break;
+    }
+  }
   const abstractParas = paragraphs.slice(
     abstractSection.startParagraphIndex + 1,
-    abstractSection.endParagraphIndex
+    sectionEnd
   );
   const abstractText = abstractParas.map(p => p.text).join(' ');
   const wordCount = abstractText.trim().split(/\s+/).filter(Boolean).length;
@@ -480,27 +501,35 @@ function parseAbstract(
   };
 }
 
-function parsePageNumbering(documentXml: string): PageNumberingInfo {
+function parsePageNumbering(documentXml: string, footerXmls: string[]): PageNumberingInfo {
   // Check for page numbering format declarations
   const hasRoman = /<w:pgNumType[^>]*w:fmt="lowerRoman"/.test(documentXml) ||
                    /<w:pgNumType[^>]*fmt="lowerRoman"/.test(documentXml);
   const hasArabic = /<w:pgNumType[^>]*w:fmt="decimal"/.test(documentXml) ||
                     !/<w:pgNumType/.test(documentXml); // default is Arabic
-  
+
   // Check for start values
   const romanStart = /<w:pgNumType[^>]*w:start="3"/.test(documentXml);
   const arabicStart = /<w:pgNumType[^>]*w:start="1"/.test(documentXml);
 
-  // Check footer existence and alignment (heuristic)
-  const hasFooter = /<w:ftr/.test(documentXml) || /<w:footer/.test(documentXml);
-  const footerCentered = /<w:jc\s+w:val="center"/.test(documentXml);
+  // Check footer XML files for page numbering presence and alignment
+  const hasFooter = footerXmls.length > 0;
+  const footerContent = footerXmls.join('');
+  // Look for page number fields (w:fldChar + PAGE) or w:pgNum in footer content
+  const hasPageNumInFooter = hasFooter && (
+    /PAGE/.test(footerContent) ||
+    /<w:pgNum/.test(footerContent) ||
+    /<w:fldSimple[^>]*PAGE/.test(footerContent) ||
+    /<w:instrText[^>]*>\s*PAGE\b/.test(footerContent)
+  );
+  const footerCentered = hasFooter && /<w:jc\s+w:val="center"/.test(footerContent);
 
   return {
     hasPrelimRoman: hasRoman,
     hasBodyArabic: hasArabic,
     romanStartsAtIii: romanStart,
     arabicStartsAtOne: arabicStart,
-    pageNumbersAtBottom: hasFooter,
+    pageNumbersAtBottom: hasPageNumInFooter || hasFooter,
     pageNumbersCentered: footerCentered,
   };
 }

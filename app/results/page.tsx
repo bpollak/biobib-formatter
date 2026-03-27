@@ -17,6 +17,7 @@ import ResultsAccordion from '@/components/ResultsAccordion';
 import ChangeLog from '@/components/ChangeLog';
 import ManualFixes from '@/components/ManualFixes';
 import { ValidationResults } from '@/lib/types';
+import { generateReportPDFClient } from '@/lib/pipeline/reporter-client';
 
 function OverallStatusBadge({ status }: { status: string }) {
   if (status === 'pass') {
@@ -79,7 +80,9 @@ function ResultsPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'docx' | 'report' | null>(null);
   const [correctedFileB64, setCorrectedFileB64] = useState<string | null>(null);
+  const [correctedFileBlobUrl, setCorrectedFileBlobUrl] = useState<string | null>(null);
   const [originalFileName, setOriginalFileName] = useState<string>('dissertation');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) {
@@ -93,7 +96,13 @@ function ResultsPageInner() {
     if (stored) {
       try {
         setResults(JSON.parse(stored));
-        if (storedFile) setCorrectedFileB64(storedFile);
+        if (storedFile) {
+          setCorrectedFileB64(storedFile);
+        } else {
+          // Check for Blob URL fallback (large files)
+          const blobUrl = sessionStorage.getItem(`correctedFileBlobUrl_${sessionId}`);
+          if (blobUrl) setCorrectedFileBlobUrl(blobUrl);
+        }
         if (storedName) setOriginalFileName(storedName);
       } catch {
         setError('Failed to load results');
@@ -102,42 +111,47 @@ function ResultsPageInner() {
       setError('Results not found. The session may have expired.');
     }
     setLoading(false);
-  }, [sessionId]);
+  }, [sessionId, router]);
 
   async function downloadFile(type: 'docx' | 'report') {
     if (!sessionId) return;
     setDownloading(type);
+    setDownloadError(null);
     try {
       if (type === 'docx') {
-        // Use base64-encoded corrected file stored in sessionStorage
-        if (!correctedFileB64) {
+        let url: string;
+        let shouldRevoke = true;
+        if (correctedFileB64) {
+          const byteCharacters = atob(correctedFileB64);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          });
+          url = URL.createObjectURL(blob);
+        } else if (correctedFileBlobUrl) {
+          url = correctedFileBlobUrl;
+          shouldRevoke = false; // Don't revoke — it's the only reference
+        } else {
           throw new Error('Corrected file not available. Please re-upload your document.');
         }
-        const byteCharacters = atob(correctedFileB64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `${originalFileName.replace(/\.docx$/i, '')}_corrected.docx`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        if (shouldRevoke) URL.revokeObjectURL(url);
       } else {
-        // Report still uses the server endpoint (not session-dependent in the same way)
-        const res = await fetch(`/api/download/${sessionId}/report`);
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || 'Download failed');
+        // Generate PDF report client-side from results JSON
+        if (!results) {
+          throw new Error('Results not available. Please re-upload your document.');
         }
-        const blob = await res.blob();
+        const pdfBytes = await generateReportPDFClient(results);
+        const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -148,7 +162,7 @@ function ResultsPageInner() {
         URL.revokeObjectURL(url);
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Download failed');
+      setDownloadError(err instanceof Error ? err.message : 'Download failed');
     } finally {
       setDownloading(null);
     }
@@ -188,6 +202,12 @@ function ResultsPageInner() {
       <Header />
 
       <Container maxWidth="lg" sx={{ py: 4, flexGrow: 1 }}>
+        {downloadError && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDownloadError(null)}>
+            {downloadError}
+          </Alert>
+        )}
+
         {/* Summary Card */}
         <Paper elevation={2} sx={{ p: 4, mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>

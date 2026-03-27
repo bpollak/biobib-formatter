@@ -84,11 +84,11 @@ const abstractRules: FormattingRule[] = [
     name: 'Abstract Top Margin 2.5"',
     description: 'The abstract page must have a 2.5" top margin',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (!doc.abstract.detected) {
-        return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', true, false,
+        return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', false, false,
           'Abstract section not detected — cannot check margin',
           undefined,
           'Add an Abstract section. The abstract page requires a 2.5" top margin.'
@@ -99,15 +99,15 @@ const abstractRules: FormattingRule[] = [
         return {
           ruleId: 'ABSTRACT-003', category: 'abstract', name: 'Abstract Top Margin 2.5"',
           status: 'warning', message: 'Could not determine abstract page top margin',
-          autoFixable: true, severity: 'major',
+          autoFixable: false, severity: 'major',
           manualFixInstruction: 'Set the abstract page top margin to 2.5". You may need to use a section break and custom margin for just that page.'
         };
       }
       if (topMargin >= MARGIN_2_5_INCH) {
-        return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', true, true,
+        return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', false, true,
           `Abstract top margin is ${(topMargin / 1440).toFixed(2)}" (≥ 2.5")`);
       }
-      return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', true, false,
+      return makeResult('ABSTRACT-003', 'Abstract Top Margin 2.5"', 'major', false, false,
         `Abstract top margin is ${(topMargin / 1440).toFixed(2)}" — must be 2.5"`,
         `Found: ${(topMargin / 1440).toFixed(2)}", required: 2.5"`,
         'The abstract page must have a 2.5" top margin. Use a section break to isolate the abstract page, then set its top margin to 2.5" via Layout → Margins → Custom Margins.'

@@ -52,7 +52,7 @@ export function fixMargins(
       (rightVal && parseInt(rightVal) < targetMargins.right) ||
       (bottomVal && parseInt(bottomVal) < targetMargins.bottom) ||
       (leftVal && parseInt(leftVal) < targetMargins.left) ||
-      (footerVal && parseInt(footerVal) !== targetMargins.footer);
+      (footerVal && parseInt(footerVal) < targetMargins.footer);
 
     if (needsFix) {
       modified = true;
@@ -179,11 +179,15 @@ export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): st
         if (lineVal && parseInt(lineVal) >= 480 && lineRuleVal !== 'exact') {
           return match; // Already double-spaced or more
         }
-        // Fix spacing
-        const newSpacing = spacingMatch[0].replace(
+        // Fix spacing - preserve lineRule attribute
+        let newSpacing = spacingMatch[0].replace(
           /w:line="[^"]*"/,
           'w:line="480"'
-        ).replace(/w:lineRule="[^"]*"/, '');
+        );
+        // If lineRule was "exact", change to "auto" for proportional double-spacing
+        if (/w:lineRule="exact"/.test(newSpacing)) {
+          newSpacing = newSpacing.replace(/w:lineRule="exact"/, 'w:lineRule="auto"');
+        }
         spacingFixed++;
         return match.replace(spacingMatch[0], newSpacing);
       }
@@ -229,14 +233,20 @@ export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[])
         return match;
       }
 
-      // Check indentation
-      const indMatch = /<w:ind[^>]*>/.exec(pPrContent);
+      // Check indentation - handle both <w:ind .../> and <w:ind ...>
+      const indMatch = /<w:ind[^>]*\/?>/.exec(pPrContent);
       if (indMatch) {
         const firstLine = getXmlAttr(indMatch[0], 'w:firstLine');
         if (!firstLine || parseInt(firstLine) < 720) {
-          const newInd = firstLine
-            ? indMatch[0].replace(/w:firstLine="[^"]*"/, 'w:firstLine="720"')
-            : indMatch[0].replace('>', ' w:firstLine="720">');
+          let newInd: string;
+          if (firstLine) {
+            newInd = indMatch[0].replace(/w:firstLine="[^"]*"/, 'w:firstLine="720"');
+          } else if (indMatch[0].endsWith('/>')) {
+            // Self-closing: <w:ind w:left="0"/> → <w:ind w:left="0" w:firstLine="720"/>
+            newInd = indMatch[0].replace('/>', ' w:firstLine="720"/>');
+          } else {
+            newInd = indMatch[0].replace('>', ' w:firstLine="720">');
+          }
           indentFixed++;
           return match.replace(indMatch[0], newInd);
         }
@@ -265,10 +275,12 @@ export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[])
 export function fixHeadingItalics(documentXml: string, changes: ChangeRecord[]): string {
   let italicFixed = 0;
   
-  // Find heading paragraphs and remove italic
+  // Find heading paragraphs and remove italic (handle any attribute order in pPr)
   const result = documentXml.replace(
-    /(<w:p[ >][\s\S]*?<w:pPr>[\s\S]*?<w:pStyle\s+w:val="Heading[^"]*"[\s\S]*?<\/w:pPr>)([\s\S]*?)(<\/w:p>)/g,
+    /(<w:p\b[^>]*>[\s\S]*?<w:pPr>[\s\S]*?<\/w:pPr>)([\s\S]*?)(<\/w:p>)/g,
     (match) => {
+      // Only process if this paragraph has a Heading style
+      if (!/<w:pStyle\s+w:val="Heading[^"]*"/.test(match)) return match;
       if (/<w:i\s*\/>/.test(match) || /<w:i>/.test(match)) {
         italicFixed++;
         return match

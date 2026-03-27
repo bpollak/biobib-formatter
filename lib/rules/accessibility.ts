@@ -124,17 +124,17 @@ const accessibilityRules: FormattingRule[] = [
     name: 'Document Language Set',
     description: 'The document language must be explicitly set to English (or applicable language)',
     severity: 'minor',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Check if language is set in the XML
       const hasLang = /<w:lang[^>]+w:val="en-US"/.test(doc.rawXml) ||
                       /<w:lang[^>]+w:bidi="[^"]+"/.test(doc.rawXml);
       if (hasLang) {
-        return makeResult('A11Y-005', 'Document Language Set', 'minor', true, true,
+        return makeResult('A11Y-005', 'Document Language Set', 'minor', false, true,
           'Document language is set');
       }
-      return makeResult('A11Y-005', 'Document Language Set', 'minor', true, false,
+      return makeResult('A11Y-005', 'Document Language Set', 'minor', false, false,
         'Document language may not be explicitly set',
         undefined,
         'Set document language: File → Options → Language → Office authoring languages → ensure English (US) is set as default. Also: Review → Language → Set Proofing Language.'

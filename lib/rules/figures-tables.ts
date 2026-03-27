@@ -119,20 +119,20 @@ const figuresTablesRules: FormattingRule[] = [
     name: 'Consistent Caption Formatting',
     description: 'All captions should use consistent style, font, and size',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       const captionParas = doc.paragraphs.filter(p => p.isCaption);
       if (captionParas.length === 0) {
-        return { ruleId: 'FIG-005', category: 'figures-tables', name: 'Consistent Caption Formatting', status: 'skipped', message: 'No captions detected', autoFixable: true, severity: 'major' };
+        return { ruleId: 'FIG-005', category: 'figures-tables', name: 'Consistent Caption Formatting', status: 'skipped', message: 'No captions detected', autoFixable: false, severity: 'major' };
       }
       const fontSizes = new Set(captionParas.filter(p => p.fontSize).map(p => p.fontSize));
       const fontFamilies = new Set(captionParas.filter(p => p.fontFamily).map(p => p.fontFamily));
       if (fontSizes.size <= 1 && fontFamilies.size <= 1) {
-        return makeResult('FIG-005', 'Consistent Caption Formatting', 'major', true, true,
+        return makeResult('FIG-005', 'Consistent Caption Formatting', 'major', false, true,
           'Caption formatting is consistent');
       }
-      return makeResult('FIG-005', 'Consistent Caption Formatting', 'major', true, false,
+      return makeResult('FIG-005', 'Consistent Caption Formatting', 'major', false, false,
         'Caption formatting is inconsistent',
         `${fontSizes.size} different font sizes, ${fontFamilies.size} different font families`,
         'Ensure all captions use the same font, size, and style. Apply the "Caption" style to all captions via Home → Styles.'

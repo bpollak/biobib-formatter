@@ -5,20 +5,28 @@ export function validateDocument(doc: DocumentModel): RuleResult[] {
   const results: RuleResult[] = [];
 
   for (const rule of allRules) {
-    // Check if rule applies to this document type
+    // Check if rule applies to this document type — skip without calling check()
     if (rule.appliesTo === 'dissertation' && doc.metadata.type !== 'dissertation') {
       results.push({
-        ...rule.check(doc),
+        ruleId: rule.id,
+        category: rule.category,
+        name: rule.name,
         status: 'skipped',
-        message: `Skipped: not applicable for ${doc.metadata.type === 'thesis' ? "master's thesis" : 'unknown type'}`,
+        message: `Skipped: not applicable for master's thesis`,
+        autoFixable: rule.autoFixable,
+        severity: rule.severity,
       });
       continue;
     }
     if (rule.appliesTo === 'thesis' && doc.metadata.type !== 'thesis') {
       results.push({
-        ...rule.check(doc),
+        ruleId: rule.id,
+        category: rule.category,
+        name: rule.name,
         status: 'skipped',
-        message: `Skipped: not applicable for ${doc.metadata.type === 'dissertation' ? 'doctoral dissertation' : 'unknown type'}`,
+        message: 'Skipped: not applicable for doctoral dissertation',
+        autoFixable: rule.autoFixable,
+        severity: rule.severity,
       });
       continue;
     }
@@ -27,10 +35,4 @@ export function validateDocument(doc: DocumentModel): RuleResult[] {
   }
 
   return results;
-}
-
-export function autoFixDocument(docBuffer: Buffer, doc: DocumentModel): { correctedBuffer: Buffer; changes: any[] } {
-  // This is a simplified version - the actual fixing happens in fixer.ts
-  // For now, just return the original buffer
-  return { correctedBuffer: docBuffer, changes: [] };
 }

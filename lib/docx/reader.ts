@@ -6,6 +6,7 @@ export interface DocxFiles {
   numberingXml: string;
   contentTypesXml: string;
   settingsXml: string;
+  footerXmls: string[];
 }
 
 /**
@@ -20,7 +21,16 @@ export async function readDocxFiles(buffer: Buffer): Promise<DocxFiles> {
   const contentTypesXml = await extractFile(zip, '[Content_Types].xml');
   const settingsXml = await extractFile(zip, 'word/settings.xml');
 
-  return { documentXml, stylesXml, numberingXml, contentTypesXml, settingsXml };
+  // Extract all footer files
+  const footerXmls: string[] = [];
+  for (const [path] of Object.entries(zip.files)) {
+    if (/^word\/footer\d+\.xml$/i.test(path)) {
+      const content = await extractFile(zip, path);
+      if (content) footerXmls.push(content);
+    }
+  }
+
+  return { documentXml, stylesXml, numberingXml, contentTypesXml, settingsXml, footerXmls };
 }
 
 async function extractFile(zip: JSZip, path: string): Promise<string> {
@@ -71,7 +81,8 @@ export function parseMargins(documentXml: string): Array<{
  */
 export function extractParagraphs(documentXml: string): string[] {
   const paragraphs: string[] = [];
-  const regex = /<w:p[ >]([\s\S]*?)<\/w:p>/g;
+  // Match both regular and self-closing paragraph elements
+  const regex = /<w:p\b[^>]*\/?>(?:[\s\S]*?<\/w:p>)?/g;
   let match;
   while ((match = regex.exec(documentXml)) !== null) {
     paragraphs.push(match[0]);
@@ -131,9 +142,11 @@ export function getSpacing(paragraphXml: string): { before?: number; after?: num
   const spacingMatch = /<w:spacing[^>]*>/.exec(paragraphXml);
   if (!spacingMatch) return {};
   const spacingStr = spacingMatch[0];
+  const beforeVal = getAttr(spacingStr, 'w:before');
+  const afterVal = getAttr(spacingStr, 'w:after');
   return {
-    before: parseInt(getAttr(spacingStr, 'w:before') || '0') || undefined,
-    after: parseInt(getAttr(spacingStr, 'w:after') || '0') || undefined,
+    before: beforeVal !== undefined ? parseInt(beforeVal) : undefined,
+    after: afterVal !== undefined ? parseInt(afterVal) : undefined,
   };
 }
 
@@ -184,14 +197,18 @@ export function getRunColor(runXml: string): string | undefined {
  * Check if run has italic
  */
 export function isRunItalic(runXml: string): boolean {
-  return /<w:i\s*\/>/.test(runXml) || /<w:i>/.test(runXml);
+  // Match <w:i/> or <w:i> but NOT <w:iCs/> or <w:iCs>
+  return /<w:i\s*\/>/.test(runXml.replace(/<w:iCs[^>]*\/?>/g, '')) ||
+         /<w:i>/.test(runXml.replace(/<w:iCs[^>]*>/g, ''));
 }
 
 /**
  * Check if run has bold
  */
 export function isRunBold(runXml: string): boolean {
-  return /<w:b\s*\/>/.test(runXml) || /<w:b>/.test(runXml);
+  // Match <w:b/> or <w:b> but NOT <w:bCs/> or <w:bCs>
+  return /<w:b\s*\/>/.test(runXml.replace(/<w:bCs[^>]*\/?>/g, '')) ||
+         /<w:b>/.test(runXml.replace(/<w:bCs[^>]*>/g, ''));
 }
 
 /**
@@ -270,7 +287,8 @@ export function getHeadingLevel(styleName: string): number | undefined {
  * Helper: get attribute value from XML element string
  */
 export function getAttr(xml: string, attr: string): string | undefined {
-  const regex = new RegExp(`${attr.replace(':', '\\:')}="([^"]*)"`, 'i');
+  const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`${escaped}="([^"]*)"`, 'i');
   const match = regex.exec(xml);
   return match ? match[1] : undefined;
 }

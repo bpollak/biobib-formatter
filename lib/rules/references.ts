@@ -43,20 +43,20 @@ const referencesRules: FormattingRule[] = [
     name: 'References Single-Spaced Within Entries',
     description: 'Each reference entry must be single-spaced internally',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {
-        return { ruleId: 'REF-002', category: 'references', name: 'References Single-Spaced Within Entries', status: 'skipped', message: 'No reference entries detected', autoFixable: true, severity: 'major' };
+        return { ruleId: 'REF-002', category: 'references', name: 'References Single-Spaced Within Entries', status: 'skipped', message: 'No reference entries detected', autoFixable: false, severity: 'major' };
       }
       const wrongSpacing = doc.references.filter(r =>
         r.lineSpacing !== undefined && r.lineSpacing > LINE_SPACING_SINGLE * 1.5
       );
       if (wrongSpacing.length === 0) {
-        return makeResult('REF-002', 'References Single-Spaced Within Entries', 'major', true, true,
+        return makeResult('REF-002', 'References Single-Spaced Within Entries', 'major', false, true,
           'Reference entries appear to be single-spaced');
       }
-      return makeResult('REF-002', 'References Single-Spaced Within Entries', 'major', true, false,
+      return makeResult('REF-002', 'References Single-Spaced Within Entries', 'major', false, false,
         `${wrongSpacing.length} reference entry(ies) may not be single-spaced`,
         undefined,
         'Select all text in the References section and set line spacing to Single (1.0). Then adjust spacing between entries to double-space.'
@@ -69,20 +69,20 @@ const referencesRules: FormattingRule[] = [
     name: 'Double-Space Between Reference Entries',
     description: 'There must be a double-space (one blank line) between each reference entry',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {
-        return { ruleId: 'REF-003', category: 'references', name: 'Double-Space Between Reference Entries', status: 'skipped', message: 'No reference entries detected', autoFixable: true, severity: 'major' };
+        return { ruleId: 'REF-003', category: 'references', name: 'Double-Space Between Reference Entries', status: 'skipped', message: 'No reference entries detected', autoFixable: false, severity: 'major' };
       }
       const noSpacing = doc.references.filter(r =>
         r.spaceAfter !== undefined && r.spaceAfter < 200
       );
       if (noSpacing.length === 0) {
-        return makeResult('REF-003', 'Double-Space Between Reference Entries', 'major', true, true,
+        return makeResult('REF-003', 'Double-Space Between Reference Entries', 'major', false, true,
           'References have appropriate spacing between entries');
       }
-      return makeResult('REF-003', 'Double-Space Between Reference Entries', 'major', true, false,
+      return makeResult('REF-003', 'Double-Space Between Reference Entries', 'major', false, false,
         `${noSpacing.length} reference entry(ies) may not have double-spacing after them`,
         undefined,
         'In the References section, set "Space After" to 12pt (or equivalent) for each entry to create a blank line between entries. Each entry should be single-spaced internally.'

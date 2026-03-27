@@ -80,6 +80,11 @@ export default function UploadZone({ onFileSelected, selectedFile, disabled }: U
           <Typography variant="caption" color="text.secondary">
             {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Click or drag to replace
           </Typography>
+          {selectedFile.size > 40 * 1024 * 1024 && (
+            <Typography variant="caption" sx={{ display: 'block', color: '#E65100', mt: 0.5, fontWeight: 600 }}>
+              Large file ({(selectedFile.size / 1024 / 1024).toFixed(0)} MB) — processing may take longer
+            </Typography>
+          )}
         </Box>
       ) : isDragActive && !isDragReject ? (
         <Box>
