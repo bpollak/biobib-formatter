@@ -664,18 +664,17 @@ dissertation-formatter/
 
 ### Typography
 ### Typography (UCSD Campus Standard from brand.ucsd.edu)
-- **Headings (H1-H5):** Teko SemiBold — condensed geometric sans-serif, ALL CAPS, loaded from `cdn.ucsd.edu/cms/decorator-5/styles/teko.css`. Substitute for Refrigerator Deluxe (brand headline font).
-- **Body text:** Roboto — regular + bold, loaded from Google Fonts. Substitute for Brix Sans (brand body font).
-- Font imports via CSS `@import` in globals.css (not `<link>` tags)
-- **Teko is used for:** headings (H1–H6) and site title in the white header bar
-- **Roboto is used for:** nav links, buttons, labels, body text, all other UI elements
-- H1-H3: `fontFamily: "'Teko-SemiBold', 'Teko', sans-serif"`, uppercase, fontWeight 600
-- H4-H5: same, uppercase
-- H6: same (mixed case OK)
-- Body: Roboto, 12-16px for digital
-- **Site title in header:** `fontFamily: "'Teko-SemiBold', 'Teko', sans-serif"`, uppercase, fontWeight 600, fontSize 1.35rem, letterSpacing 1px
-- **Nav links:** Roboto, fontSize 16px, fontWeight 400, white on `#00629b` background
-- Fallbacks: "Helvetica Neue", Arial, sans-serif
+Verified against blink.ucsd.edu/technology/websites/training/advanced/kitchen-sink.html (computed styles, March 2026).
+
+- **Font loading:** `@import` in globals.css — Roboto from Google Fonts, Teko from `cdn.ucsd.edu/cms/decorator-5/styles/teko.css`
+- **Site title:** Roboto, weight 400, 1.35rem, uppercase, letterSpacing 1px
+- **H1:** Teko-SemiBold, weight 500, 3.5rem (56px), mixed case (no textTransform)
+- **H2:** Teko-SemiBold, weight 500, 2.2rem (35.2px), mixed case
+- **H3:** Roboto, weight 400, 1.44rem (23px), mixed case
+- **H4:** Roboto, weight 400, 1.125rem (18px), mixed case
+- **H5–H6:** Roboto, weight 400, decreasing sizes, mixed case
+- **Body / nav links / buttons:** Roboto, weight 400, 16px
+- **Fallbacks:** sans-serif
 
 **Logo usage:**
 - Desktop title bar (white background): `https://www.ucsd.edu/_resources/img/logo_UCSD.png` (dark version), height 50px

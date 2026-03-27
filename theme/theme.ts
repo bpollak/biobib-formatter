@@ -28,14 +28,16 @@ export const ucsdTheme = createTheme({
   },
   typography: {
     fontFamily: 'Roboto, sans-serif',
-    // UCSD CMS V5: H1-H2 use Teko-SemiBold (mixed case, NOT uppercase). H3+ use Roboto bold.
-    // Source: computed styles from department.ucsd.edu
-    h1: { fontFamily: "'Teko-SemiBold', sans-serif", fontWeight: 700, fontSize: '2.5rem' },
-    h2: { fontFamily: "'Teko-SemiBold', sans-serif", fontWeight: 700, fontSize: '2rem' },
-    h3: { fontFamily: 'Roboto, sans-serif', fontWeight: 700, fontSize: '1.75rem' },
-    h4: { fontFamily: 'Roboto, sans-serif', fontWeight: 700, fontSize: '1.5rem' },
-    h5: { fontFamily: 'Roboto, sans-serif', fontWeight: 700, fontSize: '1.25rem' },
-    h6: { fontFamily: 'Roboto, sans-serif', fontWeight: 700, fontSize: '1rem' },
+    // UCSD CMS V5 — verified from blink.ucsd.edu kitchen-sink.html computed styles
+    // H1-H2: Teko-SemiBold, weight 500, mixed case (no textTransform)
+    // H3+: Roboto, weight 400, mixed case
+    // Site title in header: Roboto 400, uppercase, 1.35rem (set in Header.tsx)
+    h1: { fontFamily: "'Teko-SemiBold', sans-serif", fontWeight: 500, fontSize: '3.5rem' },
+    h2: { fontFamily: "'Teko-SemiBold', sans-serif", fontWeight: 500, fontSize: '2.2rem' },
+    h3: { fontFamily: 'Roboto, sans-serif', fontWeight: 400, fontSize: '1.44rem' },
+    h4: { fontFamily: 'Roboto, sans-serif', fontWeight: 400, fontSize: '1.125rem' },
+    h5: { fontFamily: 'Roboto, sans-serif', fontWeight: 400, fontSize: '1rem' },
+    h6: { fontFamily: 'Roboto, sans-serif', fontWeight: 400, fontSize: '0.875rem' },
     body1: { fontFamily: 'Roboto, sans-serif', fontSize: '1rem' },
     body2: { fontFamily: 'Roboto, sans-serif', fontSize: '0.875rem' },
   },
