@@ -177,7 +177,7 @@ export default function Header() {
                 </IconButton>
               </Box>
 
-              {/* Right: UC San Diego logo */}
+              {/* Right: UC San Diego logo (white/reversed for blue nav bar) */}
               <Link
                 href="https://ucsd.edu"
                 target="_blank"
@@ -186,7 +186,7 @@ export default function Header() {
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="https://www.ucsd.edu/_resources/img/logo_UCSD.png"
+                  src="https://www.ucsd.edu/_resources/img/logo_UCSD_white.png"
                   alt="UC San Diego"
                   style={{ height: 36, display: 'block' }}
                   onError={(e) => {
