@@ -15,7 +15,7 @@ export const ChangelogSection = ({ results }: ChangelogSectionProps) => {
   return (
     <Box sx={{ bgColor: 'background.paper', borderRadius: 2, p: 4, mb: 4 }}>
       <Alert severity="info" sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Typography variant="h2" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <ChangeIcon fontSize="inherit" />
           Here's What We Changed
         </Typography>

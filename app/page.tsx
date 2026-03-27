@@ -168,7 +168,7 @@ export default function HomePage() {
             <>
               {/* ── Page Title ── */}
               <Box sx={{ mb: 5 }}>
-                <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 1 }}>
+                <Typography variant="h1" sx={{ color: '#182B49', mb: 1 }}>
                   Check Your Dissertation Formatting
                 </Typography>
                 <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 650 }}>
@@ -179,7 +179,7 @@ export default function HomePage() {
 
               {/* ── How It Works ── */}
               <Box id="how-it-works" sx={{ mb: 5 }}>
-                <Typography variant="h5" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+                <Typography variant="h2" sx={{ color: '#182B49', mb: 3 }}>
                   How It Works
                 </Typography>
                 <Box
@@ -221,7 +221,7 @@ export default function HomePage() {
                           {step}
                         </Typography>
                       </Box>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: '#182B49' }}>
+                      <Typography variant="h3" sx={{ fontWeight: 700, color: '#182B49' }}>
                         {title}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
@@ -240,7 +240,7 @@ export default function HomePage() {
               )}
 
               <Paper elevation={2} sx={{ p: 4, mb: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, color: '#182B49', mb: 3 }}>
+                <Typography variant="h2" sx={{ color: '#182B49', mb: 3 }}>
                   Document Details
                 </Typography>
 

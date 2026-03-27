@@ -62,7 +62,7 @@ export default function Processing() {
 
       <Box component="main" sx={{ flex: 1, bgcolor: 'background.default', py: 4 }}>
         <Container sx={{ maxWidth: '1170px !important' }}>
-          <Typography variant="h5" sx={{ mb: 4, textAlign: 'center', fontWeight: 700, color: '#182B49' }}>
+          <Typography variant="h2" sx={{ mb: 4, textAlign: 'center', color: '#182B49' }}>
             Processing Your Document
           </Typography>
           <Box sx={{ maxWidth: 600, mx: 'auto' }}>

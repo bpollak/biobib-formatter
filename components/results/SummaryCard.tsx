@@ -40,7 +40,7 @@ export const SummaryCard = ({ results }: SummaryCardProps) => {
       </Alert>
       
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
+        <Typography variant="h2" sx={{ mb: 2 }}>
           Formatting Check Summary
         </Typography>
         <Stack spacing={2} sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>

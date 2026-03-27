@@ -156,7 +156,7 @@ export default function AboutPage() {
       <Box component="main" sx={{ flex: 1 }}>
         <Container sx={{ py: 5, maxWidth: '1170px !important' }}>
           {/* Page Title */}
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 2 }}>
+          <Typography variant="h1" sx={{ color: '#182B49', mb: 2 }}>
             About the Dissertation Formatting Agent
           </Typography>
 
@@ -175,9 +175,8 @@ export default function AboutPage() {
           {CATEGORIES.map((category, index) => (
             <Box key={category.name} sx={{ mb: 4 }}>
               <Typography
-                variant="h6"
+                variant="h2"
                 sx={{
-                  fontWeight: 700,
                   color: '#00629b',
                   mb: 1.5,
                 }}
@@ -217,7 +216,7 @@ export default function AboutPage() {
           <Divider sx={{ mt: 4, mb: 4 }} />
 
           {/* FAQ Section */}
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+          <Typography variant="h2" sx={{ color: '#182B49', mb: 3 }}>
             Frequently Asked Questions
           </Typography>
           {FAQ_ITEMS.map(({ q, a }) => (

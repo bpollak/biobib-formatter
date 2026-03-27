@@ -15,7 +15,7 @@ export const ManualFixesSection = ({ results }: ManualFixesSectionProps) => {
   return (
     <Box sx={{ bgColor: 'background.paper', borderRadius: 2, p: 4, mb: 4 }}>
       <Alert severity="warning" sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Typography variant="h2" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <WarningIcon fontSize="inherit" />
           Manual Fixes Required
         </Typography>

@@ -48,7 +48,7 @@ export default function ProcessingView({ progress, stage, steps }: ProcessingVie
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           <CircularProgress size={28} sx={{ color: '#182B49' }} />
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 600, color: '#182B49' }}>
+            <Typography variant="h2" sx={{ color: '#182B49' }}>
               Checking Your Document
             </Typography>
             <Typography variant="caption" color="text.secondary">

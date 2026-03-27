@@ -212,7 +212,7 @@ function ResultsPageInner() {
         <Paper elevation={2} sx={{ p: 4, mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
             <Box>
-              <Typography variant="h5" sx={{ fontWeight: 700, color: '#182B49', mb: 0.5 }}>
+              <Typography variant="h1" sx={{ color: '#182B49', mb: 0.5 }}>
                 Formatting Check Results
               </Typography>
               <Typography variant="body2" color="text.secondary">
@@ -260,7 +260,7 @@ function ResultsPageInner() {
         {/* Manual Fixes */}
         {results.manualFixes.length > 0 && (
           <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#C62828', mb: 2 }}>
+            <Typography variant="h2" sx={{ color: '#C62828', mb: 2 }}>
               🛠️ Manual Fixes Required ({results.manualFixes.length})
             </Typography>
             <ManualFixes fixes={results.manualFixes} />
@@ -270,7 +270,7 @@ function ResultsPageInner() {
         {/* Changelog */}
         {results.changes.length > 0 && (
           <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#01579B', mb: 2 }}>
+            <Typography variant="h2" sx={{ color: '#01579B', mb: 2 }}>
               🔧 Auto-Applied Changes ({results.changes.length})
             </Typography>
             <ChangeLog changes={results.changes} />
@@ -279,7 +279,7 @@ function ResultsPageInner() {
 
         {/* Compliance Checklist */}
         <Paper elevation={2} sx={{ p: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: '#182B49', mb: 3 }}>
+          <Typography variant="h2" sx={{ color: '#182B49', mb: 3 }}>
             📋 Full Compliance Checklist
           </Typography>
           <ResultsAccordion rules={results.rules} />
