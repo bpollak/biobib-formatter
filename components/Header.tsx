@@ -57,9 +57,9 @@ export default function Header() {
                 component="span"
                 sx={{
                   color: '#000000',
-                  fontFamily: "'Teko-SemiBold', 'Teko', sans-serif",
+                  fontFamily: 'Roboto, sans-serif',
                   fontSize: '1.35rem',
-                  fontWeight: 600,
+                  fontWeight: 400,
                   letterSpacing: '1px',
                   textTransform: 'uppercase',
                 }}
