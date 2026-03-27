@@ -12,7 +12,9 @@
 - ~20 auto-fixable rules
 - Validation pipeline: parse → validate → fix → report
 - Results page with accordion checklist, changelog, manual fixes, download buttons
-- UCSD CMS V5 template (department.ucsd.edu) — teal stripe + white title bar + blue nav bar + navy footer with UCSD logo. Roboto font. See SPEC.md Section 9 for exact specs. All UI changes MUST maintain CMS V5 compliance.
+- UCSD CMS V5 template (department.ucsd.edu) — teal stripe + white title bar + blue nav bar + navy footer with UCSD logo. See SPEC.md Section 9 for exact specs. All UI changes MUST maintain CMS V5 compliance.
+- **Typography:** Site title = Teko-SemiBold (NOT Roboto). Nav links = Roboto 400 16px. Headings = Teko-SemiBold.
+- **Logo:** Desktop title bar = dark `logo_UCSD.png`. Mobile nav bar = white `logo_UCSD_white.png`. Never use dark logo on blue background.
 
 ## Design Decisions
 - JSZip for direct .docx XML manipulation (mammoth only for HTML preview)

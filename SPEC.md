@@ -653,8 +653,8 @@ dissertation-formatter/
 
 ### Header (3-part structure)
 1. **Teal stripe**: Thin decorative bar at top, background `#2b92b9`
-2. **Title bar**: White background, site name in BLACK uppercase Teko SemiBold (1.75rem) on left, UC San Diego logo on right. Height ~92px, padding 1.5em 0
-3. **Nav bar**: Background `#00629b` (UCSD blue, NOT navy), white text links, hover `#004268`, font-size 16px
+2. **Title bar**: White background, site name in BLACK uppercase **Teko-SemiBold** (1.35rem, fontWeight 600, letterSpacing 1px) on left, UC San Diego logo (`logo_UCSD.png` — dark version) on right. Height ~92px, padding 1.5em 0. **Desktop only — hidden on mobile.**
+3. **Nav bar**: Background `#00629b` (UCSD blue, NOT navy), white text links, hover `#004268`, font-size 16px, Roboto 400
 
 ### Footer
 - Background: `#182B49` (navy)
@@ -667,14 +667,20 @@ dissertation-formatter/
 - **Headings (H1-H5):** Teko SemiBold — condensed geometric sans-serif, ALL CAPS, loaded from `cdn.ucsd.edu/cms/decorator-5/styles/teko.css`. Substitute for Refrigerator Deluxe (brand headline font).
 - **Body text:** Roboto — regular + bold, loaded from Google Fonts. Substitute for Brix Sans (brand body font).
 - Font imports via CSS `@import` in globals.css (not `<link>` tags)
-- Teko is ONLY for headings. Nav links, buttons, labels, body text all use Roboto.
-- H1-H3: Teko SemiBold, uppercase, fontWeight 600
-- H4-H5: Teko SemiBold, uppercase
-- H6: Teko SemiBold (mixed case OK)
+- **Teko is used for:** headings (H1–H6) and site title in the white header bar
+- **Roboto is used for:** nav links, buttons, labels, body text, all other UI elements
+- H1-H3: `fontFamily: "'Teko-SemiBold', 'Teko', sans-serif"`, uppercase, fontWeight 600
+- H4-H5: same, uppercase
+- H6: same (mixed case OK)
 - Body: Roboto, 12-16px for digital
-- Site title in header: Teko SemiBold
+- **Site title in header:** `fontFamily: "'Teko-SemiBold', 'Teko', sans-serif"`, uppercase, fontWeight 600, fontSize 1.35rem, letterSpacing 1px
+- **Nav links:** Roboto, fontSize 16px, fontWeight 400, white on `#00629b` background
 - Fallbacks: "Helvetica Neue", Arial, sans-serif
-- Site title: uppercase, letter-spacing 1px
+
+**Logo usage:**
+- Desktop title bar (white background): `https://www.ucsd.edu/_resources/img/logo_UCSD.png` (dark version), height 50px
+- Mobile nav bar (blue `#00629b` background): `https://www.ucsd.edu/_resources/img/logo_UCSD_white.png` (white/reversed version), height 36px
+- Footer: `https://cdn.ucsd.edu/developer/decorator/5.0.2/img/ucsd-footer-logo-white.png`, width 158px height 30px
 
 ### Colors
 
@@ -691,8 +697,8 @@ dissertation-formatter/
 - Teal stripe still appears at top
 - White title bar is **hidden** on mobile
 - Nav bar collapses horizontal links; instead shows:
-  - Left: hamburger `IconButton` with `MenuIcon` + "MENU" text (white, uppercase)
-  - Right: UC San Diego logo (36px tall)
+  - Left: hamburger `IconButton` with `MenuIcon` + "MENU" text (white, uppercase, Roboto 600)
+  - Right: UC San Diego **white logo** (`logo_UCSD_white.png` — white/reversed version) at 36px tall. **Do NOT use the dark logo here** — it is placed on the blue nav bar background and requires the white variant.
 - Tapping hamburger opens an MUI `Drawer` sliding in from the left:
   - Drawer background: `#00629b` (nav blue)
   - Top bar background: `#004268` (darker blue) with "✕ Close Nav" button
