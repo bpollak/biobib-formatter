@@ -7,6 +7,14 @@ import {
   fixBodySpacing,
   fixFirstLineIndent,
   fixHeadingItalics,
+  fixTitlePageNumbering,
+  fixCopyrightPageNumbering,
+  fixPreliminaryPageNumbering,
+  fixBodyPageNumbering,
+  fixFooterPageNumberCentering,
+  fixImageAltText,
+  fixTableHeaders,
+  fixDocumentLanguage,
 } from '../docx/writer';
 import { allRules } from '../rules';
 
@@ -20,6 +28,15 @@ export async function applyAutoFixes(
   const zip = await JSZip.loadAsync(docBuffer);
   let documentXml = await (zip.file('word/document.xml')?.async('string') || Promise.resolve(''));
   let stylesXml = await (zip.file('word/styles.xml')?.async('string') || Promise.resolve(''));
+
+  // Load all footer files
+  const footerFiles: { path: string; xml: string }[] = [];
+  for (const [path] of Object.entries(zip.files)) {
+    if (/^word\/footer\d+\.xml$/i.test(path)) {
+      const content = await (zip.file(path)?.async('string') || Promise.resolve(''));
+      if (content) footerFiles.push({ path, xml: content });
+    }
+  }
 
   // Determine which rules need fixing
   const failingRuleIds = new Set<string>();
@@ -69,6 +86,36 @@ export async function applyAutoFixes(
     if (failingRuleIds.has('TEXT-001')) {
       documentXml = fixHeadingItalics(documentXml, allChanges);
     }
+
+    // ── Pagination fixes ──
+    if (failingRuleIds.has('PAGE-001')) {
+      documentXml = fixTitlePageNumbering(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('PAGE-002')) {
+      documentXml = fixCopyrightPageNumbering(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('PAGE-003') || failingRuleIds.has('PAGE-004')) {
+      documentXml = fixPreliminaryPageNumbering(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('PAGE-005')) {
+      documentXml = fixBodyPageNumbering(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('PAGE-006')) {
+      for (const footer of footerFiles) {
+        footer.xml = fixFooterPageNumberCentering(footer.xml, allChanges);
+      }
+    }
+
+    // ── Accessibility fixes ──
+    if (failingRuleIds.has('A11Y-002')) {
+      documentXml = fixImageAltText(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('A11Y-003')) {
+      documentXml = fixTableHeaders(documentXml, allChanges);
+    }
+    if (failingRuleIds.has('A11Y-005')) {
+      stylesXml = fixDocumentLanguage(stylesXml, allChanges);
+    }
   } catch (error) {
     console.error('Error applying fixes:', error);
   }
@@ -77,6 +124,10 @@ export async function applyAutoFixes(
   zip.file('word/document.xml', documentXml);
   if (stylesXml) {
     zip.file('word/styles.xml', stylesXml);
+  }
+  // Save modified footer files
+  for (const footer of footerFiles) {
+    zip.file(footer.path, footer.xml);
   }
   const arrayBuffer = await zip.generateAsync({
     type: 'arraybuffer',
