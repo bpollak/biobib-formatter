@@ -69,7 +69,7 @@ const referencesRules: FormattingRule[] = [
     name: 'Double-Space Between Reference Entries',
     description: 'There must be a double-space (one blank line) between each reference entry',
     severity: 'major',
-    autoFixable: false,
+    autoFixable: true,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {

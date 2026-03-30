@@ -277,6 +277,7 @@ function ResultsPageInner() {
         if (!results) {
           throw new Error('Results not available. Please re-upload your document.');
         }
+        // Generate PDF client-side to avoid session storage issues on Vercel
         const pdfBytes = await generateReportPDFClient(results);
         const blob = new Blob([new Uint8Array(pdfBytes)], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);

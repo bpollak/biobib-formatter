@@ -74,7 +74,7 @@ export async function generateReportPDF(results: ValidationResults): Promise<Buf
 
     for (const change of results.changes.slice(0, 15)) { // Limit to 15 for space
       if (y < margin + 100) {
-        // Add new page if needed
+        // Add new page if needed - Assign page variable to target new page
         page = pdfDoc.addPage([612, 792]);
         y = page.getSize().height - margin;
         page.drawText('CHANGES APPLIED (continued)', {
@@ -108,6 +108,7 @@ export async function generateReportPDF(results: ValidationResults): Promise<Buf
 
     for (const fix of results.manualFixes.slice(0, 15)) {
       if (y < margin + 100) {
+        // Add new page if needed - Assign page variable to target new page
         page = pdfDoc.addPage([612, 792]);
         y = page.getSize().height - margin;
         page.drawText('MANUAL FIXES REQUIRED (continued)', {
