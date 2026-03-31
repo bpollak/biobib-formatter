@@ -208,8 +208,7 @@ function ResultsPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'docx' | 'report' | null>(null);
-  const [correctedFileB64, setCorrectedFileB64] = useState<string | null>(null);
-  const [correctedFileBlobUrl, setCorrectedFileBlobUrl] = useState<string | null>(null);
+  const [correctedFileUrl, setCorrectedFileUrl] = useState<string | null>(null);
   const [originalFileName, setOriginalFileName] = useState<string>('dissertation');
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -220,17 +219,12 @@ function ResultsPageInner() {
       return;
     }
     const stored = sessionStorage.getItem(`results_${sessionId}`);
-    const storedFile = sessionStorage.getItem(`correctedFile_${sessionId}`);
+    const storedFileUrl = sessionStorage.getItem(`correctedFileUrl_${sessionId}`);
     const storedName = sessionStorage.getItem(`originalFileName_${sessionId}`);
     if (stored) {
       try {
         setResults(JSON.parse(stored));
-        if (storedFile) {
-          setCorrectedFileB64(storedFile);
-        } else {
-          const blobUrl = sessionStorage.getItem(`correctedFileBlobUrl_${sessionId}`);
-          if (blobUrl) setCorrectedFileBlobUrl(blobUrl);
-        }
+        if (storedFileUrl) setCorrectedFileUrl(storedFileUrl);
         if (storedName) setOriginalFileName(storedName);
       } catch {
         setError('Failed to load results');
@@ -247,32 +241,16 @@ function ResultsPageInner() {
     setDownloadError(null);
     try {
       if (type === 'docx') {
-        let url: string;
-        let shouldRevoke = true;
-        if (correctedFileB64) {
-          const byteCharacters = atob(correctedFileB64);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], {
-            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          });
-          url = URL.createObjectURL(blob);
-        } else if (correctedFileBlobUrl) {
-          url = correctedFileBlobUrl;
-          shouldRevoke = false;
-        } else {
+        if (!correctedFileUrl) {
           throw new Error('Corrected file not available. Please re-upload your document.');
         }
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `${originalFileName.replace(/\.docx$/i, '')}_corrected.docx`;
+        a.href = correctedFileUrl;
+        // The Vercel Blob URL will enforce the correct content-disposition and filename automatically
+        a.setAttribute('download', `${originalFileName.replace(/\\.docx$/i, '')}_corrected.docx`);
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        if (shouldRevoke) URL.revokeObjectURL(url);
       } else {
         if (!results) {
           throw new Error('Results not available. Please re-upload your document.');

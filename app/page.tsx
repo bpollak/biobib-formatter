@@ -11,6 +11,7 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
+import { upload } from '@vercel/blob/client';
 
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -91,12 +92,14 @@ export default function HomePage() {
     advanceStep(0);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('documentType', documentType);
-      formData.append('degreeType', degreeType);
+      // 1. Upload to Vercel Blob directly from client
+      setStage('Uploading file securely...');
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/blob-upload',
+      });
 
-      // Animate all 13 steps while the single request runs
+      // Animate all 13 steps while the checking request runs
       const animationPromise = (async () => {
         const stepDelays = [300, 350, 350, 350, 350, 350, 350, 350, 400, 400, 450, 500];
         for (let i = 1; i <= 12; i++) {
@@ -107,13 +110,40 @@ export default function HomePage() {
         }
       })();
 
-      // Fire the combined check request
-      const checkRes = await fetch('/api/check', { method: 'POST', body: formData });
+      // Fire the combined check request with the blob URL
+      const checkRes = await fetch('/api/check', { 
+        method: 'POST', 
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentType,
+          degreeType,
+          fileName: file.name,
+          fileSize: file.size,
+          blobUrl: blob.url,
+        })
+      });
+
       if (!checkRes.ok) {
-        const err = await checkRes.json();
-        throw new Error(err.error || 'Processing failed');
+        let errDetail = 'Processing failed';
+        try {
+          // Attempt to parse JSON error
+          const err = await checkRes.json();
+          errDetail = err.error || errDetail;
+        } catch {
+          // Graceful fallback for non-JSON responses (e.g. Vercel 413 or 504)
+          const text = await checkRes.text();
+          if (text.includes('Request Entity Too Large')) {
+             errDetail = 'File exceeds maximum upload size (4.5MB).';
+          } else {
+             errDetail = `Server returned ${checkRes.status}: ${checkRes.statusText}`;
+          }
+        }
+        throw new Error(errDetail);
       }
-      const { results, correctedFile, originalFileName } = await checkRes.json();
+      
+      const { results, correctedFileUrl, originalFileName } = await checkRes.json();
 
       // Wait for animation to finish (or skip ahead)
       await animationPromise;
@@ -129,22 +159,9 @@ export default function HomePage() {
       const sessionId = results.sessionId;
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
       sessionStorage.setItem(`originalFileName_${sessionId}`, originalFileName);
-
-      // For large files, use a Blob URL instead of sessionStorage to avoid quota errors
-      try {
-        sessionStorage.setItem(`correctedFile_${sessionId}`, correctedFile);
-      } catch {
-        // sessionStorage quota exceeded — store as Blob URL
-        const byteChars = atob(correctedFile);
-        const byteNums = new Uint8Array(byteChars.length);
-        for (let j = 0; j < byteChars.length; j++) {
-          byteNums[j] = byteChars.charCodeAt(j);
-        }
-        const blob = new Blob([byteNums], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        });
-        const blobUrl = URL.createObjectURL(blob);
-        sessionStorage.setItem(`correctedFileBlobUrl_${sessionId}`, blobUrl);
+      
+      if (correctedFileUrl) {
+        sessionStorage.setItem(`correctedFileUrl_${sessionId}`, correctedFileUrl);
       }
       router.push(`/results?sessionId=${sessionId}`);
     } catch (err) {

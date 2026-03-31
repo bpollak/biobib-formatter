@@ -1,43 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import { put, del } from '@vercel/blob';
 import { parseDocument } from '@/lib/pipeline/parser';
 import { validateDocument } from '@/lib/pipeline/validator';
 import { applyAutoFixes } from '@/lib/pipeline/fixer';
 import { DocumentMetadata, DocumentType, DegreeType, RuleResult, ManualFix, ValidationResults } from '@/lib/types';
-import { MAX_FILE_SIZE_BYTES, ALLOWED_EXTENSIONS } from '@/lib/constants';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
-    const documentType = (formData.get('documentType') as string) || 'dissertation';
-    const degreeType = (formData.get('degreeType') as string) || 'doctoral';
+  let uploadedBlobUrl: string | undefined;
 
-    // Validate file
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+  try {
+    const body = await request.json();
+    const { blobUrl, documentType = 'dissertation', degreeType = 'doctoral', fileName, fileSize } = body;
+
+    if (!blobUrl || typeof blobUrl !== 'string') {
+      return NextResponse.json({ error: 'No file URL provided' }, { status: 400 });
     }
 
-    const fileName = file.name.toLowerCase();
-    if (!ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext))) {
+    if (!fileName?.toLowerCase().endsWith('.docx')) {
       return NextResponse.json({ error: 'Only .docx files are accepted' }, { status: 400 });
     }
 
-    if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json({ error: `File too large. Maximum size is 50MB.` }, { status: 400 });
+    uploadedBlobUrl = blobUrl;
+
+    // Download the file from Blob storage
+    const fileResponse = await fetch(blobUrl);
+    if (!fileResponse.ok) {
+      return NextResponse.json({ error: 'Failed to retrieve uploaded file' }, { status: 500 });
     }
+    const arrayBuffer = await fileResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
     const sessionId = uuidv4();
-    const buffer = Buffer.from(await file.arrayBuffer());
 
     const metadata: DocumentMetadata = {
       type: documentType as DocumentType,
       degreeType: degreeType as DegreeType,
-      fileName: file.name,
-      fileSize: file.size,
+      fileName: fileName || 'document.docx',
+      fileSize: fileSize || buffer.length,
     };
 
     // Parse document
@@ -107,13 +110,28 @@ export async function POST(request: NextRequest) {
       manualFixes,
     };
 
-    // Encode corrected buffer as base64 for client-side download
-    const correctedFile = correctedBuffer.toString('base64');
+    // Upload corrected file to Blob storage (instead of sending base64 in body)
+    const correctedBlob = await put(
+      `corrected/${sessionId}/${fileName?.replace(/\.docx$/i, '')}_corrected.docx`,
+      correctedBuffer,
+      {
+        access: 'public',
+        contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }
+    );
+
+    // Clean up the original uploaded blob
+    try {
+      await del(uploadedBlobUrl);
+    } catch {
+      // Non-critical: original blob will expire eventually
+      console.warn('Failed to delete original blob:', uploadedBlobUrl);
+    }
 
     return NextResponse.json({
       results,
-      correctedFile,
-      originalFileName: file.name,
+      correctedFileUrl: correctedBlob.url,
+      originalFileName: fileName,
     });
   } catch (error) {
     console.error('Check error:', error);
