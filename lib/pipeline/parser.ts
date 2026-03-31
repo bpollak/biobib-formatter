@@ -127,7 +127,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       for (let offset = -2; offset <= 2; offset++) {
         const idx = paraIdx + offset;
         if (idx >= 0 && idx < paragraphs.length && offset !== 0) {
-          if (/^(figure|fig\.?)\s+\d+/i.test(paragraphs[idx].text.trim())) {
+          if (/^figure\b[^\d]*\d+/i.test(paragraphs[idx].text.trim()) || /^fig\.?\s+\d+/i.test(paragraphs[idx].text.trim())) {
             figure.hasCaption = true;
             figure.captionParagraphIndex = idx;
             figure.captionPosition = offset > 0 ? 'after' : 'before';
@@ -230,7 +230,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   const titlePage = parseTitlePage(paragraphs, sections);
 
   // Parse abstract
-  const abstractInfo = parseAbstract(paragraphs, sections, margins);
+  const abstractInfo = parseAbstract(paragraphs, sections, margins, paragraphXmls);
 
   // Parse page numbering (using footer XMLs for reliable detection)
   const pageNumbering = parsePageNumbering(documentXml, files.footerXmls);
@@ -459,7 +459,7 @@ function parseTitlePage(paragraphs: ParagraphInfo[], sections: SectionInfo[]): T
       : undefined;
 
     // Check alphabetical order of non-chair members (by last name)
-    const nonChairMembers = memberParas.filter(p => !/chair|co-chair/i.test(p.text));
+    const nonChairMembers = memberParas.slice(1).filter(p => !/chair|co-chair/i.test(p.text));
     if (nonChairMembers.length >= 2) {
       const lastNames = nonChairMembers.map(p => {
         // Strip trailing punctuation/parentheticals and get last word
@@ -490,7 +490,8 @@ function parseTitlePage(paragraphs: ParagraphInfo[], sections: SectionInfo[]): T
 function parseAbstract(
   paragraphs: ParagraphInfo[],
   sections: SectionInfo[],
-  margins: MarginInfo[]
+  margins: MarginInfo[],
+  paragraphXmls: string[]
 ): AbstractInfo {
   const abstractSection = sections.find(s => s.type === 'abstract');
   
@@ -517,9 +518,13 @@ function parseAbstract(
     const abstractText = abstractParas.map(p => p.text).join(' ');
     const wordCount = abstractText.trim().split(/\s+/).filter(Boolean).length;
     
+    const abstractSectStart = abstractParas.length > 0
+      ? paragraphXmls.slice(0, abstractParas[0].index).filter(p => /<w:sectPr/.test(p)).length
+      : 0;
     return {
       detected: true,
       wordCount,
+      topMargin: margins[abstractSectStart]?.top,
       paragraphIndices: abstractParas.map(p => p.index),
     };
   }
@@ -541,10 +546,13 @@ function parseAbstract(
   const abstractText = abstractParas.map(p => p.text).join(' ');
   const wordCount = abstractText.trim().split(/\s+/).filter(Boolean).length;
 
+  const abstractSectStart = abstractParas.length > 0
+    ? paragraphXmls.slice(0, abstractParas[0].index).filter(p => /<w:sectPr/.test(p)).length
+    : 0;
   return {
     detected: true,
     wordCount,
-    topMargin: margins[0]?.top, // Would need section-specific margin for accuracy
+    topMargin: margins[abstractSectStart]?.top,
     paragraphIndices: abstractParas.map(p => p.index),
   };
 }

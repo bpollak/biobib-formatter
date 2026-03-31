@@ -22,6 +22,7 @@ export async function POST(request: Request): Promise<NextResponse> {
           ],
           maximumSizeInBytes: 50 * 1024 * 1024, // 50MB
           tokenPayload: JSON.stringify({}),
+          addRandomSuffix: true,
         };
       },
       onUploadCompleted: async ({ blob }) => {
