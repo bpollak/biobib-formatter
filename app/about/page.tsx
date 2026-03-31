@@ -16,7 +16,7 @@ import Footer from '@/components/Footer';
 const FAQ_ITEMS = [
   {
     q: 'What file formats are accepted?',
-    a: 'Only .docx files (Microsoft Word). LaTeX and PDF support is planned for a future release.',
+    a: 'Only .docx files (Microsoft Word) up to 50MB. LaTeX and PDF support is planned for a future release.',
   },
   {
     q: 'Will this change my content?',
@@ -31,8 +31,8 @@ const FAQ_ITEMS = [
     a: 'Not yet. This is a pre-check tool to help you catch and fix issues before your official GEPA submission. Final review is still done by GEPA advisors.',
   },
   {
-    q: 'Is my document stored?',
-    a: 'Documents are processed in memory and automatically deleted after your session ends. Nothing is permanently stored on our servers.',
+    q: 'Is my document stored securely?',
+    a: 'Documents are securely uploaded to temporary cloud storage for processing. The original file is deleted immediately after processing, and the corrected downloaded file is available only for your current session. Nothing is permanently stored on our servers.',
   },
   {
     q: 'What about accessibility (WCAG 2.1)?',
