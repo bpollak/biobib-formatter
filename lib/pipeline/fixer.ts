@@ -15,6 +15,7 @@ import {
   fixImageAltText,
   fixTableHeaders,
   fixDocumentLanguage,
+  fixReferenceSpacing,
 } from '../docx/writer';
 import { allRules } from '../rules';
 
@@ -85,6 +86,11 @@ export async function applyAutoFixes(
     // Heading italics fix
     if (failingRuleIds.has('TEXT-001')) {
       documentXml = fixHeadingItalics(documentXml, allChanges);
+    }
+
+    // Reference spacing fix
+    if (failingRuleIds.has('REF-002') || failingRuleIds.has('REF-003')) {
+      documentXml = fixReferenceSpacing(documentXml, allChanges);
     }
 
     // ── Pagination fixes ──

@@ -43,7 +43,7 @@ const referencesRules: FormattingRule[] = [
     name: 'References Single-Spaced Within Entries',
     description: 'Each reference entry must be single-spaced internally',
     severity: 'major',
-    autoFixable: false,
+    autoFixable: true,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {

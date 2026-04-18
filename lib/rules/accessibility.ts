@@ -124,7 +124,7 @@ const accessibilityRules: FormattingRule[] = [
     name: 'Document Language Set',
     description: 'The document language must be explicitly set to English (or applicable language)',
     severity: 'minor',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Check if language is set in styles.xml or document.xml
