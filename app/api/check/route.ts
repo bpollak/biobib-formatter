@@ -133,10 +133,10 @@ export async function POST(request: NextRequest) {
       correctedFileUrl: correctedBlob.url,
       originalFileName: fileName,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Check error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Processing failed' },
+      { error: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : 'Processing failed' },
       { status: 500 }
     );
   }

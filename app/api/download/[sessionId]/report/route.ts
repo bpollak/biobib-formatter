@@ -31,7 +31,7 @@ export async function GET(
         'Content-Disposition': `attachment; filename="${session.metadata.fileName.replace('.docx', '-compliance-report.pdf')}"`,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Download report error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

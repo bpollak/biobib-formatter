@@ -26,7 +26,7 @@ export async function GET(
         'Content-Disposition': `attachment; filename="${session.metadata.fileName.replace('.docx', '-corrected.docx')}"`,
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Download document error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

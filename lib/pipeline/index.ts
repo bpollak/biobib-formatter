@@ -89,11 +89,11 @@ export async function processDocument(
     });
 
     return sessionId;
-  } catch (error) {
+  } catch (error: unknown) {
     updateSession(sessionId, {
       status: 'error',
       stage: 'Processing failed',
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : String(error),
     });
     throw error;
   }

@@ -122,7 +122,7 @@ export async function applyAutoFixes(
     if (failingRuleIds.has('A11Y-005')) {
       stylesXml = fixDocumentLanguage(stylesXml, allChanges);
     }
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error applying fixes:', error);
   }
 

@@ -25,7 +25,7 @@ export async function GET(
       stage: session.stage,
       progress: session.progress,
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Status error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
