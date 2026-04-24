@@ -23,7 +23,7 @@ console.log(`Loaded file: ${fileBuffer.length} bytes`);
     
     // Parse document
     const metadata = {
-      type: 'dissertation',
+      type: 'dissertation' as const,
       degreeType: 'doctoral',
       fileName: testFile,
       fileSize: fileBuffer.length
