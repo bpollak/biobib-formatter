@@ -32,7 +32,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Is my document stored securely?',
-    a: 'Documents are securely uploaded to temporary cloud storage for processing. The original file is deleted immediately after processing, and the corrected downloaded file is available only for your current session. Nothing is permanently stored on our servers.',
+    a: 'Documents are securely uploaded to temporary cloud storage for processing. The original file is deleted immediately after processing, and the corrected file is provided through a time-limited secure download during your current browser session. Nothing is permanently stored on our servers.',
   },
   {
     q: 'What about accessibility (WCAG 2.1)?',

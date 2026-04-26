@@ -23,6 +23,7 @@ import Footer from '@/components/Footer';
 import ResultsAccordion from '@/components/ResultsAccordion';
 import { ValidationResults, RuleResult } from '@/lib/types';
 import { generateReportPDFClient } from '@/lib/pipeline/reporter-client';
+import { buildCorrectedDownloadFileName, buildReportDownloadFileName } from '@/lib/blob-paths';
 
 // Content rule IDs — issues where the student must change document content
 const CONTENT_RULE_PREFIXES = [
@@ -208,7 +209,8 @@ function ResultsPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'docx' | 'report' | null>(null);
-  const [correctedFileUrl, setCorrectedFileUrl] = useState<string | null>(null);
+  const [correctedDocumentToken, setCorrectedDocumentToken] = useState<string | null>(null);
+  const [legacyCorrectedFileUrl, setLegacyCorrectedFileUrl] = useState<string | null>(null);
   const [originalFileName, setOriginalFileName] = useState<string>('dissertation');
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
@@ -219,12 +221,14 @@ function ResultsPageInner() {
       return;
     }
     const stored = sessionStorage.getItem(`results_${sessionId}`);
+    const storedDocumentToken = sessionStorage.getItem(`correctedDocumentToken_${sessionId}`);
     const storedFileUrl = sessionStorage.getItem(`correctedFileUrl_${sessionId}`);
     const storedName = sessionStorage.getItem(`originalFileName_${sessionId}`);
     if (stored) {
       try {
         setResults(JSON.parse(stored));
-        if (storedFileUrl) setCorrectedFileUrl(storedFileUrl);
+        if (storedDocumentToken) setCorrectedDocumentToken(storedDocumentToken);
+        if (storedFileUrl) setLegacyCorrectedFileUrl(storedFileUrl);
         if (storedName) setOriginalFileName(storedName);
       } catch {
         setError('Failed to load results');
@@ -241,16 +245,49 @@ function ResultsPageInner() {
     setDownloadError(null);
     try {
       if (type === 'docx') {
-        if (!correctedFileUrl) {
+        if (correctedDocumentToken) {
+          const response = await fetch(
+            `/api/download/${sessionId}/document?token=${encodeURIComponent(correctedDocumentToken)}`,
+            {
+              cache: 'no-store',
+            }
+          );
+
+          if (!response.ok) {
+            let message = 'Corrected file download failed';
+
+            try {
+              const payload = await response.json();
+              message = payload.error || message;
+            } catch {
+              const text = await response.text();
+              if (text) {
+                message = text;
+              }
+            }
+
+            throw new Error(message);
+          }
+
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = buildCorrectedDownloadFileName(originalFileName);
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } else if (legacyCorrectedFileUrl) {
+          const a = document.createElement('a');
+          a.href = legacyCorrectedFileUrl;
+          a.setAttribute('download', buildCorrectedDownloadFileName(originalFileName));
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
           throw new Error('Corrected file not available. Please re-upload your document.');
         }
-        const a = document.createElement('a');
-        a.href = correctedFileUrl;
-        // The Vercel Blob URL will enforce the correct content-disposition and filename automatically
-        a.setAttribute('download', `${originalFileName.replace(/\\.docx$/i, '')}_corrected.docx`);
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
       } else {
         if (!results) {
           throw new Error('Results not available. Please re-upload your document.');
@@ -261,7 +298,7 @@ function ResultsPageInner() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${originalFileName.replace(/\.docx$/i, '')}_compliance_report.pdf`;
+        a.download = buildReportDownloadFileName(originalFileName);
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

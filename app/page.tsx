@@ -18,6 +18,7 @@ import Footer from '@/components/Footer';
 import UploadZone from '@/components/UploadZone';
 import ProcessingView from '@/components/ProcessingView';
 import { MAX_FILE_SIZE_MB } from '@/lib/constants';
+import { buildUploadPathname } from '@/lib/blob-paths';
 
 type DocumentType = 'dissertation' | 'thesis';
 type DegreeType = 'doctoral' | 'masters';
@@ -82,13 +83,13 @@ export default function HomePage() {
     };
 
     try {
-      // 1. Upload to Vercel Blob directly from client. Real progress events,
-      // an abort signal, and a stall watchdog so the UI doesn't hang silently
-      // on poor connections.
+      // 1. Upload to private Blob storage directly from the browser. Real
+      // progress events, an abort signal, and a stall watchdog so the UI
+      // doesn't hang silently on poor connections.
       setStage('Uploading file...');
       armStallTimer();
-      const blob = await upload(file.name, file, {
-        access: 'public',
+      const blob = await upload(buildUploadPathname(file.name), file, {
+        access: 'private',
         handleUploadUrl: '/api/blob-upload',
         abortSignal: controller.signal,
         onUploadProgress: (event) => {
@@ -100,11 +101,12 @@ export default function HomePage() {
       if (stallTimer) clearTimeout(stallTimer);
       setUploadPercent(null);
 
-      // 2. Run validation + auto-fixes in a single server request. Server
+      // 2. Run validation + auto-fixes in a single server request. We pass
+      // the blob *pathname* (not a URL): /api/check verifies it lives under
+      // our store + uploads/ prefix, then fetches it via the SDK. Server
       // streaming progress would be the right way to drive a real progress
       // bar for this phase; until that exists we show an indeterminate
-      // spinner with a single label so users aren't misled by a fake
-      // animation.
+      // spinner with a single label so users aren't misled.
       setStage('Checking 80+ formatting rules and applying auto-fixes...');
       const checkRes = await fetch('/api/check', {
         method: 'POST',
@@ -114,7 +116,7 @@ export default function HomePage() {
           degreeType,
           fileName: file.name,
           fileSize: file.size,
-          blobUrl: blob.url,
+          blobPathname: blob.pathname,
         }),
         signal: controller.signal,
       });
@@ -136,13 +138,15 @@ export default function HomePage() {
         throw new Error(errDetail);
       }
 
-      const { results, correctedFileUrl, originalFileName } = await checkRes.json();
+      const { results, correctedDocumentToken, originalFileName } = await checkRes.json();
 
       const sessionId = results.sessionId;
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
       sessionStorage.setItem(`originalFileName_${sessionId}`, originalFileName);
-      if (correctedFileUrl) {
-        sessionStorage.setItem(`correctedFileUrl_${sessionId}`, correctedFileUrl);
+      if (correctedDocumentToken) {
+        sessionStorage.setItem(`correctedDocumentToken_${sessionId}`, correctedDocumentToken);
+        // Clean up any legacy public-URL entries from previous sessions.
+        sessionStorage.removeItem(`correctedFileUrl_${sessionId}`);
       }
 
       setStage('Loading results...');

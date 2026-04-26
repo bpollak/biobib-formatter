@@ -1,5 +1,6 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { NextResponse } from 'next/server';
+import { normalizeBlobPathname } from '@/lib/blob-paths';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +12,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       body,
       request,
       onBeforeGenerateToken: async (pathname) => {
+        const normalizedPathname = normalizeBlobPathname(pathname);
+
         // Validate file type
-        if (!pathname.toLowerCase().endsWith('.docx')) {
+        if (!normalizedPathname.startsWith('uploads/')) {
+          throw new Error('Uploads must use the uploads/ prefix');
+        }
+
+        if (!normalizedPathname.toLowerCase().endsWith('.docx')) {
           throw new Error('Only .docx files are accepted');
         }
 
