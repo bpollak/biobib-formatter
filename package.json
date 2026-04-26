@@ -6,15 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "typecheck": "tsc --noEmit",
+    "test:regression": "tsx scripts/regression-test.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
-    "@types/jszip": "^3.4.0",
-    "@types/uuid": "^10.0.0",
     "@vercel/blob": "^2.3.2",
     "jszip": "^3.10.1",
     "mammoth": "^1.12.0",
@@ -26,11 +27,14 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "@types/jszip": "^3.4.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

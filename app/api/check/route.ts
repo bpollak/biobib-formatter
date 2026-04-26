@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { put, del } from '@vercel/blob';
 import { parseDocument } from '@/lib/pipeline/parser';
-import { validateDocument } from '@/lib/pipeline/validator';
+import { validateDocument, buildValidationResults } from '@/lib/pipeline/validator';
 import { applyAutoFixes } from '@/lib/pipeline/fixer';
-import { DocumentMetadata, DocumentType, DegreeType, RuleResult, ManualFix, ValidationResults } from '@/lib/types';
+import { DocumentMetadata, DocumentType, DegreeType, RuleResult } from '@/lib/types';
 
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
@@ -49,74 +49,28 @@ export async function POST(request: NextRequest) {
     // Run validation
     const ruleResults: RuleResult[] = validateDocument(documentModel);
 
-    // Run auto-fixes
-    const { correctedBuffer, changes } = await applyAutoFixes(buffer, documentModel);
+    // Run auto-fixes (uses the already-computed validation results)
+    const { correctedBuffer, changes } = await applyAutoFixes(buffer, documentModel, ruleResults);
 
-    // Mark auto-fixed rules
-    const fixedRuleIds = new Set(changes.map(c => c.ruleId));
-    // TEXT-002 checks the same colors as FONT-005 — if FONT-005 fixed them, TEXT-002 is also resolved
-    if (fixedRuleIds.has('FONT-005')) {
-      fixedRuleIds.add('TEXT-002');
-    }
-    const finalRules: RuleResult[] = ruleResults.map(r => {
-      if (fixedRuleIds.has(r.ruleId) && r.status === 'fail') {
-        return { ...r, status: 'auto-fixed' as const };
-      }
-      return r;
-    });
+    // Build the final ValidationResults (status flips, summary, manual fixes).
+    const results = buildValidationResults(sessionId, metadata, ruleResults, changes);
 
-    // Build summary
-    const passed = finalRules.filter(r => r.status === 'pass').length;
-    const failed = finalRules.filter(r => r.status === 'fail').length;
-    const warned = finalRules.filter(r => r.status === 'warning').length;
-    const autoFixed = finalRules.filter(r => r.status === 'auto-fixed').length;
-    const skipped = finalRules.filter(r => r.status === 'skipped').length;
-    const total = finalRules.length;
+    // Strip path-traversal / unsafe characters before using filename in the blob path.
+    // Keep alphanumerics, dots, hyphens, underscores; collapse everything else to "_".
+    const safeBaseName = (fileName || 'document.docx')
+      .replace(/\.docx$/i, '')
+      .replace(/[^A-Za-z0-9._-]/g, '_')
+      .slice(0, 80) || 'document';
 
-    const criticalFailed = finalRules.filter(
-      r => r.status === 'fail' && r.severity === 'critical'
-    ).length;
-
-    const overallStatus =
-      failed === 0 ? 'pass' :
-      criticalFailed > 0 || failed > 5 ? 'fail' :
-      'needs-attention';
-
-    // Build manual fixes list
-    const manualFixes: ManualFix[] = finalRules
-      .filter(r => r.status === 'fail' || r.status === 'warning')
-      .map(r => ({
-        ruleId: r.ruleId,
-        severity: r.severity,
-        title: r.name,
-        instruction: r.manualFixInstruction || r.message,
-        location: r.details,
-      }));
-
-    const results: ValidationResults = {
-      sessionId,
-      metadata,
-      summary: {
-        total,
-        passed,
-        failed,
-        warned,
-        autoFixed,
-        skipped,
-        overallStatus,
-      },
-      rules: finalRules,
-      changes,
-      manualFixes,
-    };
-
-    // Upload corrected file to Blob storage (instead of sending base64 in body)
+    // Upload corrected file to Blob storage. addRandomSuffix prevents URL guessing
+    // for these student-owned files; the URL is still public-read but unguessable.
     const correctedBlob = await put(
-      `corrected/${sessionId}/${fileName?.replace(/\.docx$/i, '')}_corrected.docx`,
+      `corrected/${sessionId}/${safeBaseName}_corrected.docx`,
       correctedBuffer,
       {
         access: 'public',
         contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        addRandomSuffix: true,
       }
     );
 
@@ -136,7 +90,7 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Check error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : 'Processing failed' },
+      { error: error instanceof Error ? error.message : 'Processing failed' },
       { status: 500 }
     );
   }

@@ -150,7 +150,7 @@ const paginationRules: FormattingRule[] = [
     severity: 'critical',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       // This requires full page analysis which is not available in MVP
       // Flag as warning with instructions
       return {
@@ -173,7 +173,7 @@ const paginationRules: FormattingRule[] = [
     severity: 'critical',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       return {
         ruleId: 'PAGE-008',
         category: 'pagination',
@@ -194,7 +194,7 @@ const paginationRules: FormattingRule[] = [
     severity: 'major',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       return {
         ruleId: 'PAGE-009',
         category: 'pagination',

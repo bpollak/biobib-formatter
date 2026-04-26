@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { DocumentModel, ChangeRecord } from '../types';
+import { DocumentModel, ChangeRecord, RuleResult } from '../types';
 import {
   fixMargins,
   fixFontColors,
@@ -15,13 +15,12 @@ import {
   fixImageAltText,
   fixTableHeaders,
   fixDocumentLanguage,
-  fixReferenceSpacing,
 } from '../docx/writer';
-import { allRules } from '../rules';
 
 export async function applyAutoFixes(
   docBuffer: Buffer,
-  doc: DocumentModel
+  _doc: DocumentModel,
+  ruleResults: RuleResult[]
 ): Promise<{ correctedBuffer: Buffer; changes: ChangeRecord[] }> {
   const allChanges: ChangeRecord[] = [];
 
@@ -39,22 +38,19 @@ export async function applyAutoFixes(
     }
   }
 
-  // Determine which rules need fixing
-  const failingRuleIds = new Set<string>();
-  for (const rule of allRules) {
-    if (!rule.autoFixable) continue;
-    const result = rule.check(doc);
-    if (result.status === 'fail') {
-      failingRuleIds.add(rule.id);
-    }
-  }
+  // Determine which rules need fixing from the already-computed validation results
+  const failingRuleIds = new Set(
+    ruleResults.filter(r => r.status === 'fail' && r.autoFixable).map(r => r.ruleId)
+  );
 
   // Apply all fixes in one pass on the XML strings
   try {
     // Margin fixes (MARGIN-001 through MARGIN-005)
-    if (['MARGIN-001', 'MARGIN-002', 'MARGIN-003', 'MARGIN-004', 'MARGIN-005'].some(id => failingRuleIds.has(id))) {
+    const marginRuleIds = ['MARGIN-001', 'MARGIN-002', 'MARGIN-003', 'MARGIN-004', 'MARGIN-005']
+      .filter(id => failingRuleIds.has(id));
+    if (marginRuleIds.length > 0) {
       const targetMargins = { top: 1440, bottom: 1440, left: 1440, right: 1440, footer: 720 };
-      documentXml = fixMargins(documentXml, allChanges, targetMargins);
+      documentXml = fixMargins(documentXml, allChanges, marginRuleIds, targetMargins);
     }
 
     // Font family fix
@@ -68,9 +64,11 @@ export async function applyAutoFixes(
       stylesXml = result.stylesXml;
     }
 
-    // Font color fix
+    // Font color fix (touches both documentXml and stylesXml)
     if (failingRuleIds.has('FONT-005')) {
-      documentXml = fixFontColors(documentXml, allChanges);
+      const out = fixFontColors(documentXml, stylesXml, allChanges);
+      documentXml = out.documentXml;
+      stylesXml = out.stylesXml;
     }
 
     // Body spacing fix
@@ -86,11 +84,6 @@ export async function applyAutoFixes(
     // Heading italics fix
     if (failingRuleIds.has('TEXT-001')) {
       documentXml = fixHeadingItalics(documentXml, allChanges);
-    }
-
-    // Reference spacing fix
-    if (failingRuleIds.has('REF-002') || failingRuleIds.has('REF-003')) {
-      documentXml = fixReferenceSpacing(documentXml, allChanges);
     }
 
     // ── Pagination fixes ──

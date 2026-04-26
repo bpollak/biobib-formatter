@@ -94,7 +94,7 @@ const pageOrderRules: FormattingRule[] = [
     severity: 'major',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       return warn('ORDER-004', 'Optional Prelim Pages Correctly Placed', 'major',
         'Manually verify optional preliminary pages (dedication, epigraph, preface) are in the correct position',
         'Optional pages (Dedication, Epigraph, Preface) must appear after the Approval page and before the Table of Contents.'

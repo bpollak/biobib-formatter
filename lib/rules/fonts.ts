@@ -138,9 +138,10 @@ const fontRules: FormattingRule[] = [
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       // Check for hyperlink style colors in styles
-      // This is a heuristic - look for blue-colored text which is often hyperlinks
+      // This is a heuristic - look for blue-colored text which is often hyperlinks.
+      // Note: 'auto' means "system default" (typically black) and must NOT be flagged.
       const blueColors = doc.styles.colors.filter(c =>
-        c && ['0563C1', '1F77B4', '0070C0', '4472C4', 'auto'].some(blue =>
+        c && ['0563C1', '1F77B4', '0070C0', '4472C4'].some(blue =>
           c.toLowerCase() === blue.toLowerCase()
         )
       );

@@ -28,18 +28,19 @@ export async function saveDocx(zip: JSZip, documentXml: string, stylesXml?: stri
 }
 
 /**
- * Set all page margins to 1" (1440 twips)
+ * Set all page margins to 1" (1440 twips). Records one ChangeRecord per
+ * failing margin rule so attribution in the report is accurate.
  */
 export function fixMargins(
   documentXml: string,
   changes: ChangeRecord[],
+  failingRuleIds: string[],
   targetMargins = { top: 1440, bottom: 1440, left: 1440, right: 1440, footer: 720 }
 ): string {
-  // Find existing pgMar and check values
   const pgMarRegex = /<w:pgMar[^/]*\/>/g;
   const newPgMar = `<w:pgMar w:top="${targetMargins.top}" w:right="${targetMargins.right}" w:bottom="${targetMargins.bottom}" w:left="${targetMargins.left}" w:header="720" w:footer="${targetMargins.footer}" w:gutter="0"/>`;
-  
-  let modified = false;
+
+  let firstBefore: string | undefined;
   const result = documentXml.replace(pgMarRegex, (match) => {
     const topVal = getXmlAttr(match, 'w:top');
     const rightVal = getXmlAttr(match, 'w:right');
@@ -55,37 +56,62 @@ export function fixMargins(
       (footerVal && parseInt(footerVal) < targetMargins.footer);
 
     if (needsFix) {
-      modified = true;
-      changes.push({
-        ruleId: 'MARGIN-001',
-        description: 'Corrected page margins to minimum 1" on all sides, footer at 0.5"',
-        location: 'Document section properties',
-        before: `top=${twipsToInches(parseInt(topVal || '1440'))}", bottom=${twipsToInches(parseInt(bottomVal || '1440'))}", left=${twipsToInches(parseInt(leftVal || '1440'))}", right=${twipsToInches(parseInt(rightVal || '1440'))}"`,
-        after: '1" on all sides, page numbers 0.5" from bottom',
-      });
+      if (!firstBefore) {
+        firstBefore = `top=${twipsToInches(parseInt(topVal || '1440'))}", bottom=${twipsToInches(parseInt(bottomVal || '1440'))}", left=${twipsToInches(parseInt(leftVal || '1440'))}", right=${twipsToInches(parseInt(rightVal || '1440'))}"`;
+      }
       return newPgMar;
     }
     return match;
   });
 
-  // If no pgMar found at all, we can't easily add one without full XML restructure
+  if (firstBefore) {
+    for (const ruleId of failingRuleIds) {
+      changes.push({
+        ruleId,
+        description: 'Corrected page margins to minimum 1" on all sides, footer at 0.5"',
+        location: 'Document section properties',
+        before: firstBefore,
+        after: '1" on all sides, page numbers 0.5" from bottom',
+      });
+    }
+  }
+
   return result;
 }
 
 /**
  * Fix font colors to black in all runs
  */
-export function fixFontColors(documentXml: string, changes: ChangeRecord[]): string {
+/**
+ * Fix font colors to black in all runs and styles. Matches every <w:color>
+ * tag form (self-closing, with sibling attributes like w:themeColor, and
+ * non-self-closing) so colored runs in either documentXml or stylesXml
+ * are caught.
+ */
+export function fixFontColors(
+  documentXml: string,
+  stylesXml: string,
+  changes: ChangeRecord[]
+): { documentXml: string; stylesXml: string } {
   let colorFixed = 0;
-  
-  // Replace colored w:color elements (non-black, non-auto)
-  const result = documentXml.replace(/<w:color\s+w:val="([^"]+)"\s*\/>/g, (match, colorVal) => {
-    if (colorVal !== '000000' && colorVal !== 'auto' && colorVal.toLowerCase() !== '000000') {
+
+  const fixColorsIn = (xml: string): string => {
+    return xml.replace(/<w:color\b[^>]*>/g, (match) => {
+      const valMatch = /w:val="([^"]+)"/.exec(match);
+      if (!valMatch) return match;
+      const colorVal = valMatch[1];
+      if (colorVal === '000000' || colorVal.toLowerCase() === '000000' || colorVal === 'auto') {
+        return match;
+      }
       colorFixed++;
-      return `<w:color w:val="000000"/>`;
-    }
-    return match;
-  });
+      // Replace just w:val, preserving any sibling attributes (w:themeColor,
+      // w:themeShade, etc.) and the closing form (self-closing or not).
+      return match.replace(/w:val="[^"]+"/, 'w:val="000000"');
+    });
+  };
+
+  const newDocXml = fixColorsIn(documentXml);
+  const newStylesXml = fixColorsIn(stylesXml);
 
   if (colorFixed > 0) {
     changes.push({
@@ -97,7 +123,7 @@ export function fixFontColors(documentXml: string, changes: ChangeRecord[]): str
     });
   }
 
-  return result;
+  return { documentXml: newDocXml, stylesXml: newStylesXml };
 }
 
 /**
@@ -156,7 +182,7 @@ export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): st
   // This is a targeted fix - only fix body paragraphs with wrong spacing
   const result = documentXml.replace(
     /(<w:p[ >][\s\S]*?<w:pPr>)([\s\S]*?)(<\/w:pPr>)/g,
-    (match, open, pPrContent, close) => {
+    (match, _open, pPrContent, _close) => {
       // Skip if it's a heading, caption, or special style
       const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent);
       const styleName = styleMatch ? styleMatch[1].toLowerCase() : 'normal';
@@ -209,50 +235,72 @@ export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): st
   return result;
 }
 
+// Style names that should never receive a first-line indent.
+const SKIP_INDENT_STYLES = ['heading', 'caption', 'footnote', 'toc', 'list', 'title'];
+
+function shouldSkipForIndent(styleName: string): boolean {
+  const lower = styleName.toLowerCase();
+  return SKIP_INDENT_STYLES.some(s => lower.includes(s));
+}
+
 /**
- * Fix first-line indentation for body paragraphs
+ * Fix first-line indentation for body paragraphs. Handles three cases:
+ *  1. paragraph has <w:ind> with no/insufficient firstLine → set firstLine
+ *  2. paragraph has <w:pPr> but no <w:ind> → insert <w:ind w:firstLine="720"/>
+ *  3. paragraph has no <w:pPr> at all → insert <w:pPr><w:ind .../></w:pPr>
  */
 export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[]): string {
   let indentFixed = 0;
-  
-  const result = documentXml.replace(
-    /(<w:p[ >][\s\S]*?<w:pPr>)([\s\S]*?)(<\/w:pPr>)/g,
-    (match, open, pPrContent, close) => {
-      // Skip headings, captions, etc.
-      const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent);
-      const styleName = styleMatch ? styleMatch[1].toLowerCase() : 'normal';
-      
-      if (
-        styleName.includes('heading') ||
-        styleName.includes('caption') ||
-        styleName.includes('footnote') ||
-        styleName.includes('toc') ||
-        styleName.includes('list') ||
-        styleName.includes('title')
-      ) {
-        return match;
-      }
 
-      // Check indentation - handle both <w:ind .../> and <w:ind ...>
-      const indMatch = /<w:ind[^>]*\/?>/.exec(pPrContent);
-      if (indMatch) {
-        const firstLine = getXmlAttr(indMatch[0], 'w:firstLine');
-        if (!firstLine || parseInt(firstLine) < 720) {
+  // Pass over every paragraph (with or without pPr).
+  const result = documentXml.replace(
+    /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,
+    (paragraphXml) => {
+      // Need substantial text to consider it a body paragraph (mirrors INDENT-001 check).
+      const text = (paragraphXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
+        .map(m => m.replace(/<w:t[^>]*>|<\/w:t>/g, ''))
+        .join('');
+      if (text.trim().length <= 20) return paragraphXml;
+
+      const pPrMatch = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(paragraphXml);
+
+      // Determine effective style. If no pPr, paragraph uses default (Normal) style.
+      const styleMatch = pPrMatch && /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrMatch[1]);
+      const styleName = styleMatch ? styleMatch[1] : 'Normal';
+      if (shouldSkipForIndent(styleName)) return paragraphXml;
+
+      if (pPrMatch) {
+        const pPrContent = pPrMatch[1];
+        const indMatch = /<w:ind\b[^>]*\/?>/.exec(pPrContent);
+        if (indMatch) {
+          // Case 1: existing <w:ind> — set/update firstLine.
+          const firstLine = getXmlAttr(indMatch[0], 'w:firstLine');
+          if (firstLine && parseInt(firstLine) >= 720) return paragraphXml;
           let newInd: string;
           if (firstLine) {
             newInd = indMatch[0].replace(/w:firstLine="[^"]*"/, 'w:firstLine="720"');
           } else if (indMatch[0].endsWith('/>')) {
-            // Self-closing: <w:ind w:left="0"/> → <w:ind w:left="0" w:firstLine="720"/>
             newInd = indMatch[0].replace('/>', ' w:firstLine="720"/>');
           } else {
             newInd = indMatch[0].replace('>', ' w:firstLine="720">');
           }
           indentFixed++;
-          return match.replace(indMatch[0], newInd);
+          return paragraphXml.replace(indMatch[0], newInd);
         }
+        // Case 2: pPr exists but no <w:ind> — insert one before </w:pPr>.
+        indentFixed++;
+        const newPPr = pPrMatch[0].replace('</w:pPr>', '<w:ind w:firstLine="720"/></w:pPr>');
+        return paragraphXml.replace(pPrMatch[0], newPPr);
       }
-      
-      return match;
+
+      // Case 3: no <w:pPr> — insert a complete pPr block right after the opening <w:p ...>.
+      const openTagMatch = /<w:p\b[^>]*>/.exec(paragraphXml);
+      if (!openTagMatch) return paragraphXml;
+      indentFixed++;
+      return paragraphXml.replace(
+        openTagMatch[0],
+        openTagMatch[0] + '<w:pPr><w:ind w:firstLine="720"/></w:pPr>'
+      );
     }
   );
 
@@ -303,96 +351,6 @@ export function fixHeadingItalics(documentXml: string, changes: ChangeRecord[]):
   }
 
   return result;
-}
-
-/**
- * Fix reference spacing (single-spaced within, double-space between)
- */
-export function fixReferenceSpacing(documentXml: string, changes: ChangeRecord[]): string {
-  // Implementation: Set line spacing to single within references, and ensure double-spacing between entries
-  // This targets w:rPr/w:sz for font size and w:spacing for line spacing within reference entries
-  
-  // Find reference entries (simplified approach - in practice would need better reference section detection)
-  const referenceEntryRegex = /(<w:p[^>]*>[\s\S]*?<\/w:p>)/g;
-  let match;
-  const matches = [];
-  
-  while ((match = referenceEntryRegex.exec(documentXml)) !== null) {
-    // Look for paragraphs that likely contain references (containing typical reference patterns)
-    const paragraphContent = match[1];
-    if (paragraphContent.includes(' et al.') || 
-        paragraphContent.includes(', ') && 
-        (paragraphContent.includes('(') && paragraphContent.includes(')') || 
-         paragraphContent.match(/\d{4}/))) {  // Likely contains year
-      matches.push(match);
-    }
-  }
-  
-  // For simplicity in MVP, we'll apply spacing fixes to all paragraphs as a baseline
-  // A production implementation would have better reference section detection
-  
-  // Fix line spacing within reference entries to single (240 twips = 12pt line spacing)
-  const lineSpacingRegex = /(<w:pPr[^>]*)(\s+w:spacing[^>]*\/>|[\s\S]*?)(<\/w:pPr>)/g;
-  
-  // Since implementing perfect reference detection is complex, and the comment says this was detection-only in MVP,
-  // Let's implement a basic version that fixes spacing for all paragraphs (which is safe-ish)
-  // and returns whether we made changes
-  
-  let fixed = false;
-  let newXml = documentXml.replace(lineSpacingRegex, (match, p1, p2, p3) => {
-    // If there's no spacing element, add one
-    if (!p2 || !p2.includes('w:spacing')) {
-      fixed = true;
-      return p1 + ' <w:w:spacing w:line="240" w:lineRule="auto"/>' + p3;
-    }
-    // If there is a spacing element, update line attribute to 240 if it's not already
-    else if (p2.includes('w:line')) {
-      const lineMatch = p2.match(/w:line="(\d+)"/);
-      if (lineMatch && lineMatch[1] !== "240") {
-        fixed = true;
-        return p1 + ' ' + p2.replace(/w:line="\d+"/, 'w:line="240"') + ' ' + p3;
-      }
-    }
-    return match; // No change needed
-  });
-  
-  // Also ensure spacing between reference entries (this is harder to do precisely without section detection)
-  // For now, we'll note that we attempted the fix
-  if (fixed || matches.length > 0) {
-    changes.push({
-      ruleId: 'REF-002',
-      description: `Applied single-spacing to reference entry paragraphs`,
-      location: 'References section',
-      before: 'Reference entries may have incorrect line spacing',
-      after: 'Reference entries set to single-spacing (12pt line spacing)'
-    });
-  }
-  
-  // For REF-003 (double-space between entries), we'd need to insert blank lines or adjust spacing after
-  // This is complex without knowing exact reference boundaries, so we'll at least attempt paragraph spacing
-  const paraSpacingRegex = /(<w:pPr[^>]*)(\s+w:spacing[^>]*\/>|[\s\S]*?)(<\/w:pPr>)/g;
-  newXml = newXml.replace(paraSpacingRegex, (match, p1, p2, p3) => {
-    // Add space after if not present or not adequate
-    let hasSpaceAfter = p2.includes('w:after');
-    if (!hasSpaceAfter) {
-      // Simple approach: add space after for all paragraphs (will affect spacing between entries)
-      fixed = true;
-      return p1 + ' <w:w:spacing w:after="240" w:line="240" w:lineRule="auto"/>' + p3;
-    }
-    return match;
-  });
-  
-  if (fixed) {
-    changes.push({
-      ruleId: 'REF-003',
-      description: `Applied double-spacing between reference entries`,
-      location: 'References section',
-      before: 'Reference entries may not have proper spacing between them',
-      after: 'Reference entries configured for appropriate spacing between entries'
-    });
-  }
-  
-  return newXml;
 }
 
 // ── Pagination fixes ─────────────────────────────────────────────────────
@@ -592,26 +550,26 @@ export function fixFooterPageNumberCentering(footerXml: string, changes: ChangeR
 // ── Accessibility fixes ──────────────────────────────────────────────────
 
 /**
- * Add placeholder alt text to images missing it.
- * Finds <wp:docPr> elements without a descr attribute (or with empty descr)
- * and adds descr="[Image - description required]".
+ * Add placeholder alt text to images missing it. Matches both the
+ * self-closing form (<wp:docPr ... />) and the open form
+ * (<wp:docPr ...>...</wp:docPr>).
  */
 export function fixImageAltText(documentXml: string, changes: ChangeRecord[]): string {
   let fixed = 0;
 
   const result = documentXml.replace(
-    /<wp:docPr([^>]*)\/>/g,
-    (match, attrs: string) => {
+    /<wp:docPr\b([^>]*?)(\/?)>/g,
+    (match, attrs: string, slash: string) => {
       const descrMatch = /descr="([^"]*)"/.exec(attrs);
       if (descrMatch && descrMatch[1].trim() !== '') return match;
 
       fixed++;
       if (descrMatch) {
-        // Empty descr — replace it
+        // Empty descr — replace it in place; preserves opening/closing form.
         return match.replace(/descr="[^"]*"/, 'descr="[Image - description required]"');
       }
-      // No descr at all — add it
-      return `<wp:docPr${attrs} descr="[Image - description required]"/>`;
+      // No descr — append it before the (optional) self-closing slash.
+      return `<wp:docPr${attrs} descr="[Image - description required]"${slash}>`;
     }
   );
 
@@ -744,9 +702,9 @@ export function fixDocumentLanguage(stylesXml: string, changes: ChangeRecord[]):
   return stylesXml;
 }
 
-// Helper to get XML attribute value
+// Helper to get XML attribute value. XML attribute names are case-sensitive.
 function getXmlAttr(xml: string, attr: string): string | undefined {
-  const regex = new RegExp(`${attr.replace(':', '\\:')}="([^"]*)"`, 'i');
+  const regex = new RegExp(`${attr.replace(':', '\\:')}="([^"]*)"`);
   const match = regex.exec(xml);
   return match ? match[1] : undefined;
 }

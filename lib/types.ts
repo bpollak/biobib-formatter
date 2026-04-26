@@ -4,7 +4,6 @@ export type DocumentType = 'dissertation' | 'thesis';
 export type DegreeType = 'doctoral' | 'masters';
 export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'auto-fixed';
 export type Severity = 'critical' | 'major' | 'minor';
-export type SessionStatus = 'uploading' | 'parsing' | 'validating' | 'fixing' | 'reporting' | 'complete' | 'error';
 
 export type RuleCategory =
   | 'margins'
@@ -216,19 +215,5 @@ export interface FormattingRule {
   autoFixable: boolean;
   appliesTo: 'all' | 'dissertation' | 'thesis';
   check: (doc: DocumentModel) => RuleResult;
-  fix?: (docBuffer: Buffer, doc: DocumentModel, changes: ChangeRecord[]) => Buffer;
 }
 
-export interface ProcessingSession {
-  id: string;
-  createdAt: number;
-  status: SessionStatus;
-  stage: string;
-  progress: number;
-  metadata: DocumentMetadata;
-  originalBuffer: Buffer;
-  correctedBuffer?: Buffer;
-  documentModel?: DocumentModel;
-  results?: ValidationResults;
-  error?: string;
-}

@@ -128,32 +128,6 @@ const spacingRules: FormattingRule[] = [
       );
     },
   },
-  {
-    id: 'SPACE-004',
-    category: 'spacing',
-    name: 'Footnotes May Be Single-Spaced',
-    description: 'Footnotes are permitted to be single-spaced — this is correct per GEPA guidelines',
-    severity: 'minor',
-    autoFixable: false,
-    appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
-      return makeResult('SPACE-004', 'Footnotes May Be Single-Spaced', 'minor', false, true,
-        'Footnotes are permitted to be single-spaced per GEPA guidelines');
-    },
-  },
-  {
-    id: 'SPACE-005',
-    category: 'spacing',
-    name: 'Figure/Table Captions May Be Single-Spaced',
-    description: 'Figure and table captions are permitted to be single-spaced',
-    severity: 'minor',
-    autoFixable: false,
-    appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
-      return makeResult('SPACE-005', 'Figure/Table Captions May Be Single-Spaced', 'minor', false, true,
-        'Figure and table captions are permitted to be single-spaced per GEPA guidelines');
-    },
-  },
 ];
 
 export default spacingRules;

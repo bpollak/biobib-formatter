@@ -1,7 +1,5 @@
-import { FormattingRule, DocumentModel, RuleResult, ChangeRecord } from '../types';
+import { FormattingRule, DocumentModel, RuleResult } from '../types';
 import { MARGIN_1_INCH, MARGIN_HALF_INCH, MARGIN_2_5_INCH } from '../constants';
-import { fixMargins } from '../docx/writer';
-import JSZip from 'jszip';
 
 function makeResult(
   ruleId: string,
@@ -45,10 +43,6 @@ const marginRules: FormattingRule[] = [
         pass ? undefined : `Found: ${(failing[0].left / 1440).toFixed(2)}"`,
         'Open document → Layout → Margins and set left margin to at least 1"'
       );
-    },
-    fix(docBuffer: Buffer, doc: DocumentModel, changes: ChangeRecord[]): Buffer {
-      // Synchronous wrapper - handled in fixer.ts async context
-      return docBuffer;
     },
   },
   {

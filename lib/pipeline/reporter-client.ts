@@ -1,8 +1,10 @@
-import { PDFDocument, rgb } from 'pdf-lib';
+import { PDFDocument, PDFPage, rgb } from 'pdf-lib';
 import { ValidationResults } from '../types';
 
 const UCSD_NAVY: [number, number, number] = [24 / 255, 43 / 255, 73 / 255];
 const UCSD_GOLD: [number, number, number] = [198 / 255, 146 / 255, 20 / 255];
+
+type DrawTextOptions = Parameters<PDFPage['drawText']>[1];
 
 function sanitizeWinAnsi(text: string): string {
   if (!text) return '';
@@ -15,7 +17,7 @@ function sanitizeWinAnsi(text: string): string {
     .replace(/[^\x00-\xFF]/g, '');
 }
 
-function safeDrawText(page: any, text: string, options: any) {
+function safeDrawText(page: PDFPage, text: string, options: DrawTextOptions) {
   page.drawText(sanitizeWinAnsi(text), options);
 }
 

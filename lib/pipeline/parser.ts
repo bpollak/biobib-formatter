@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import {
   DocumentModel, DocumentMetadata, ParagraphInfo, MarginInfo,
   StyleInfo, FigureInfo, TableInfo, ReferenceInfo, TitlePageInfo,
@@ -11,7 +10,6 @@ import {
   isRunItalic, isRunBold, hasDrawing, getDrawingAltText, isHeadingStyle,
   getHeadingLevel, parseStyleFonts
 } from '../docx/reader';
-import { APPROVED_FONTS } from '../constants';
 
 export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata): Promise<DocumentModel> {
   const files = await readDocxFiles(buffer);
@@ -98,7 +96,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       spaceAfter: spacing.after,
       indentLeft: indent.left,
       indentRight: indent.right,
-      indentFirstLine: indent.firstLine || (indent.hanging ? undefined : undefined),
+      indentFirstLine: indent.firstLine,
       alignment,
       isHeading,
       headingLevel,
@@ -160,6 +158,13 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   while ((tblMatch = tableXmlRegex.exec(documentXml)) !== null) {
     const tblContent = tblMatch[1];
     const hasHeaderRow = /<w:tblHeader/.test(tblContent);
+    // Multi-page heuristic: Word doesn't store page boundaries in the XML, so
+    // we approximate. A table is "likely multi-page" if either (a) it has many
+    // rows (>25) — a typical Letter page fits ~25 single-spaced table rows, or
+    // (b) the author explicitly marked the first row with <w:tblHeader/> for
+    // header repetition (signaling intent that the table spans pages).
+    const rowCount = (tblContent.match(/<w:tr\b/g) || []).length;
+    const isMultiPage = rowCount > 25 || hasHeaderRow;
     // Find the nearest paragraph index by locating the table position in XML
     const tblPosition = tblMatch.index;
     let nearestParagraphIndex = 0;
@@ -173,7 +178,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       paragraphIndex: Math.max(0, nearestParagraphIndex),
       hasCaption: false,
       hasHeaderRow,
-      isMultiPage: false,
+      isMultiPage,
     });
   }
 
@@ -224,7 +229,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   };
 
   // Detect sections
-  const sections = detectSections(paragraphs, metadata);
+  const sections = detectSections(paragraphs);
 
   // Parse title page
   const titlePage = parseTitlePage(paragraphs, sections);
@@ -260,7 +265,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   };
 }
 
-function detectSections(paragraphs: ParagraphInfo[], metadata: DocumentMetadata): SectionInfo[] {
+function detectSections(paragraphs: ParagraphInfo[]): SectionInfo[] {
   const sections: SectionInfo[] = [];
   const assignedParagraphs = new Set<number>();
 
@@ -589,7 +594,9 @@ function parsePageNumbering(documentXml: string, footerXmls: string[]): PageNumb
     hasBodyArabic: hasArabic,
     romanStartsAtIii: romanStart,
     arabicStartsAtOne: arabicStart,
-    pageNumbersAtBottom: hasPageNumInFooter || hasFooter,
+    // Footer presence alone isn't enough — the footer must contain a PAGE field
+    // (or w:pgNum) for page numbers to actually render at the bottom.
+    pageNumbersAtBottom: hasPageNumInFooter,
     pageNumbersCentered: footerCentered,
   };
 }

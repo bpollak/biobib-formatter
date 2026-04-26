@@ -261,18 +261,21 @@ export function hasDrawing(xml: string): boolean {
 }
 
 /**
- * Get alt text from drawing
+ * Get alt text from drawing — looks at <wp:docPr> specifically, since `descr=`
+ * may also appear on other unrelated elements inside a paragraph.
  */
 export function getDrawingAltText(xml: string): string | undefined {
-  const match = /descr="([^"]*)"/.exec(xml);
-  return match ? match[1] : undefined;
+  const docPrMatch = /<wp:docPr\b[^>]*>/.exec(xml);
+  if (!docPrMatch) return undefined;
+  const descr = /descr="([^"]*)"/.exec(docPrMatch[0]);
+  return descr ? descr[1] : undefined;
 }
 
 /**
  * Check if a string looks like a heading style
  */
 export function isHeadingStyle(styleName: string): boolean {
-  return /^Heading\s*\d+$/i.test(styleName) || /^heading\d+$/i.test(styleName);
+  return /^Heading\s*\d+$/i.test(styleName);
 }
 
 /**
@@ -284,11 +287,12 @@ export function getHeadingLevel(styleName: string): number | undefined {
 }
 
 /**
- * Helper: get attribute value from XML element string
+ * Helper: get attribute value from XML element string. XML attribute names
+ * are case-sensitive, so we don't use the /i flag.
  */
 export function getAttr(xml: string, attr: string): string | undefined {
   const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp(`${escaped}="([^"]*)"`, 'i');
+  const regex = new RegExp(`${escaped}="([^"]*)"`);
   const match = regex.exec(xml);
   return match ? match[1] : undefined;
 }

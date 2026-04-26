@@ -43,7 +43,7 @@ const referencesRules: FormattingRule[] = [
     name: 'References Single-Spaced Within Entries',
     description: 'Each reference entry must be single-spaced internally',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {
@@ -69,7 +69,7 @@ const referencesRules: FormattingRule[] = [
     name: 'Double-Space Between Reference Entries',
     description: 'There must be a double-space (one blank line) between each reference entry',
     severity: 'major',
-    autoFixable: true,
+    autoFixable: false,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       if (doc.references.length === 0) {
@@ -135,17 +135,15 @@ const referencesRules: FormattingRule[] = [
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
       const withEtAl = doc.references.filter(r => r.hasEtAl);
-      const refParas = doc.paragraphs.filter(p => {
-        const refStart = doc.paragraphs.findIndex(pp =>
-          /^(references|bibliography|works\s+cited)$/i.test(pp.text.trim())
-        );
-        return refStart !== -1 && doc.paragraphs.indexOf(p) > refStart;
-      });
+      const refStart = doc.paragraphs.findIndex(p =>
+        /^(references|bibliography|works\s+cited)$/i.test(p.text.trim())
+      );
+      const refParas = refStart === -1 ? [] : doc.paragraphs.slice(refStart + 1);
       const hasOthers = refParas.some(p =>
         /\band\s+others\b/i.test(p.text) ||
         /\bet\s+al\./i.test(p.text)
       );
-      
+
       if (!hasOthers && withEtAl.length === 0) {
         return makeResult('REF-005', 'All Authors Listed', 'critical', false, true,
           'No author abbreviations detected in References');

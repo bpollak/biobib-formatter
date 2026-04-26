@@ -90,8 +90,6 @@ const CATEGORIES: Category[] = [
       { id: 'SPACE-001', name: 'Body Text Double-Spaced', description: 'All body text must be double-spaced', autoFixable: true, severity: 'critical' },
       { id: 'SPACE-002', name: 'Block Quotes Single-Spaced', description: 'Long quotations (block quotes) should be single-spaced', autoFixable: false, severity: 'major' },
       { id: 'SPACE-003', name: 'Block Quotes Indented 0.5" Both Sides', description: 'Block quotes must be indented 0.5" on both left and right', autoFixable: false, severity: 'major' },
-      { id: 'SPACE-004', name: 'Footnotes May Be Single-Spaced', description: 'Footnotes are permitted to be single-spaced — this is correct per GEPA guidelines', autoFixable: false, severity: 'minor' },
-      { id: 'SPACE-005', name: 'Figure/Table Captions May Be Single-Spaced', description: 'Figure and table captions are permitted to be single-spaced', autoFixable: false, severity: 'minor' },
     ],
   },
   {

@@ -31,10 +31,6 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
-    "check-*.ts",
-    "test-*.ts",
-    "debug-*.ts",
-    "find-*.ts"
+    "node_modules"
   ]
 }

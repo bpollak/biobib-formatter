@@ -228,7 +228,7 @@ const titlePageRules: FormattingRule[] = [
     severity: 'minor',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       return warn('TITLE-009', 'Degree Year Matches Conferral Year', 'minor',
         'Manually verify the year on your title page matches your graduation quarter\'s conferral year',
         'The year at the bottom of the title page must be the year in which your degree will be conferred. Verify this with GEPA if uncertain.'

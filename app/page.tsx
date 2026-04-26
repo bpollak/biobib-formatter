@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -17,30 +17,15 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import UploadZone from '@/components/UploadZone';
 import ProcessingView from '@/components/ProcessingView';
+import { MAX_FILE_SIZE_MB } from '@/lib/constants';
 
 type DocumentType = 'dissertation' | 'thesis';
 type DegreeType = 'doctoral' | 'masters';
 
-type ProcessingStep = {
-  label: string;
-  status: 'pending' | 'active' | 'done' | 'error';
-};
-
-const STEPS: ProcessingStep[] = [
-  { label: 'Uploading document...', status: 'pending' },
-  { label: 'Parsing document structure...', status: 'pending' },
-  { label: 'Checking margins...', status: 'pending' },
-  { label: 'Checking fonts & typography...', status: 'pending' },
-  { label: 'Checking pagination...', status: 'pending' },
-  { label: 'Checking page order...', status: 'pending' },
-  { label: 'Checking title page...', status: 'pending' },
-  { label: 'Checking abstract...', status: 'pending' },
-  { label: 'Checking spacing & indentation...', status: 'pending' },
-  { label: 'Checking figures & tables...', status: 'pending' },
-  { label: 'Checking references...', status: 'pending' },
-  { label: 'Applying auto-fixes...', status: 'pending' },
-  { label: 'Generating compliance report...', status: 'pending' },
-];
+// If the upload makes no progress for this many ms, abort and tell the user.
+// Helps surface stalled uploads (poor mobile data, blocked endpoints, etc.)
+// instead of leaving the spinner hanging indefinitely.
+const UPLOAD_STALL_MS = 60_000;
 
 const HOW_IT_WORKS = [
   {
@@ -51,7 +36,7 @@ const HOW_IT_WORKS = [
   {
     step: 2,
     title: 'Review',
-    description: 'Our system checks 60+ GEPA formatting rules and auto-corrects what it can — margins, fonts, spacing, pagination, and more.',
+    description: 'Our system checks 80+ GEPA formatting rules and auto-corrects what it can — margins, fonts, spacing, pagination, and more.',
   },
   {
     step: 3,
@@ -68,108 +53,119 @@ export default function HomePage() {
   const [documentType, setDocumentType] = useState<DocumentType>('dissertation');
   const [degreeType, setDegreeType] = useState<DegreeType>('doctoral');
   const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState('');
-  const [steps, setSteps] = useState<ProcessingStep[]>(STEPS.map(s => ({ ...s })));
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  function advanceStep(index: number) {
-    setSteps(prev =>
-      prev.map((s, i) => {
-        if (i < index) return { ...s, status: 'done' };
-        if (i === index) return { ...s, status: 'active' };
-        return { ...s, status: 'pending' };
-      })
-    );
+  function handleCancel() {
+    abortRef.current?.abort();
   }
 
   async function handleSubmit() {
     if (!file) return;
     setError(null);
     setProcessing(true);
-    setProgress(5);
-    setStage('Uploading...');
-    advanceStep(0);
+    setUploadPercent(0);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Stall watchdog: if no upload progress event fires for UPLOAD_STALL_MS,
+    // abort. Reset on every onUploadProgress tick.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        controller.abort(new Error('Upload stalled — no progress for 60 seconds'));
+      }, UPLOAD_STALL_MS);
+    };
 
     try {
-      // 1. Upload to Vercel Blob directly from client
-      setStage('Uploading file securely...');
+      // 1. Upload to Vercel Blob directly from client. Real progress events,
+      // an abort signal, and a stall watchdog so the UI doesn't hang silently
+      // on poor connections.
+      setStage('Uploading file...');
+      armStallTimer();
       const blob = await upload(file.name, file, {
         access: 'public',
         handleUploadUrl: '/api/blob-upload',
-      });
-
-      // Animate all 13 steps while the checking request runs
-      const animationPromise = (async () => {
-        const stepDelays = [300, 350, 350, 350, 350, 350, 350, 350, 400, 400, 450, 500];
-        for (let i = 1; i <= 12; i++) {
-          await new Promise(r => setTimeout(r, stepDelays[i - 1] || 400));
-          advanceStep(i);
-          setProgress(5 + Math.round((i / 13) * 85));
-          setStage(STEPS[i]?.label || 'Checking...');
-        }
-      })();
-
-      // Fire the combined check request with the blob URL
-      const checkRes = await fetch('/api/check', { 
-        method: 'POST', 
-        headers: {
-          'Content-Type': 'application/json',
+        abortSignal: controller.signal,
+        onUploadProgress: (event) => {
+          armStallTimer();
+          setUploadPercent(event.percentage);
+          setStage(`Uploading file... ${Math.round(event.percentage)}%`);
         },
+      });
+      if (stallTimer) clearTimeout(stallTimer);
+      setUploadPercent(null);
+
+      // 2. Run validation + auto-fixes in a single server request. Server
+      // streaming progress would be the right way to drive a real progress
+      // bar for this phase; until that exists we show an indeterminate
+      // spinner with a single label so users aren't misled by a fake
+      // animation.
+      setStage('Checking 80+ formatting rules and applying auto-fixes...');
+      const checkRes = await fetch('/api/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           documentType,
           degreeType,
           fileName: file.name,
           fileSize: file.size,
           blobUrl: blob.url,
-        })
+        }),
+        signal: controller.signal,
       });
 
       if (!checkRes.ok) {
         let errDetail = 'Processing failed';
         try {
-          // Attempt to parse JSON error
           const err = await checkRes.json();
           errDetail = err.error || errDetail;
         } catch {
-          // Graceful fallback for non-JSON responses (e.g. Vercel 413 or 504)
+          // Graceful fallback for non-JSON responses (e.g. Vercel 413 or 504).
           const text = await checkRes.text();
           if (text.includes('Request Entity Too Large')) {
-             errDetail = 'File exceeds maximum upload size (4.5MB).';
+            errDetail = `File exceeds maximum upload size (${MAX_FILE_SIZE_MB}MB).`;
           } else {
-             errDetail = `Server returned ${checkRes.status}: ${checkRes.statusText}`;
+            errDetail = `Server returned ${checkRes.status}: ${checkRes.statusText}`;
           }
         }
         throw new Error(errDetail);
       }
-      
+
       const { results, correctedFileUrl, originalFileName } = await checkRes.json();
-
-      // Wait for animation to finish (or skip ahead)
-      await animationPromise;
-
-      setStage('Finalizing...');
-      setProgress(95);
-
-      await new Promise(r => setTimeout(r, 300));
-
-      setProgress(100);
-      setSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
 
       const sessionId = results.sessionId;
       sessionStorage.setItem(`results_${sessionId}`, JSON.stringify(results));
       sessionStorage.setItem(`originalFileName_${sessionId}`, originalFileName);
-      
       if (correctedFileUrl) {
         sessionStorage.setItem(`correctedFileUrl_${sessionId}`, correctedFileUrl);
       }
+
+      setStage('Loading results...');
       router.push(`/results?sessionId=${sessionId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (stallTimer) clearTimeout(stallTimer);
+      const message = err instanceof Error ? err.message : 'An error occurred';
+      // Distinguish user-cancelled aborts from genuine errors.
+      const isAbort =
+        (err instanceof DOMException && err.name === 'AbortError') ||
+        message.includes('aborted') ||
+        message.includes('stalled');
+      setError(
+        isAbort
+          ? message.includes('stalled')
+            ? 'Upload stalled. This usually means a slow or interrupted network connection — try again on a stronger connection.'
+            : 'Upload cancelled.'
+          : message
+      );
       setProcessing(false);
-      setSteps(STEPS.map(s => ({ ...s })));
-      setProgress(0);
       setStage('');
+      setUploadPercent(null);
+      abortRef.current = null;
     }
   }
 
@@ -180,7 +176,11 @@ export default function HomePage() {
       <Box component="main" sx={{ flex: 1 }}>
         <Container sx={{ py: 5, maxWidth: '1170px !important' }}>
           {processing ? (
-            <ProcessingView progress={progress} stage={stage} steps={steps} />
+            <ProcessingView
+              stage={stage}
+              uploadPercent={uploadPercent}
+              onCancel={handleCancel}
+            />
           ) : (
             <>
               {/* ── Page Title ── */}
@@ -335,7 +335,7 @@ export default function HomePage() {
 
               <Box sx={{ mb: 5, p: 2, backgroundColor: '#F5F7FA', borderRadius: 2 }}>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center' }}>
-                  📋 Checks 60+ UCSD GEPA formatting rules including margins, fonts, pagination, spacing, and more.
+                  Checks 80+ UCSD GEPA formatting rules including margins, fonts, pagination, spacing, and more.
                   Auto-fixes ~20 rules. Generates a compliance report PDF.
                 </Typography>
               </Box>

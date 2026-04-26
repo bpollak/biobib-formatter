@@ -147,7 +147,7 @@ const figuresTablesRules: FormattingRule[] = [
     severity: 'major',
     autoFixable: false,
     appliesTo: 'all',
-    check(doc: DocumentModel): RuleResult {
+    check(_doc: DocumentModel): RuleResult {
       return warn('FIG-006', 'Full-Page Items Have Facing Captions', 'major',
         'Manually verify: if any figure or table fills a full page, its caption must be on the facing (opposite) page',
         'For landscape or full-page figures/tables, place the caption on the page immediately preceding the figure/table. The caption page should be in portrait orientation.'
