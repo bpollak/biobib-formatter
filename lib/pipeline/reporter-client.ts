@@ -66,15 +66,17 @@ export async function generateReportPDFClient(results: ValidationResults): Promi
   });
   y -= 30;
 
-  // Changelog
+  // Changelog — paginate as needed (was previously truncated to 15 entries,
+  // which silently dropped fixes on documents with many corrections).
   if (results.changes.length > 0) {
     ensureSpace(40);
-    safeDrawText(page, 'CHANGES APPLIED (Auto-Fixes)', { x: margin, y, size: fontSize + 2, color: rgb(...UCSD_GOLD) });
+    safeDrawText(page, `CHANGES APPLIED (Auto-Fixes) — ${results.changes.length} total`, {
+      x: margin, y, size: fontSize + 2, color: rgb(...UCSD_GOLD),
+    });
     y -= 20;
 
-    for (const change of results.changes.slice(0, 15)) {
+    for (const change of results.changes) {
       ensureSpace(30);
-      // Truncate long descriptions to fit on page
       const desc = change.description.length > 80 ? change.description.slice(0, 77) + '...' : change.description;
       safeDrawText(page, `- ${desc}`, { x: margin + 10, y, size: fontSize - 1 });
       y -= 16;
@@ -82,13 +84,15 @@ export async function generateReportPDFClient(results: ValidationResults): Promi
     y -= 10;
   }
 
-  // Manual Fixes
+  // Manual Fixes — paginate, no truncation.
   if (results.manualFixes.length > 0) {
     ensureSpace(40);
-    safeDrawText(page, 'MANUAL FIXES REQUIRED', { x: margin, y, size: fontSize + 2, color: rgb(...UCSD_GOLD) });
+    safeDrawText(page, `MANUAL FIXES REQUIRED — ${results.manualFixes.length} total`, {
+      x: margin, y, size: fontSize + 2, color: rgb(...UCSD_GOLD),
+    });
     y -= 20;
 
-    for (const fix of results.manualFixes.slice(0, 15)) {
+    for (const fix of results.manualFixes) {
       ensureSpace(50);
       safeDrawText(page, `${fix.ruleId}: ${fix.title}`, {
         x: margin + 10, y, size: fontSize - 1, color: rgb(0.8, 0, 0),

@@ -471,6 +471,10 @@ function ResultsPageInner() {
               Check Another Document
             </Button>
           </Box>
+          {/* Tell the user the download links expire so they don't come back tomorrow and find them broken. */}
+          <Typography variant="caption" sx={{ display: 'block', mt: 1.5, color: '#757575' }}>
+            Download links expire 30 minutes after processing. If you need the corrected file later, save it now or re-upload your original document.
+          </Typography>
         </Paper>
 
         {/* Bucket 1: Fixed For You */}

@@ -65,8 +65,32 @@ export async function POST(request: NextRequest) {
       fileSize: fileSize || buffer.length,
     };
 
-    // Parse, validate, auto-fix, and finalize.
-    const documentModel = await parseDocument(buffer, metadata);
+    // Parse the document. parseDocument can throw if the file is not a
+    // valid OOXML zip (corrupted, password-protected, or just not a .docx
+    // wrapped in zip). Translate JSZip's technical errors into something
+    // a user can act on.
+    let documentModel;
+    try {
+      documentModel = await parseDocument(buffer, metadata);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const friendly = msg.toLowerCase().includes('end of central directory') ||
+                       msg.toLowerCase().includes('encrypted') ||
+                       msg.toLowerCase().includes('not a zip')
+        ? 'This file could not be opened as a Word document. It may be corrupted, password-protected, or saved in an older format. Try opening it in Word and re-saving as .docx, then upload again.'
+        : `Failed to parse the document: ${msg}`;
+      return NextResponse.json({ error: friendly }, { status: 400 });
+    }
+
+    // Sanity check: a real dissertation has substantial content. Reject
+    // empty/near-empty documents early rather than running 84 rules
+    // against a stub and showing a noisy "20 failed" result.
+    if (documentModel.paragraphs.length < 10) {
+      return NextResponse.json({
+        error: 'This file does not appear to be a dissertation. The document has fewer than 10 paragraphs of content. Please upload your full dissertation as a .docx file.',
+      }, { status: 400 });
+    }
+
     const ruleResults: RuleResult[] = validateDocument(documentModel);
     const { correctedBuffer, changes } = await applyAutoFixes(buffer, documentModel, ruleResults);
     const results = buildValidationResults(sessionId, metadata, ruleResults, changes);

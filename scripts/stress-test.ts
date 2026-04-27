@@ -359,6 +359,59 @@ async function testDocumentLanguageDetection() {
     /w:val="en-US"/.test(stylesOut) ? 'overwritten with en-US' : 'es-ES preserved');
 }
 
+// ── Test 8: PDF report paginates many fixes (no silent truncation) ──────
+async function testPdfReportPagination() {
+  console.log("\n── Test: PDF report paginates a high-fix-count document ──");
+  const { generateReportPDFClient } = await import('../lib/pipeline/reporter-client');
+  const { PDFDocument } = await import('pdf-lib');
+  const fakeResults = {
+    sessionId: 'stress',
+    metadata: { type: 'dissertation' as const, degreeType: 'doctoral' as const, fileName: 'stress.docx', fileSize: 1000 },
+    summary: { total: 84, passed: 20, failed: 30, warned: 25, autoFixed: 9, skipped: 0,
+               overallStatus: 'fail' as const },
+    rules: [],
+    changes: Array.from({ length: 30 }, (_, i) => ({
+      ruleId: `RULE-${i.toString().padStart(3, '0')}`,
+      description: `Auto-fixed change number ${i + 1} with a moderately long description that should fit within the truncation budget.`,
+      location: `Paragraph ${i * 10}`,
+      before: 'before',
+      after: 'after',
+    })),
+    manualFixes: Array.from({ length: 25 }, (_, i) => ({
+      ruleId: `MANUAL-${i.toString().padStart(3, '0')}`,
+      severity: 'major' as const,
+      title: `Manual fix ${i + 1}: title that is moderately long`,
+      instruction: 'Open the document, select the affected paragraph, and apply the corresponding GEPA-required formatting change manually using the Format menu.',
+      location: `Paragraph ${i * 7}`,
+    })),
+  };
+  const pdfBytes = await generateReportPDFClient(fakeResults);
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pageCount = pdfDoc.getPageCount();
+  expect('PDF report has more than 1 page when there are 30+30 entries', pageCount > 1, `${pageCount} pages, ${pdfBytes.length} bytes`);
+  // Roughly check: ~13 entries per page → 30 changes + 25 manual fixes = ~5 pages.
+  expect('PDF report covers all entries (>= 4 pages)', pageCount >= 4, `${pageCount} pages`);
+}
+
+// ── Test 9: API rejects degenerate inputs with friendly messages ─────────
+async function testApiDegenerateInputs() {
+  console.log("\n── Test: pipeline behavior on near-empty / corrupt input ──");
+
+  // Near-empty doc — pipeline should still parse, but the API layer rejects
+  // it before validation. We test the parser directly here; the API rejection
+  // is exercised by the route's < 10 paragraphs check.
+  const zip = new JSZip();
+  zip.file('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Single paragraph.</w:t></w:r></w:p><w:sectPr/></w:body></w:document>');
+  zip.file('word/styles.xml', '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:styles>');
+  const buf = Buffer.from(await zip.generateAsync({ type: 'arraybuffer' }));
+  const doc = await parseDocument(buf, {
+    type: 'dissertation', degreeType: 'doctoral', fileName: 'tiny.docx', fileSize: buf.length,
+  });
+  expect('parser does not crash on tiny doc', doc.paragraphs.length >= 1, `${doc.paragraphs.length} paragraphs`);
+  expect('API guard would reject (< 10 paragraphs)', doc.paragraphs.length < 10,
+    `paragraphs=${doc.paragraphs.length} → /api/check returns 400`);
+}
+
 async function main() {
   await testTrackChanges();
   await testHeaderColors();
@@ -367,6 +420,8 @@ async function main() {
   await testFootnoteEndnoteComments();
   await testPageNumberingSectionPicker();
   await testDocumentLanguageDetection();
+  await testPdfReportPagination();
+  await testApiDegenerateInputs();
 
   console.log(`\n${'═'.repeat(60)}`);
   const failures = results.filter(r => !r.ok);

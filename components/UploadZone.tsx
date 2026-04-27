@@ -82,7 +82,7 @@ export default function UploadZone({ onFileSelected, selectedFile, disabled }: U
           </Typography>
           {selectedFile.size > 40 * 1024 * 1024 && (
             <Typography variant="caption" sx={{ display: 'block', color: '#E65100', mt: 0.5, fontWeight: 600 }}>
-              Large file ({(selectedFile.size / 1024 / 1024).toFixed(0)} MB) — processing may take longer
+              Large file ({(selectedFile.size / 1024 / 1024).toFixed(0)} MB) — processing typically takes 60–120 seconds. The server has a 2-minute hard limit; very large or image-heavy dissertations may time out. If processing fails, try removing embedded videos or converting raster images to vector format.
             </Typography>
           )}
         </Box>
