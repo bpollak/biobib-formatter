@@ -105,11 +105,22 @@ export function fixFontColors(
       const valMatch = /w:val="([^"]+)"/.exec(match);
       if (!valMatch) return match;
       const colorVal = valMatch[1];
-      if (colorVal === '000000' || colorVal.toLowerCase() === '000000' || colorVal === 'auto') {
-        return match;
-      }
+      // If themed, the rendered color comes from the theme — even if val
+      // is already 000000, Word will paint the accent color. Strip theme
+      // attributes whenever we touch this element so the val takes effect.
+      const themed = /w:themeColor=|w:themeShade=|w:themeTint=/.test(match);
+      const blackVal = colorVal === '000000' || colorVal.toLowerCase() === '000000' || colorVal === 'auto';
+      if (blackVal && !themed) return match;
       colorFixed++;
-      return match.replace(/w:val="[^"]+"/, 'w:val="000000"');
+      let result = match;
+      if (!blackVal) result = result.replace(/w:val="[^"]+"/, 'w:val="000000"');
+      // Strip theme attributes; whitespace cleanup keeps the tag tidy.
+      result = result
+        .replace(/\s+w:themeColor="[^"]*"/g, '')
+        .replace(/\s+w:themeShade="[^"]*"/g, '')
+        .replace(/\s+w:themeTint="[^"]*"/g, '')
+        .replace(/\s+w:themeFill="[^"]*"/g, '');
+      return result;
     });
     return fixed.replace(/<!--__RC_(\d+)__-->/g, (_, idx) => stash[parseInt(idx)]);
   };
@@ -389,85 +400,167 @@ export function fixCopyrightPageNumbering(documentXml: string, changes: ChangeRe
   return documentXml;
 }
 
-/**
- * Set preliminary pages to use lowercase Roman numerals starting at iii.
- * Finds the sectPr that should govern the preliminary section and sets
- * <w:pgNumType w:fmt="lowerRoman" w:start="3"/>
- */
-export function fixPreliminaryPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
-  const sectPrMatches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
-  if (sectPrMatches.length === 0) return documentXml;
+// Section type detection by content keywords. Each sectPr's "content"
+// is the document XML between the previous sectPr (or document start)
+// and this sectPr. We classify by inspecting that content.
+type SectionType = 'title' | 'copyright' | 'approval' | 'prelim' | 'body' | 'references' | 'unknown';
 
-  // The preliminary section is typically the first (or second if there's a separate title section).
-  // We look for the first sectPr that doesn't already have fmt="decimal".
-  let targetIdx = 0;
-  for (let i = 0; i < sectPrMatches.length; i++) {
-    const content = sectPrMatches[i][2];
-    // Skip sections that are clearly the body (decimal format)
-    if (/w:fmt="decimal"/.test(content)) continue;
-    targetIdx = i;
-    break;
+function extractTextRoughly(xml: string): string {
+  // Pull plain text from <w:t> elements; ignores XML markup. Lowercased
+  // for case-insensitive keyword matching.
+  return (xml.match(/<w:t\b[^>]*(?<!\/)>([\s\S]*?)<\/w:t>/g) || [])
+    .map(m => m.replace(/<w:t\b[^>]*(?<!\/)>|<\/w:t>/g, ''))
+    .join(' ')
+    .toLowerCase();
+}
+
+function classifyByExistingPgNum(sectPrContent: string): SectionType | null {
+  // Strongest signal: the section already has page-numbering set. Roman
+  // numerals (any case) → prelim. Decimal (or start with no fmt, which is
+  // the OOXML default of decimal) → body.
+  if (/<w:pgNumType[^>]*w:fmt="(?:lowerRoman|upperRoman)"/i.test(sectPrContent)) return 'prelim';
+  if (/<w:pgNumType[^>]*w:fmt="decimal"/i.test(sectPrContent)) return 'body';
+  if (/<w:pgNumType[^>]*w:start=/.test(sectPrContent) && !/w:fmt=/.test(sectPrContent)) return 'body';
+  return null;
+}
+
+function classifySectionContent(precedingXml: string): SectionType {
+  // Used only when no existing pgNumType signal is available. Content-
+  // keyword classification — biased toward content IMMEDIATELY preceding
+  // the sectPr (the tail), since that's what the *current* section
+  // actually contains.
+  const fullText = extractTextRoughly(precedingXml);
+  const tailText = fullText.slice(-8000);
+
+  const tailMatches = (re: RegExp) => re.test(tailText);
+  if (tailMatches(/^references\b|^bibliography\b|^works\s+cited\b/m)) return 'references';
+  if (tailMatches(/\bchapter\s+\d|\bchapter\s+one|\bchapter\s+two|\bchapter\s+three/)) return 'body';
+  if (tailMatches(/dissertation\s+of\b[\s\S]{0,200}is\s+approved|committee\s+in\s+charge/)) return 'approval';
+  if (tailMatches(/acknowledg|table\s+of\s+contents|\bvita\b|\bdedication\b|\bepigraph\b/)) return 'prelim';
+  if (tailMatches(/copyright\s*©?|all\s+rights\s+reserved/)) return 'copyright';
+  if (tailMatches(/university\s+of\s+california\s+san\s+diego/)) return 'title';
+  if (/dissertation\s+of\b[\s\S]{0,200}is\s+approved/.test(fullText)) return 'approval';
+  if (/^acknowledg|table\s+of\s+contents/i.test(fullText)) return 'prelim';
+  return 'unknown';
+}
+
+interface SectionInfo {
+  match: RegExpMatchArray;
+  type: SectionType;
+  index: number;
+}
+
+function detectSections(documentXml: string): SectionInfo[] {
+  const matches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
+  const sections: SectionInfo[] = [];
+  let prevEnd = 0;
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const start = m.index ?? 0;
+    const sectPrContent = m[2];
+    // Existing pgNumType is the strongest signal; fall back to content
+    // keywords only when the section has no page-numbering set yet.
+    const byPgNum = classifyByExistingPgNum(sectPrContent);
+    const preceding = documentXml.slice(prevEnd, start);
+    const type = byPgNum ?? classifySectionContent(preceding);
+    sections.push({ match: m, type, index: i });
+    prevEnd = start + m[0].length;
   }
+  return sections;
+}
 
-  const [full, open, content, close] = sectPrMatches[targetIdx];
-  const romanPgNum = '<w:pgNumType w:fmt="lowerRoman" w:start="3"/>';
+function pickSection(sections: SectionInfo[], preferredTypes: SectionType[]): SectionInfo | null {
+  for (const t of preferredTypes) {
+    const found = sections.find(s => s.type === t);
+    if (found) return found;
+  }
+  return null;
+}
 
+function applyPgNumType(
+  documentXml: string,
+  section: SectionInfo,
+  newPgNum: string
+): { result: string; changed: boolean } {
+  const [full, open, content, close] = section.match;
   let newContent: string;
   if (/<w:pgNumType[^/]*\/>/.test(content)) {
-    // Replace existing pgNumType
-    newContent = content.replace(/<w:pgNumType[^/]*\/>/, romanPgNum);
+    newContent = content.replace(/<w:pgNumType[^/]*\/>/, newPgNum);
   } else {
-    // Add pgNumType
-    newContent = content + romanPgNum;
+    newContent = content + newPgNum;
   }
-
   const newSectPr = open + newContent + close;
-  if (newSectPr !== full) {
-    changes.push({
-      ruleId: 'PAGE-003',
-      description: 'Set preliminary section page numbering to lowercase Roman numerals starting at iii',
-      location: `Section ${targetIdx + 1} properties`,
-      before: 'No or incorrect pgNumType',
-      after: 'pgNumType fmt="lowerRoman" start="3"',
-    });
-    return documentXml.replace(full, newSectPr);
-  }
-  return documentXml;
+  if (newSectPr === full) return { result: documentXml, changed: false };
+  // Use position-based slicing rather than `documentXml.replace(full, ...)`
+  // — the latter replaces the *first* string match, which collides when
+  // multiple sectPrs in the document have identical structure (very
+  // common in templated dissertations).
+  const start = section.match.index ?? 0;
+  const end = start + full.length;
+  return {
+    result: documentXml.slice(0, start) + newSectPr + documentXml.slice(end),
+    changed: true,
+  };
 }
 
 /**
- * Set body section to use Arabic numerals starting at 1.
- * Finds the last sectPr (typically body/main section) and sets
- * <w:pgNumType w:fmt="decimal" w:start="1"/>
+ * Set preliminary pages to use lowercase Roman numerals starting at iii.
+ * Picks the section whose preceding content looks like a preliminary
+ * section (acknowledgments, table of contents, abstract, etc.). Falls
+ * back to the approval section, then "first non-title non-body section",
+ * then the first sectPr.
+ */
+export function fixPreliminaryPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
+  const sections = detectSections(documentXml);
+  if (sections.length === 0) return documentXml;
+
+  const target =
+    pickSection(sections, ['prelim', 'approval']) ||
+    sections.find(s => s.type !== 'title' && s.type !== 'copyright' && s.type !== 'body') ||
+    sections[0];
+
+  const romanPgNum = '<w:pgNumType w:fmt="lowerRoman" w:start="3"/>';
+  const { result, changed } = applyPgNumType(documentXml, target, romanPgNum);
+  if (!changed) return documentXml;
+
+  changes.push({
+    ruleId: 'PAGE-003',
+    description: 'Set preliminary section page numbering to lowercase Roman numerals starting at iii',
+    location: `Section ${target.index + 1} properties (detected: ${target.type})`,
+    before: 'No or incorrect pgNumType',
+    after: 'pgNumType fmt="lowerRoman" start="3"',
+  });
+  return result;
+}
+
+/**
+ * Set body section to use Arabic numerals starting at 1. Picks the
+ * section whose preceding content looks like the body (chapter,
+ * introduction). Falls back to the last non-references section, then
+ * the last sectPr.
  */
 export function fixBodyPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
-  const sectPrMatches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
-  if (sectPrMatches.length === 0) return documentXml;
+  const sections = detectSections(documentXml);
+  if (sections.length === 0) return documentXml;
 
-  // Body section is typically the last sectPr
-  const targetIdx = sectPrMatches.length - 1;
-  const [full, open, content, close] = sectPrMatches[targetIdx];
+  let target = sections.find(s => s.type === 'body');
+  if (!target) {
+    const nonRef = [...sections].reverse().find(s => s.type !== 'references');
+    target = nonRef ?? sections[sections.length - 1];
+  }
+
   const arabicPgNum = '<w:pgNumType w:fmt="decimal" w:start="1"/>';
+  const { result, changed } = applyPgNumType(documentXml, target, arabicPgNum);
+  if (!changed) return documentXml;
 
-  let newContent: string;
-  if (/<w:pgNumType[^/]*\/>/.test(content)) {
-    newContent = content.replace(/<w:pgNumType[^/]*\/>/, arabicPgNum);
-  } else {
-    newContent = content + arabicPgNum;
-  }
-
-  const newSectPr = open + newContent + close;
-  if (newSectPr !== full) {
-    changes.push({
-      ruleId: 'PAGE-005',
-      description: 'Set body section page numbering to Arabic numerals starting at 1',
-      location: `Section ${targetIdx + 1} properties`,
-      before: 'No or incorrect pgNumType',
-      after: 'pgNumType fmt="decimal" start="1"',
-    });
-    return documentXml.replace(full, newSectPr);
-  }
-  return documentXml;
+  changes.push({
+    ruleId: 'PAGE-005',
+    description: 'Set body section page numbering to Arabic numerals starting at 1',
+    location: `Section ${target.index + 1} properties (detected: ${target.type})`,
+    before: 'No or incorrect pgNumType',
+    after: 'pgNumType fmt="decimal" start="1"',
+  });
+  return result;
 }
 
 /**

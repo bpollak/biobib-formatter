@@ -127,10 +127,15 @@ const accessibilityRules: FormattingRule[] = [
     autoFixable: true,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
-      // Check if language is set in styles.xml or document.xml
-      const hasLang = /<w:lang[^>]+w:val="en-US"/.test(doc.rawXml) ||
-                      /<w:lang[^>]+w:val="en-US"/.test(doc.stylesXml) ||
-                      /<w:lang[^>]+w:bidi="[^"]+"/.test(doc.rawXml);
+      // Accept ANY valid BCP-47 language tag (e.g. en-US, es-ES, fr-CA,
+      // zh-CN). The previous check only accepted en-US, which would
+      // falsely flag — and then auto-overwrite — a Spanish or French
+      // dissertation's language tag with English.
+      const langTagRe = /<w:lang[^>]+w:val="([a-zA-Z]{2,3}(?:-[A-Za-z]{2,4})?)"/;
+      const hasLang =
+        langTagRe.test(doc.rawXml) ||
+        langTagRe.test(doc.stylesXml) ||
+        /<w:lang[^>]+w:bidi="[^"]+"/.test(doc.rawXml);
       if (hasLang) {
         return makeResult('A11Y-005', 'Document Language Set', 'minor', true, true,
           'Document language is set');
@@ -138,7 +143,7 @@ const accessibilityRules: FormattingRule[] = [
       return makeResult('A11Y-005', 'Document Language Set', 'minor', true, false,
         'Document language may not be explicitly set',
         undefined,
-        'Document language will be set to English (en-US) automatically in the corrected file.'
+        'Document language will be set to English (en-US) automatically in the corrected file. If your dissertation is in another language, set the document language manually before submission.'
       );
     },
   },

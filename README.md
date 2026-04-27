@@ -91,11 +91,39 @@ There is no persistent server-side session; everything is per-request.
 
 ## Limitations
 
-- Vercel Blob URLs for corrected files are public-read with random suffixes.
-  Treat URLs as bearer tokens; consider migrating to private/signed URLs if
-  you need stronger guarantees.
-- The fake progress bar was removed in favor of an honest indeterminate
-  spinner. Adding server-streamed progress would require switching `/api/check`
-  to a streaming response.
+- Vercel Blob URLs for corrected files are public-read with random suffixes
+  in the unauthenticated path; the primary download flow uses HMAC-signed
+  tokens with 30-min TTL via `/api/download/[sessionId]/document`.
+- The progress bar shows real upload progress (`onUploadProgress`) but the
+  validation phase is indeterminate. Adding server-streamed progress would
+  require switching `/api/check` to a streaming response.
 - Multi-page table detection is heuristic (`rows > 25 || hasHeaderRow`)
   because OOXML doesn't store page boundaries.
+- **Multi-row table headers** — `fixTableHeaders` (A11Y-003) marks only the
+  first row as a header. Tables with semantic 2+ row headers (e.g., column
+  groups with sub-columns) aren't fully marked. We don't detect them
+  because reliable heuristics are fragile and false positives would
+  incorrectly demote body rows to headers.
+- **Image alt text is a placeholder** — `fixImageAltText` (A11Y-002) inserts
+  `[Image - description required]`. Validator passes (descriptor exists)
+  but a human accessibility advisor would still flag this. Users must
+  replace the placeholder with a real description before submission.
+- **Embedded charts and SmartArt** — `chart*.xml`, `diagrams/*.xml` and
+  similar embedded objects use different XML namespaces (`c:`, `dgm:`)
+  and aren't validated or fixed. Color/font issues inside charts are
+  invisible to this tool.
+
+## What's automated, by class
+
+| Concern | Validator sees | Fixer touches |
+| --- | --- | --- |
+| Body text | document.xml | document.xml |
+| Styles | styles.xml | styles.xml |
+| Headers | (no) | header*.xml (color only) |
+| Footers | footer*.xml (page numbers) | footer*.xml (page numbers + color) |
+| Footnotes | (no) | footnotes.xml (color) |
+| Endnotes | (no) | endnotes.xml (color) |
+| Comments | (no) | comments.xml (color) |
+| Math runs `<m:r>` | yes | yes (via raw-XML scan) |
+| Track changes `<w:rPrChange>` | preserved | preserved (skipped during fix) |
+| Charts / SmartArt | (no) | (no) |

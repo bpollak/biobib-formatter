@@ -25,6 +25,9 @@ const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
   <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
   <Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>
+  <Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>
+  <Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>
+  <Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>
 </Types>`;
 
 const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -48,7 +51,11 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 
 interface DocxParts {
   documentXml: string;
+  stylesXml?: string;
   headerXml?: string;
+  footnotesXml?: string;
+  endnotesXml?: string;
+  commentsXml?: string;
 }
 
 async function buildDocx(parts: DocxParts): Promise<Buffer> {
@@ -57,10 +64,11 @@ async function buildDocx(parts: DocxParts): Promise<Buffer> {
   zip.file('_rels/.rels', ROOT_RELS);
   zip.file('word/_rels/document.xml.rels', DOC_RELS);
   zip.file('word/document.xml', parts.documentXml);
-  zip.file('word/styles.xml', STYLES_XML);
-  if (parts.headerXml) {
-    zip.file('word/header1.xml', parts.headerXml);
-  }
+  zip.file('word/styles.xml', parts.stylesXml ?? STYLES_XML);
+  if (parts.headerXml) zip.file('word/header1.xml', parts.headerXml);
+  if (parts.footnotesXml) zip.file('word/footnotes.xml', parts.footnotesXml);
+  if (parts.endnotesXml) zip.file('word/endnotes.xml', parts.endnotesXml);
+  if (parts.commentsXml) zip.file('word/comments.xml', parts.commentsXml);
   const buf = await zip.generateAsync({ type: 'arraybuffer' });
   return Buffer.from(buf);
 }
@@ -203,10 +211,162 @@ async function testMathRuns() {
     mathStillRed ? 'fixer missed math run color' : 'math color fixed');
 }
 
+// ── Test 4: Theme colors override w:val ─────────────────────────────────
+async function testThemeColors() {
+  console.log('\n── Test: <w:color w:val="..." w:themeColor="..."/> ──');
+
+  // A run with both w:val (red) and w:themeColor (accent1). Word renders
+  // via the theme color and ignores w:val. Our fix must strip the theme
+  // attributes too — otherwise the visible color persists.
+  const body = `<w:p><w:r>
+      <w:rPr><w:color w:val="FF0000" w:themeColor="accent1"/></w:rPr>
+      <w:t>This paragraph has substantial text and a themed accent color override.</w:t>
+    </w:r></w:p>`;
+  const buffer = await buildDocx({ documentXml: wrapDocument(body) });
+  const { ruleResults, correctedBuffer, changes } = await processDoc(buffer);
+
+  const font005 = ruleResults.find(r => r.ruleId === 'FONT-005');
+  expect('validator flags themed FONT-005', font005?.status === 'fail', `status=${font005?.status}`);
+  expect('fixer dispatched FONT-005', changes.some(c => c.ruleId === 'FONT-005'), '');
+
+  const xmlOut = await readFromDocx(correctedBuffer, 'word/document.xml');
+  const themePresent = /w:themeColor=/.test(xmlOut);
+  expect('w:themeColor stripped (else Word still renders accent color)',
+    !themePresent,
+    themePresent ? 'w:themeColor still present — Word will still paint accent1' : 'theme attributes stripped');
+}
+
+// ── Test 5: Footnotes / endnotes / comments color processing ────────────
+async function testFootnoteEndnoteComments() {
+  console.log('\n── Test: footnote / endnote / comment color processing ──');
+
+  const body = `<w:p><w:r>
+      <w:rPr><w:color w:val="FF0000"/></w:rPr>
+      <w:t>Body has red text — long enough to qualify for indent rule too.</w:t>
+    </w:r></w:p>`;
+  const footnotesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:footnote w:id="1"><w:p><w:r>
+    <w:rPr><w:color w:val="00FF00"/></w:rPr>
+    <w:t>Footnote text in green</w:t>
+  </w:r></w:p></w:footnote>
+</w:footnotes>`;
+  const endnotesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:endnote w:id="1"><w:p><w:r>
+    <w:rPr><w:color w:val="0000FF"/></w:rPr>
+    <w:t>Endnote text in blue</w:t>
+  </w:r></w:p></w:endnote>
+</w:endnotes>`;
+  const commentsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:comment w:id="1" w:author="reviewer" w:date="2026-01-01"><w:p><w:r>
+    <w:rPr><w:color w:val="FF00FF"/></w:rPr>
+    <w:t>Comment in magenta</w:t>
+  </w:r></w:p></w:comment>
+</w:comments>`;
+
+  const buffer = await buildDocx({
+    documentXml: wrapDocument(body),
+    footnotesXml, endnotesXml, commentsXml,
+  });
+  const { correctedBuffer, changes } = await processDoc(buffer);
+  expect('fixer dispatched FONT-005 (from body)', changes.some(c => c.ruleId === 'FONT-005'), '');
+
+  const fnOut = await readFromDocx(correctedBuffer, 'word/footnotes.xml');
+  const enOut = await readFromDocx(correctedBuffer, 'word/endnotes.xml');
+  const cmOut = await readFromDocx(correctedBuffer, 'word/comments.xml');
+  expect('footnote color fixed', !/00FF00/.test(fnOut), /00FF00/.test(fnOut) ? 'still green' : 'green→black');
+  expect('endnote color fixed', !/0000FF/.test(enOut), /0000FF/.test(enOut) ? 'still blue' : 'blue→black');
+  expect('comment color fixed', !/FF00FF/.test(cmOut), /FF00FF/.test(cmOut) ? 'still magenta' : 'magenta→black');
+}
+
+// ── Test 6: Page-numbering picks the right section ──────────────────────
+async function testPageNumberingSectionPicker() {
+  console.log('\n── Test: page-numbering section picker on multi-section docs ──');
+
+  // Title section, copyright section, prelim section, body section.
+  // Each section has its own sectPr with type="continuous". Validator
+  // should detect Roman / Arabic numbering issues. Fixer should apply
+  // lowerRoman start=3 to the prelim section (3rd) and decimal start=1
+  // to the body (4th, last).
+  const body = `<w:p><w:r><w:t>UNIVERSITY OF CALIFORNIA SAN DIEGO</w:t></w:r></w:p>
+<w:p><w:r><w:t>Title page substantial content for body indent rule.</w:t></w:r></w:p>
+<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>
+<w:p><w:r><w:t>Copyright © 2026 — substantial content text here for body filtering.</w:t></w:r></w:p>
+<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>
+<w:p><w:r><w:t>Acknowledgments and table of contents go in this prelim section.</w:t></w:r></w:p>
+<w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:pPr></w:p>
+<w:p><w:r><w:t>Chapter 1: Introduction with substantial body content text here.</w:t></w:r></w:p>`;
+
+  const buffer = await buildDocx({ documentXml: wrapDocument(body) });
+  const { correctedBuffer } = await processDoc(buffer);
+  const xmlOut = await readFromDocx(correctedBuffer, 'word/document.xml');
+
+  // sectPr count
+  const sectPrs = xmlOut.match(/<w:sectPr\b/g) || [];
+  expect('document has 4 sectPr elements (3 inline + 1 trailing)', sectPrs.length === 4,
+    `found ${sectPrs.length} sectPr`);
+
+  // Whichever sectPr ends up with lowerRoman start=3 should be the prelim
+  // section (the one whose preceding content mentions acknowledgments,
+  // contents, abstract, etc.) — not the title section.
+  const lowerRomanContext = /([\s\S]{0,400})<w:pgNumType[^>]*w:fmt="lowerRoman"[^>]*w:start="3"/.exec(xmlOut);
+  if (!lowerRomanContext) {
+    expect('lowerRoman start=3 applied somewhere', false, 'not applied');
+  } else {
+    const ctx = lowerRomanContext[1].toLowerCase();
+    const isPrelim = /acknowledg|contents|abstract|prelim/.test(ctx);
+    expect('lowerRoman start=3 applied to prelim section, not title',
+      isPrelim,
+      isPrelim ? 'preceding context looks like prelim' : `applied to wrong section: "${ctx.slice(-200)}"`);
+  }
+}
+
+// ── Test 7: Document language detection ─────────────────────────────────
+async function testDocumentLanguageDetection() {
+  console.log("\n── Test: document language detection (don't override existing non-English) ──");
+
+  // A doc explicitly tagged as Spanish in styles.xml. fixDocumentLanguage
+  // should NOT overwrite it with en-US.
+  const stylesWithSpanish = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults>
+    <w:rPrDefault><w:rPr>
+      <w:rFonts w:ascii="Times New Roman"/>
+      <w:lang w:val="es-ES"/>
+    </w:rPr></w:rPrDefault>
+  </w:docDefaults>
+</w:styles>`;
+
+  // Body content that triggers SOMETHING (so fixer runs) but won't make
+  // A11Y-005 fail (because lang is already set). Use a colored run.
+  const body = `<w:p><w:r>
+      <w:rPr><w:color w:val="FF0000"/></w:rPr>
+      <w:t>Spanish dissertation with red text — long enough for body indent rule.</w:t>
+    </w:r></w:p>`;
+  const buffer = await buildDocx({ documentXml: wrapDocument(body), stylesXml: stylesWithSpanish });
+  const { ruleResults, correctedBuffer } = await processDoc(buffer);
+
+  const a11y005 = ruleResults.find(r => r.ruleId === 'A11Y-005');
+  // Lang IS set (to es-ES), so A11Y-005 should pass without dispatching the fix.
+  expect('A11Y-005 passes when non-English lang already set', a11y005?.status === 'pass',
+    `status=${a11y005?.status}`);
+
+  // Verify the corrected output preserves es-ES.
+  const stylesOut = await readFromDocx(correctedBuffer, 'word/styles.xml');
+  expect('non-English language preserved', /w:val="es-ES"/.test(stylesOut),
+    /w:val="en-US"/.test(stylesOut) ? 'overwritten with en-US' : 'es-ES preserved');
+}
+
 async function main() {
   await testTrackChanges();
   await testHeaderColors();
   await testMathRuns();
+  await testThemeColors();
+  await testFootnoteEndnoteComments();
+  await testPageNumberingSectionPicker();
+  await testDocumentLanguageDetection();
 
   console.log(`\n${'═'.repeat(60)}`);
   const failures = results.filter(r => !r.ok);
