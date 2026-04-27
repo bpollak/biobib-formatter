@@ -1,5 +1,6 @@
 import { FormattingRule, DocumentModel, RuleResult } from '../types';
 import { INDENT_HALF_INCH } from '../constants';
+import { isBodySkipStyle } from '../style-skip';
 
 function makeResult(
   ruleId: string, name: string, severity: FormattingRule['severity'],
@@ -23,12 +24,15 @@ const indentationRules: FormattingRule[] = [
     autoFixable: true,
     appliesTo: 'all',
     check(doc: DocumentModel): RuleResult {
+      // Body-paragraph filter must match the fixer's exclusion list
+      // (lib/style-skip.ts) so the validator and fixer agree on which
+      // paragraphs need fixing.
       const bodyParas = doc.paragraphs.filter(p =>
         !p.isHeading &&
         !p.isCaption &&
         !p.isEmpty &&
         p.text.trim().length > 20 &&
-        !/^(caption|footnote|figure|table|toc|list|heading|abstract)/i.test(p.style.toLowerCase())
+        !isBodySkipStyle(p.style)
       );
 
       if (bodyParas.length === 0) {

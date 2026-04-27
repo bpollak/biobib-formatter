@@ -1,5 +1,16 @@
 import JSZip from 'jszip';
 import { ChangeRecord } from '../types';
+import { isBodySkipStyle } from '../style-skip';
+
+// Match every <w:p> paragraph cleanly, handling both forms:
+//   1. self-closing: <w:p/>
+//   2. open + close: <w:p ...>...</w:p>
+// A simpler regex like /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g over-matches because
+// for self-closing <w:p/> it consumes everything through the *next*
+// paragraph's </w:p>, yielding cross-paragraph captures and (when used in
+// `replace`) inserting fixes at the wrong position. JS regex alternation
+// is left-to-right so the self-closing alternative is tried first.
+const PARAGRAPH_RE = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 
 /**
  * Load a .docx buffer and return the JSZip instance + document XML
@@ -173,54 +184,36 @@ export function fixFonts(
 }
 
 /**
- * Fix line spacing in body text to double-space
+ * Fix line spacing in body text to double-space.
  */
 export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): string {
   let spacingFixed = 0;
-  
-  // For each paragraph with Normal style or no style, ensure double spacing
-  // This is a targeted fix - only fix body paragraphs with wrong spacing
-  const result = documentXml.replace(
-    /(<w:p[ >][\s\S]*?<w:pPr>)([\s\S]*?)(<\/w:pPr>)/g,
-    (match, _open, pPrContent, _close) => {
-      // Skip if it's a heading, caption, or special style
-      const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent);
-      const styleName = styleMatch ? styleMatch[1].toLowerCase() : 'normal';
-      
-      if (
-        styleName.includes('heading') ||
-        styleName.includes('caption') ||
-        styleName.includes('footnote') ||
-        styleName.includes('toc') ||
-        styleName.includes('list')
-      ) {
-        return match;
-      }
 
-      // Check current spacing
-      const spacingMatch = /<w:spacing[^>]*>/.exec(pPrContent);
-      if (spacingMatch) {
-        const lineVal = getXmlAttr(spacingMatch[0], 'w:line');
-        const lineRuleVal = getXmlAttr(spacingMatch[0], 'w:lineRule');
-        if (lineVal && parseInt(lineVal) >= 480 && lineRuleVal !== 'exact') {
-          return match; // Already double-spaced or more
-        }
-        // Fix spacing - preserve lineRule attribute
-        let newSpacing = spacingMatch[0].replace(
-          /w:line="[^"]*"/,
-          'w:line="480"'
-        );
-        // If lineRule was "exact", change to "auto" for proportional double-spacing
-        if (/w:lineRule="exact"/.test(newSpacing)) {
-          newSpacing = newSpacing.replace(/w:lineRule="exact"/, 'w:lineRule="auto"');
-        }
-        spacingFixed++;
-        return match.replace(spacingMatch[0], newSpacing);
-      }
-      
-      return match;
+  const result = documentXml.replace(PARAGRAPH_RE, (paragraphXml) => {
+    if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) return paragraphXml;
+    const pPrMatch = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(paragraphXml);
+    if (!pPrMatch) return paragraphXml;
+    const pPrContent = pPrMatch[1];
+
+    const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent);
+    const styleName = styleMatch ? styleMatch[1] : 'Normal';
+    if (isBodySkipStyle(styleName)) return paragraphXml;
+
+    const spacingMatch = /<w:spacing[^>]*>/.exec(pPrContent);
+    if (!spacingMatch) return paragraphXml;
+
+    const lineVal = getXmlAttr(spacingMatch[0], 'w:line');
+    const lineRuleVal = getXmlAttr(spacingMatch[0], 'w:lineRule');
+    if (lineVal && parseInt(lineVal) >= 480 && lineRuleVal !== 'exact') {
+      return paragraphXml;
     }
-  );
+    let newSpacing = spacingMatch[0].replace(/w:line="[^"]*"/, 'w:line="480"');
+    if (/w:lineRule="exact"/.test(newSpacing)) {
+      newSpacing = newSpacing.replace(/w:lineRule="exact"/, 'w:lineRule="auto"');
+    }
+    spacingFixed++;
+    return paragraphXml.replace(spacingMatch[0], newSpacing);
+  });
 
   if (spacingFixed > 0) {
     changes.push({
@@ -235,14 +228,6 @@ export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): st
   return result;
 }
 
-// Style names that should never receive a first-line indent.
-const SKIP_INDENT_STYLES = ['heading', 'caption', 'footnote', 'toc', 'list', 'title'];
-
-function shouldSkipForIndent(styleName: string): boolean {
-  const lower = styleName.toLowerCase();
-  return SKIP_INDENT_STYLES.some(s => lower.includes(s));
-}
-
 /**
  * Fix first-line indentation for body paragraphs. Handles three cases:
  *  1. paragraph has <w:ind> with no/insufficient firstLine → set firstLine
@@ -252,10 +237,10 @@ function shouldSkipForIndent(styleName: string): boolean {
 export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[]): string {
   let indentFixed = 0;
 
-  // Pass over every paragraph (with or without pPr).
-  const result = documentXml.replace(
-    /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g,
-    (paragraphXml) => {
+  const result = documentXml.replace(PARAGRAPH_RE, (paragraphXml) => {
+      // Self-closing <w:p/> has no body to attach a fix to.
+      if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) return paragraphXml;
+
       // Need substantial text to consider it a body paragraph (mirrors INDENT-001 check).
       const text = (paragraphXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
         .map(m => m.replace(/<w:t[^>]*>|<\/w:t>/g, ''))
@@ -267,7 +252,7 @@ export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[])
       // Determine effective style. If no pPr, paragraph uses default (Normal) style.
       const styleMatch = pPrMatch && /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrMatch[1]);
       const styleName = styleMatch ? styleMatch[1] : 'Normal';
-      if (shouldSkipForIndent(styleName)) return paragraphXml;
+      if (isBodySkipStyle(styleName)) return paragraphXml;
 
       if (pPrMatch) {
         const pPrContent = pPrMatch[1];
@@ -301,8 +286,7 @@ export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[])
         openTagMatch[0],
         openTagMatch[0] + '<w:pPr><w:ind w:firstLine="720"/></w:pPr>'
       );
-    }
-  );
+  });
 
   if (indentFixed > 0) {
     changes.push({
@@ -323,22 +307,17 @@ export function fixFirstLineIndent(documentXml: string, changes: ChangeRecord[])
 export function fixHeadingItalics(documentXml: string, changes: ChangeRecord[]): string {
   let italicFixed = 0;
   
-  // Find heading paragraphs and remove italic (handle any attribute order in pPr)
-  const result = documentXml.replace(
-    /(<w:p\b[^>]*>[\s\S]*?<w:pPr>[\s\S]*?<\/w:pPr>)([\s\S]*?)(<\/w:p>)/g,
-    (match) => {
-      // Only process if this paragraph has a Heading style
-      if (!/<w:pStyle\s+w:val="Heading[^"]*"/.test(match)) return match;
-      if (/<w:i\s*\/>/.test(match) || /<w:i>/.test(match)) {
-        italicFixed++;
-        return match
-          .replace(/<w:i\s*\/>/g, '')
-          .replace(/<w:i\/>/g, '')
-          .replace(/<w:i>\s*<\/w:i>/g, '');
-      }
-      return match;
-    }
-  );
+  const result = documentXml.replace(PARAGRAPH_RE, (paragraphXml) => {
+    if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) return paragraphXml;
+    if (!/<w:pStyle\s+w:val="Heading[^"]*"/.test(paragraphXml)) return paragraphXml;
+    // The /<w:i\s*\/>/ and /<w:i>/ patterns match literal <w:i/> and <w:i>
+    // (open tag) but not <w:iCs/> (which has "Cs" between "i" and ">").
+    if (!/<w:i\s*\/>/.test(paragraphXml) && !/<w:i>/.test(paragraphXml)) return paragraphXml;
+    italicFixed++;
+    return paragraphXml
+      .replace(/<w:i\s*\/>/g, '')
+      .replace(/<w:i>\s*<\/w:i>/g, '');
+  });
 
   if (italicFixed > 0) {
     changes.push({

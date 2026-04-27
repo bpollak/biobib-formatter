@@ -14,6 +14,7 @@ import { validateDocument, buildValidationResults } from '../lib/pipeline/valida
 import { applyAutoFixes } from '../lib/pipeline/fixer';
 import { DocumentMetadata, RuleResult, ChangeRecord } from '../lib/types';
 import { allRules } from '../lib/rules';
+import { isBodySkipStyle } from '../lib/style-skip';
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
@@ -246,24 +247,24 @@ function checkFont005(src: ByteSources): DocCheck {
 }
 
 function checkSpace001(src: ByteSources): DocCheck {
-  // After SPACE-001: no body paragraph (mirroring the fixer's exclusion of
-  // heading/caption/footnote/toc/list styles) has an explicit <w:spacing>
-  // with w:line < 480, except w:lineRule="exact" which the fixer preserves.
-  // Extract paragraphs first, then test per-paragraph — a `<w:p>...<w:pPr>`
-  // lazy regex would silently span paragraph boundaries on paragraphs without pPr.
+  // After SPACE-001: no body paragraph (mirroring the fixer's exclusion via
+  // isBodySkipStyle) has an explicit <w:spacing> with w:line < 480, except
+  // w:lineRule="exact" which the fixer preserves. Extract paragraphs first,
+  // then test per-paragraph — handles both <w:p/> self-closing form and
+  // <w:p>...</w:p> open-close form so we don't span paragraph boundaries.
   let scanned = 0;
   let bad = 0;
-  const skipStyles = ['heading', 'caption', 'footnote', 'toc', 'list'];
-  const pRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+  const pRe = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
   let m: RegExpExecArray | null;
   while ((m = pRe.exec(src.documentXml)) !== null) {
     const pXml = m[0];
+    if (/^<w:p\b[^>]*\/>$/.test(pXml)) continue;
     const pPrMatch = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(pXml);
     if (!pPrMatch) continue;
     const pPr = pPrMatch[1];
     const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPr);
-    const styleName = styleMatch ? styleMatch[1].toLowerCase() : 'normal';
-    if (skipStyles.some(s => styleName.includes(s))) continue;
+    const styleName = styleMatch ? styleMatch[1] : 'Normal';
+    if (isBodySkipStyle(styleName)) continue;
     const spacing = /<w:spacing\b[^>]*>/.exec(pPr);
     if (!spacing) continue;
     scanned++;
@@ -287,18 +288,18 @@ function checkIndent001(src: ByteSources): DocCheck {
   // existing ind without firstLine).
   let totalBody = 0;
   let withIndent = 0;
-  const skipStyles = ['heading', 'caption', 'footnote', 'toc', 'list', 'title'];
-  const pRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+  const pRe = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
   let m: RegExpExecArray | null;
   while ((m = pRe.exec(src.documentXml)) !== null) {
     const pXml = m[0];
+    if (/^<w:p\b[^>]*\/>$/.test(pXml)) continue;
     const text = (pXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
       .map(t => t.replace(/<w:t[^>]*>|<\/w:t>/g, ''))
       .join('');
     if (text.trim().length <= 20) continue;
     const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pXml);
-    const styleName = styleMatch ? styleMatch[1].toLowerCase() : 'normal';
-    if (skipStyles.some(s => styleName.includes(s))) continue;
+    const styleName = styleMatch ? styleMatch[1] : 'Normal';
+    if (isBodySkipStyle(styleName)) continue;
     totalBody++;
     const indMatch = /<w:ind\b[^>]*>/.exec(pXml);
     if (indMatch) {
@@ -325,12 +326,13 @@ function checkText001(src: ByteSources): DocCheck {
   // form /<w:p>[\s\S]*?<w:pStyle ...Heading...>[\s\S]*?</w:p>/g would silently
   // span across paragraph boundaries when the heading style appears in a later
   // paragraph, falsely flagging any italic text in the preceding paragraph.
-  const pRe = /<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
+  const pRe = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
   let count = 0;
   let italics = 0;
   let m: RegExpExecArray | null;
   while ((m = pRe.exec(src.documentXml)) !== null) {
     const para = m[0];
+    if (/^<w:p\b[^>]*\/>$/.test(para)) continue;
     if (!/<w:pStyle\s+w:val="Heading[^"]*"/.test(para)) continue;
     count++;
     const cleaned = para.replace(/<w:iCs\b[^>]*\/?>/g, '');
@@ -503,6 +505,19 @@ async function runOne(filename: string): Promise<{ filename: string; ok: boolean
     checks.push(checkSummaryConsistency(finalResults));
     checks.push(await checkMarginsActuallyFixed(buffer, correctedBuffer));
     checks.push(await checkRoundTripFixesHold(buffer, correctedBuffer, metadata, finalResults.rules));
+
+    // Idempotence: feeding the corrected output back through the pipeline
+    // should produce zero new changes. This is what real users experience
+    // when they re-upload an already-corrected file.
+    const doc2 = await parseDocument(correctedBuffer, metadata);
+    const ruleResults2 = validateDocument(doc2);
+    const { changes: changes2 } = await applyAutoFixes(correctedBuffer, doc2, ruleResults2);
+    if (changes2.length > 0) {
+      const ids = [...new Set(changes2.map(c => c.ruleId))].join(', ');
+      checks.push({ name: 'idempotent on second pass', ok: false, detail: `${changes2.length} more change(s) on pass 2: ${ids}` });
+    } else {
+      checks.push({ name: 'idempotent on second pass', ok: true, detail: 're-running pipeline on corrected output produces 0 changes' });
+    }
 
     // Byte-level fix assertions — one per auto-fixed rule.
     const autoFixedRuleIds = new Set(

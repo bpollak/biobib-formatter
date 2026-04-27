@@ -77,12 +77,23 @@ export function parseMargins(documentXml: string): Array<{
 }
 
 /**
- * Extract all paragraph elements from document.xml
+ * Extract all paragraph elements from document.xml. Handles both forms:
+ *   1. self-closing <w:p/>
+ *   2. open + close <w:p ...>...</w:p>
+ *
+ * The previous regex was /<w:p\b[^>]*\/?>(?:[\s\S]*?<\/w:p>)?/g, which
+ * over-matches: for a self-closing <w:p/>, the optional `[\s\S]*?</w:p>`
+ * group would greedily consume content up to the *next* paragraph's
+ * </w:p>, effectively merging two paragraphs into one captured XML
+ * blob. That breaks per-paragraph parsing — the merged blob's text
+ * extraction picks up the next paragraph's content too.
+ *
+ * Alternation form below tries the self-closing case first; only when
+ * that doesn't match does it fall through to the open+close form.
  */
 export function extractParagraphs(documentXml: string): string[] {
   const paragraphs: string[] = [];
-  // Match both regular and self-closing paragraph elements
-  const regex = /<w:p\b[^>]*\/?>(?:[\s\S]*?<\/w:p>)?/g;
+  const regex = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
   let match;
   while ((match = regex.exec(documentXml)) !== null) {
     paragraphs.push(match[0]);
