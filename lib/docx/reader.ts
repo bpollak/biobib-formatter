@@ -49,8 +49,10 @@ export function parseMargins(documentXml: string): Array<{
     top: number; bottom: number; left: number; right: number; header: number; footer: number;
   }> = [];
 
-  // Match all sectPr elements
-  const sectPrRegex = /<w:sectPr[^>]*>([\s\S]*?)<\/w:sectPr>/g;
+  // Match all sectPr open+close pairs. Negative lookbehind on the opening
+  // > excludes self-closing <w:sectPr/> — without it the lazy match would
+  // consume through the next sectPr's </w:sectPr>, merging sections.
+  const sectPrRegex = /<w:sectPr\b[^>]*(?<!\/)>([\s\S]*?)<\/w:sectPr>/g;
   let sectMatch;
   while ((sectMatch = sectPrRegex.exec(documentXml)) !== null) {
     const sectContent = sectMatch[1];
@@ -102,11 +104,13 @@ export function extractParagraphs(documentXml: string): string[] {
 }
 
 /**
- * Extract text content from a paragraph element
+ * Extract text content from a paragraph element. Self-closing <w:t/>
+ * is excluded from the match so the lazy `[\s\S]*?</w:t>` can't span
+ * across runs, picking up XML markup as if it were text.
  */
 export function extractParagraphText(paragraphXml: string): string {
   const parts: string[] = [];
-  const tRegex = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
+  const tRegex = /<w:t\b[^>]*(?<!\/)>([\s\S]*?)<\/w:t>/g;
   let match;
   while ((match = tRegex.exec(paragraphXml)) !== null) {
     parts.push(match[1]);
@@ -223,11 +227,18 @@ export function isRunBold(runXml: string): boolean {
 }
 
 /**
- * Extract all run elements from a paragraph
+ * Extract all run elements from a paragraph. Handles both forms:
+ *   1. self-closing: <w:r/>
+ *   2. open + close: <w:r ...>...</w:r>
+ *
+ * The previous regex /<w:r[ >]([\s\S]*?)<\/w:r>/g over-matched on
+ * self-closing <w:r/>, consuming through the next run's </w:r> and
+ * polluting per-run property extraction (italic/bold/color/font from
+ * one run getting attributed to another).
  */
 export function extractRuns(paragraphXml: string): string[] {
   const runs: string[] = [];
-  const regex = /<w:r[ >]([\s\S]*?)<\/w:r>/g;
+  const regex = /<w:r\b[^>]*\/>|<w:r[ >][\s\S]*?<\/w:r>/g;
   let match;
   while ((match = regex.exec(paragraphXml)) !== null) {
     runs.push(match[0]);

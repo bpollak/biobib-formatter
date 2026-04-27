@@ -12,6 +12,13 @@ import { isBodySkipStyle } from '../style-skip';
 // is left-to-right so the self-closing alternative is tried first.
 const PARAGRAPH_RE = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 
+// Open+close form for sectPr (used by the page-numbering fixers, which
+// always need to inspect/mutate the children). Negative lookbehind
+// excludes self-closing <w:sectPr/>: without it, the lazy `[\s\S]*?`
+// would consume content through the *next* sectPr's </w:sectPr>,
+// merging two sections into one match.
+const SECTPR_PAIR_RE = /(<w:sectPr\b[^>]*(?<!\/)>)([\s\S]*?)(<\/w:sectPr>)/g;
+
 /**
  * Load a .docx buffer and return the JSZip instance + document XML
  */
@@ -341,7 +348,8 @@ export function fixHeadingItalics(documentXml: string, changes: ChangeRecord[]):
  */
 export function fixTitlePageNumbering(documentXml: string, changes: ChangeRecord[]): string {
   // Find the first sectPr in the document (title page section)
-  const sectPrRegex = /(<w:sectPr\b[^>]*>)([\s\S]*?)(<\/w:sectPr>)/;
+  // Single-match (not /g); same self-closing exclusion as SECTPR_PAIR_RE.
+  const sectPrRegex = /(<w:sectPr\b[^>]*(?<!\/)>)([\s\S]*?)(<\/w:sectPr>)/;
   const match = sectPrRegex.exec(documentXml);
   if (!match) return documentXml;
 
@@ -372,7 +380,7 @@ export function fixTitlePageNumbering(documentXml: string, changes: ChangeRecord
 export function fixCopyrightPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
   // The titlePg element on the first section already suppresses the first page.
   // If there's a separate second section for the copyright page, add titlePg there too.
-  const sectPrMatches = [...documentXml.matchAll(/(<w:sectPr\b[^>]*>)([\s\S]*?)(<\/w:sectPr>)/g)];
+  const sectPrMatches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
   if (sectPrMatches.length < 2) {
     // Single section — titlePg from PAGE-001 fix handles both pages
     return documentXml;
@@ -400,7 +408,7 @@ export function fixCopyrightPageNumbering(documentXml: string, changes: ChangeRe
  * <w:pgNumType w:fmt="lowerRoman" w:start="3"/>
  */
 export function fixPreliminaryPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
-  const sectPrMatches = [...documentXml.matchAll(/(<w:sectPr\b[^>]*>)([\s\S]*?)(<\/w:sectPr>)/g)];
+  const sectPrMatches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
   if (sectPrMatches.length === 0) return documentXml;
 
   // The preliminary section is typically the first (or second if there's a separate title section).
@@ -446,7 +454,7 @@ export function fixPreliminaryPageNumbering(documentXml: string, changes: Change
  * <w:pgNumType w:fmt="decimal" w:start="1"/>
  */
 export function fixBodyPageNumbering(documentXml: string, changes: ChangeRecord[]): string {
-  const sectPrMatches = [...documentXml.matchAll(/(<w:sectPr\b[^>]*>)([\s\S]*?)(<\/w:sectPr>)/g)];
+  const sectPrMatches = [...documentXml.matchAll(SECTPR_PAIR_RE)];
   if (sectPrMatches.length === 0) return documentXml;
 
   // Body section is typically the last sectPr
@@ -486,32 +494,33 @@ export function fixFooterPageNumberCentering(footerXml: string, changes: ChangeR
   if (!hasPageField) return footerXml;
 
   let modified = false;
-  // Process each paragraph in the footer
-  const result = footerXml.replace(
-    /(<w:p\b[^>]*>)([\s\S]*?)(<\/w:p>)/g,
-    (match, open, content, close) => {
-      // Only process paragraphs that contain PAGE fields
-      if (!/PAGE/.test(match) && !/<w:pgNum/.test(match)) return match;
+  // Process each paragraph in the footer. Use the same alternation form
+  // as PARAGRAPH_RE to handle <w:p/> self-closing without over-matching.
+  const result = footerXml.replace(PARAGRAPH_RE, (paragraphXml) => {
+    if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) return paragraphXml;
+    if (!/PAGE/.test(paragraphXml) && !/<w:pgNum/.test(paragraphXml)) return paragraphXml;
 
-      // Check if already centered
-      if (/<w:jc\s+w:val="center"/.test(content)) return match;
+    // Split the paragraph into open tag, content, close tag.
+    const openMatch = /^<w:p\b[^>]*>/.exec(paragraphXml);
+    if (!openMatch) return paragraphXml;
+    const open = openMatch[0];
+    const content = paragraphXml.slice(open.length, -('</w:p>'.length));
 
-      // Check if pPr exists
-      if (/<w:pPr>/.test(content)) {
-        // Add jc to existing pPr (or replace existing jc)
-        if (/<w:jc\s+w:val="[^"]*"/.test(content)) {
-          modified = true;
-          return open + content.replace(/<w:jc\s+w:val="[^"]*"\s*\/>/, '<w:jc w:val="center"/>') + close;
-        }
+    if (/<w:jc\s+w:val="center"/.test(content)) return paragraphXml;
+
+    if (/<w:pPr>/.test(content)) {
+      // Replace existing jc or insert before </w:pPr>.
+      if (/<w:jc\s+w:val="[^"]*"/.test(content)) {
         modified = true;
-        return open + content.replace(/<\/w:pPr>/, '<w:jc w:val="center"/></w:pPr>') + close;
+        return open + content.replace(/<w:jc\s+w:val="[^"]*"\s*\/>/, '<w:jc w:val="center"/>') + '</w:p>';
       }
-
-      // No pPr — add one with jc
       modified = true;
-      return open + '<w:pPr><w:jc w:val="center"/></w:pPr>' + content + close;
+      return open + content.replace(/<\/w:pPr>/, '<w:jc w:val="center"/></w:pPr>') + '</w:p>';
     }
-  );
+
+    modified = true;
+    return open + '<w:pPr><w:jc w:val="center"/></w:pPr>' + content + '</w:p>';
+  });
 
   if (modified) {
     changes.push({
