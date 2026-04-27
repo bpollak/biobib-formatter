@@ -9,7 +9,8 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
-    "test:regression": "tsx scripts/regression-test.ts"
+    "test:regression": "tsx scripts/regression-test.ts",
+    "test:stress": "tsx scripts/stress-test.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

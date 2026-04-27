@@ -227,18 +227,19 @@ export function isRunBold(runXml: string): boolean {
 }
 
 /**
- * Extract all run elements from a paragraph. Handles both forms:
- *   1. self-closing: <w:r/>
- *   2. open + close: <w:r ...>...</w:r>
+ * Extract all run elements from a paragraph. Handles both `<w:r>` (regular
+ * text runs) and `<m:r>` (math runs from <m:oMath>). Both share the same
+ * <w:rPr> property structure, so per-run property extraction (color, font,
+ * italic, etc.) works uniformly across both — without this, text inside
+ * equations is invisible to FONT-005 / FONT-001 / TEXT-001 validation.
  *
- * The previous regex /<w:r[ >]([\s\S]*?)<\/w:r>/g over-matched on
- * self-closing <w:r/>, consuming through the next run's </w:r> and
- * polluting per-run property extraction (italic/bold/color/font from
- * one run getting attributed to another).
+ * Handles both self-closing and open+close forms; without the alternation,
+ * a self-closing <w:r/> would silently consume through the next run's
+ * </w:r>, polluting per-run property extraction.
  */
 export function extractRuns(paragraphXml: string): string[] {
   const runs: string[] = [];
-  const regex = /<w:r\b[^>]*\/>|<w:r[ >][\s\S]*?<\/w:r>/g;
+  const regex = /<(?:w|m):r\b[^>]*\/>|<(?:w|m):r[ >][\s\S]*?<\/(?:w|m):r>/g;
   let match;
   while ((match = regex.exec(paragraphXml)) !== null) {
     runs.push(match[0]);

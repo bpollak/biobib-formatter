@@ -1,4 +1,3 @@
-import JSZip from 'jszip';
 import { ChangeRecord } from '../types';
 import { isBodySkipStyle } from '../style-skip';
 
@@ -18,32 +17,6 @@ const PARAGRAPH_RE = /<w:p\b[^>]*\/>|<w:p\b[^>]*>[\s\S]*?<\/w:p>/g;
 // would consume content through the *next* sectPr's </w:sectPr>,
 // merging two sections into one match.
 const SECTPR_PAIR_RE = /(<w:sectPr\b[^>]*(?<!\/)>)([\s\S]*?)(<\/w:sectPr>)/g;
-
-/**
- * Load a .docx buffer and return the JSZip instance + document XML
- */
-export async function loadDocx(buffer: Buffer): Promise<{ zip: JSZip; documentXml: string; stylesXml: string }> {
-  const zip = await JSZip.loadAsync(buffer);
-  const documentXml = await (zip.file('word/document.xml')?.async('string') || Promise.resolve(''));
-  const stylesXml = await (zip.file('word/styles.xml')?.async('string') || Promise.resolve(''));
-  return { zip, documentXml, stylesXml };
-}
-
-/**
- * Save the modified document XML back and return as Buffer
- */
-export async function saveDocx(zip: JSZip, documentXml: string, stylesXml?: string): Promise<Buffer> {
-  zip.file('word/document.xml', documentXml);
-  if (stylesXml) {
-    zip.file('word/styles.xml', stylesXml);
-  }
-  const arrayBuffer = await zip.generateAsync({
-    type: 'arraybuffer',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
-  });
-  return Buffer.from(arrayBuffer);
-}
 
 /**
  * Set all page margins to 1" (1440 twips). Records one ChangeRecord per
@@ -98,23 +71,37 @@ export function fixMargins(
 }
 
 /**
- * Fix font colors to black in all runs
- */
-/**
  * Fix font colors to black in all runs and styles. Matches every <w:color>
  * tag form (self-closing, with sibling attributes like w:themeColor, and
- * non-self-closing) so colored runs in either documentXml or stylesXml
- * are caught.
+ * non-self-closing) across documentXml, stylesXml, and any number of
+ * supplemental XMLs (headers, footers, etc.).
+ *
+ * Skips <w:color> elements inside <w:rPrChange>/<w:pPrChange> blocks --
+ * those are *historical* property snapshots stored by Word\'s track-changes
+ * feature; mutating them would corrupt revision history.
  */
 export function fixFontColors(
   documentXml: string,
   stylesXml: string,
-  changes: ChangeRecord[]
-): { documentXml: string; stylesXml: string } {
+  changes: ChangeRecord[],
+  extraXmls: string[] = []
+): { documentXml: string; stylesXml: string; extraXmls: string[] } {
   let colorFixed = 0;
 
+  // Replace <w:rPrChange>/<w:pPrChange> blocks with unique sentinel
+  // placeholders before fixing colors, then restore them. This preserves
+  // the historical color record. The sentinel uses an XML processing
+  // instruction format that won\'t collide with real document content.
   const fixColorsIn = (xml: string): string => {
-    return xml.replace(/<w:color\b[^>]*>/g, (match) => {
+    const stash: string[] = [];
+    const masked = xml.replace(
+      /<w:(?:rPrChange|pPrChange)\b[\s\S]*?<\/w:(?:rPrChange|pPrChange)>/g,
+      (match) => {
+        stash.push(match);
+        return `<!--__RC_${stash.length - 1}__-->`;
+      }
+    );
+    const fixed = masked.replace(/<w:color\b[^>]*>/g, (match) => {
       const valMatch = /w:val="([^"]+)"/.exec(match);
       if (!valMatch) return match;
       const colorVal = valMatch[1];
@@ -122,14 +109,14 @@ export function fixFontColors(
         return match;
       }
       colorFixed++;
-      // Replace just w:val, preserving any sibling attributes (w:themeColor,
-      // w:themeShade, etc.) and the closing form (self-closing or not).
       return match.replace(/w:val="[^"]+"/, 'w:val="000000"');
     });
+    return fixed.replace(/<!--__RC_(\d+)__-->/g, (_, idx) => stash[parseInt(idx)]);
   };
 
   const newDocXml = fixColorsIn(documentXml);
   const newStylesXml = fixColorsIn(stylesXml);
+  const newExtraXmls = extraXmls.map(fixColorsIn);
 
   if (colorFixed > 0) {
     changes.push({
@@ -141,7 +128,7 @@ export function fixFontColors(
     });
   }
 
-  return { documentXml: newDocXml, stylesXml: newStylesXml };
+  return { documentXml: newDocXml, stylesXml: newStylesXml, extraXmls: newExtraXmls };
 }
 
 /**

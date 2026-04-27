@@ -29,12 +29,17 @@ export async function applyAutoFixes(
   let documentXml = await (zip.file('word/document.xml')?.async('string') || Promise.resolve(''));
   let stylesXml = await (zip.file('word/styles.xml')?.async('string') || Promise.resolve(''));
 
-  // Load all footer files
+  // Load all header and footer files. Headers/footers can contain colored
+  // text and other formatting that the FONT-005 fix should also reach.
   const footerFiles: { path: string; xml: string }[] = [];
+  const headerFiles: { path: string; xml: string }[] = [];
   for (const [path] of Object.entries(zip.files)) {
     if (/^word\/footer\d+\.xml$/i.test(path)) {
       const content = await (zip.file(path)?.async('string') || Promise.resolve(''));
       if (content) footerFiles.push({ path, xml: content });
+    } else if (/^word\/header\d+\.xml$/i.test(path)) {
+      const content = await (zip.file(path)?.async('string') || Promise.resolve(''));
+      if (content) headerFiles.push({ path, xml: content });
     }
   }
 
@@ -64,11 +69,17 @@ export async function applyAutoFixes(
       stylesXml = result.stylesXml;
     }
 
-    // Font color fix (touches both documentXml and stylesXml)
+    // Font color fix (touches documentXml, stylesXml, and headers/footers).
+    // Skips <w:rPrChange>/<w:pPrChange> blocks to preserve track-changes
+    // historical color records.
     if (failingRuleIds.has('FONT-005')) {
-      const out = fixFontColors(documentXml, stylesXml, allChanges);
+      const extras = [...headerFiles.map(f => f.xml), ...footerFiles.map(f => f.xml)];
+      const out = fixFontColors(documentXml, stylesXml, allChanges, extras);
       documentXml = out.documentXml;
       stylesXml = out.stylesXml;
+      let i = 0;
+      for (const f of headerFiles) f.xml = out.extraXmls[i++];
+      for (const f of footerFiles) f.xml = out.extraXmls[i++];
     }
 
     // Body spacing fix
@@ -124,7 +135,10 @@ export async function applyAutoFixes(
   if (stylesXml) {
     zip.file('word/styles.xml', stylesXml);
   }
-  // Save modified footer files
+  // Save modified header and footer files.
+  for (const header of headerFiles) {
+    zip.file(header.path, header.xml);
+  }
   for (const footer of footerFiles) {
     zip.file(footer.path, footer.xml);
   }
