@@ -93,7 +93,15 @@ export async function POST(request: NextRequest) {
 
     const ruleResults: RuleResult[] = validateDocument(documentModel);
     const { correctedBuffer, changes } = await applyAutoFixes(buffer, documentModel, ruleResults);
-    const results = buildValidationResults(sessionId, metadata, ruleResults, changes);
+    const correctedDocumentModel = await parseDocument(correctedBuffer, metadata);
+    const correctedRuleResults: RuleResult[] = validateDocument(correctedDocumentModel);
+    const results = buildValidationResults(
+      sessionId,
+      metadata,
+      ruleResults,
+      changes,
+      correctedRuleResults
+    );
 
     // Upload corrected file to private Blob storage. The user gets a
     // short-lived signed download token instead of a public URL.

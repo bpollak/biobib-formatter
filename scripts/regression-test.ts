@@ -25,9 +25,14 @@ interface DocCheck {
 }
 
 const FIXTURES = [
+  'Cheng_Li_PhD dissertation.docx',
   'Copy of Cheng_Li_PhD dissertation.docx',
+  'Nies_Laurie- Rough Draft Dissertation Formatted 5-9.docx',
   'Copy of Nies_Laurie- Rough Draft Dissertation Formatted 5-9.docx',
+  'Niles_Renee_PhD_Dissertation_Draft.docx',
   'Copy of Niles_Renee_PhD_Dissertation_Draft.docx',
+  'Copy of Niles_Renee_PhD_Dissertation_Draft (1).docx',
+  'West_Melanie Dissertation .docx',
   'Copy of West_Melanie Dissertation .docx',
 ];
 
@@ -400,6 +405,72 @@ function checkPage006(src: ByteSources): DocCheck {
   return { name: 'PAGE-006 byte-level', ok: true, detail: `${centered} PAGE-field paragraph(s) centered` };
 }
 
+function hasPageNumberField(footerXmls: string[]): boolean {
+  const footerContent = footerXmls.join('');
+  return (
+    /PAGE/.test(footerContent) ||
+    /<w:pgNum/.test(footerContent) ||
+    /<w:fldSimple[^>]*PAGE/.test(footerContent) ||
+    /<w:instrText[^>]*>\s*PAGE\b/.test(footerContent)
+  );
+}
+
+function checkFooterPageNumberParsing(src: ByteSources, docPageNumbersAtBottom: boolean): DocCheck {
+  const hasPageNumber = hasPageNumberField(src.footerXmls);
+  if (!hasPageNumber && docPageNumbersAtBottom) {
+    return {
+      name: 'footer PAGE detection',
+      ok: false,
+      detail: 'parser reported bottom page numbers even though footers contain no PAGE field',
+    };
+  }
+  if (hasPageNumber && !docPageNumbersAtBottom) {
+    return {
+      name: 'footer PAGE detection',
+      ok: false,
+      detail: 'footers contain PAGE field but parser did not report bottom page numbers',
+    };
+  }
+  return {
+    name: 'footer PAGE detection',
+    ok: true,
+    detail: hasPageNumber ? 'PAGE field detected and parsed' : 'no PAGE field detected or parsed',
+  };
+}
+
+function checkTableCaptionAssociation(doc: Awaited<ReturnType<typeof parseDocument>>): DocCheck {
+  if (doc.tables.length === 0) {
+    return { name: 'table caption association', ok: true, detail: 'no tables detected' };
+  }
+
+  const tablesWithAdjacentCaption = doc.tables.filter(table => {
+    const prev = table.paragraphIndex > 0 ? doc.paragraphs[table.paragraphIndex - 1] : undefined;
+    const next = table.paragraphIndex + 1 < doc.paragraphs.length
+      ? doc.paragraphs[table.paragraphIndex + 1]
+      : undefined;
+
+    return !!(
+      prev && (prev.isCaption || /^table\s+\d+/i.test(prev.text.trim())) ||
+      next && (next.isCaption || /^table\s+\d+/i.test(next.text.trim()))
+    );
+  });
+
+  const missedCaptions = tablesWithAdjacentCaption.filter(table => !table.hasCaption);
+  if (missedCaptions.length > 0) {
+    return {
+      name: 'table caption association',
+      ok: false,
+      detail: `${missedCaptions.length} table(s) with adjacent captions were not associated`,
+    };
+  }
+
+  return {
+    name: 'table caption association',
+    ok: true,
+    detail: `${tablesWithAdjacentCaption.length} table(s) with adjacent captions associated`,
+  };
+}
+
 function checkA11y002(src: ByteSources): DocCheck {
   // After A11Y-002: every <wp:docPr> has a non-empty descr attribute.
   const re = /<wp:docPr\b[^>]*>/g;
@@ -484,10 +555,21 @@ async function runOne(filename: string): Promise<{ filename: string; ok: boolean
     stats.figures = doc.figures.length;
     stats.tables = doc.tables.length;
     stats.references = doc.references.length;
+    const originalByteSources = await loadByteSources(buffer);
+    checks.push(checkTableCaptionAssociation(doc));
+    checks.push(checkFooterPageNumberParsing(originalByteSources, doc.pageNumbering.pageNumbersAtBottom));
 
     const ruleResults = validateDocument(doc);
     const { correctedBuffer, changes } = await applyAutoFixes(buffer, doc, ruleResults);
-    const finalResults = buildValidationResults('test-session', metadata, ruleResults, changes);
+    const correctedDocForResults = await parseDocument(correctedBuffer, metadata);
+    const correctedRuleResults = validateDocument(correctedDocForResults);
+    const finalResults = buildValidationResults(
+      'test-session',
+      metadata,
+      ruleResults,
+      changes,
+      correctedRuleResults
+    );
 
     stats.totalRules = finalResults.summary.total;
     stats.passed = finalResults.summary.passed;

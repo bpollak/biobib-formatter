@@ -137,21 +137,6 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
     }
   }
 
-  for (const table of tables) {
-    const paraIdx = table.paragraphIndex;
-    if (paraIdx > 0 && (paragraphs[paraIdx - 1].isCaption || /^table\s+\d+/i.test(paragraphs[paraIdx - 1].text.trim()))) {
-      table.hasCaption = true;
-      table.captionParagraphIndex = paraIdx - 1;
-      table.captionPosition = 'before';
-      table.captionText = paragraphs[paraIdx - 1].text;
-    } else if (paraIdx + 1 < paragraphs.length && (paragraphs[paraIdx + 1].isCaption || /^table\s+\d+/i.test(paragraphs[paraIdx + 1].text.trim()))) {
-      table.hasCaption = true;
-      table.captionParagraphIndex = paraIdx + 1;
-      table.captionPosition = 'after';
-      table.captionText = paragraphs[paraIdx + 1].text;
-    }
-  }
-
   // Detect tables from document-level XML (w:tbl elements at body level)
   const tableXmlRegex = /<w:tbl>([\s\S]*?)<\/w:tbl>/g;
   let tblMatch;
@@ -180,6 +165,21 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       hasHeaderRow,
       isMultiPage,
     });
+  }
+
+  for (const table of tables) {
+    const paraIdx = table.paragraphIndex;
+    if (paraIdx > 0 && (paragraphs[paraIdx - 1].isCaption || /^table\s+\d+/i.test(paragraphs[paraIdx - 1].text.trim()))) {
+      table.hasCaption = true;
+      table.captionParagraphIndex = paraIdx - 1;
+      table.captionPosition = 'before';
+      table.captionText = paragraphs[paraIdx - 1].text;
+    } else if (paraIdx + 1 < paragraphs.length && (paragraphs[paraIdx + 1].isCaption || /^table\s+\d+/i.test(paragraphs[paraIdx + 1].text.trim()))) {
+      table.hasCaption = true;
+      table.captionParagraphIndex = paraIdx + 1;
+      table.captionPosition = 'after';
+      table.captionText = paragraphs[paraIdx + 1].text;
+    }
   }
 
   // Collect styles
@@ -578,16 +578,23 @@ function parsePageNumbering(documentXml: string, footerXmls: string[]): PageNumb
   const arabicStart = /<w:pgNumType[^>]*w:start="1"/.test(documentXml);
 
   // Check footer XML files for page numbering presence and alignment
-  const hasFooter = footerXmls.length > 0;
   const footerContent = footerXmls.join('');
   // Look for page number fields (w:fldChar + PAGE) or w:pgNum in footer content
-  const hasPageNumInFooter = hasFooter && (
+  const hasPageNumInFooter = (
     /PAGE/.test(footerContent) ||
     /<w:pgNum/.test(footerContent) ||
     /<w:fldSimple[^>]*PAGE/.test(footerContent) ||
     /<w:instrText[^>]*>\s*PAGE\b/.test(footerContent)
   );
-  const footerCentered = hasFooter && /<w:jc\s+w:val="center"/.test(footerContent);
+  const footerParagraphs = footerContent.match(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g) || [];
+  const pageNumberParagraphs = footerParagraphs.filter(p =>
+    /PAGE/.test(p) ||
+    /<w:pgNum/.test(p) ||
+    /<w:fldSimple[^>]*PAGE/.test(p) ||
+    /<w:instrText[^>]*>\s*PAGE\b/.test(p)
+  );
+  const footerCentered = pageNumberParagraphs.length > 0 &&
+    pageNumberParagraphs.every(p => /<w:jc\s+w:val="center"/.test(p));
 
   return {
     hasPrelimRoman: hasRoman,

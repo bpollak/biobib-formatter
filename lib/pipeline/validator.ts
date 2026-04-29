@@ -53,7 +53,8 @@ export function buildValidationResults(
   sessionId: string,
   metadata: DocumentMetadata,
   ruleResults: RuleResult[],
-  changes: ChangeRecord[]
+  changes: ChangeRecord[],
+  correctedRuleResults: RuleResult[] = ruleResults
 ): ValidationResults {
   const fixedRuleIds = new Set(changes.map(c => c.ruleId));
   for (const sourceId of Object.keys(FIX_DEPENDENCIES)) {
@@ -64,11 +65,14 @@ export function buildValidationResults(
     }
   }
 
-  const finalRules: RuleResult[] = ruleResults.map(r =>
-    fixedRuleIds.has(r.ruleId) && r.status === 'fail'
-      ? { ...r, status: 'auto-fixed' as const }
-      : r
-  );
+  const originalRuleResultsById = new Map(ruleResults.map(r => [r.ruleId, r]));
+  const finalRules: RuleResult[] = correctedRuleResults.map(r => {
+    const originalRule = originalRuleResultsById.get(r.ruleId);
+    if (fixedRuleIds.has(r.ruleId) && originalRule?.status === 'fail' && r.status === 'pass') {
+      return { ...r, status: 'auto-fixed' as const };
+    }
+    return r;
+  });
 
   const passed = finalRules.filter(r => r.status === 'pass').length;
   const failed = finalRules.filter(r => r.status === 'fail').length;
