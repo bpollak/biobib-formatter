@@ -60,6 +60,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
     if (!fontFamily && styleInfo?.font) fontFamily = styleInfo.font;
     if (!fontSize && styleInfo?.size) fontSize = styleInfo.size;
     if (!color && styleInfo?.color) color = styleInfo.color;
+    const effectiveLineSpacing = lineSpacing ?? styleInfo?.lineSpacing;
 
     const isHeading = isHeadingStyle(style);
     const headingLevel = isHeading ? getHeadingLevel(style) : undefined;
@@ -91,7 +92,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       bold,
       italic,
       color,
-      lineSpacing,
+      lineSpacing: effectiveLineSpacing,
       spaceBefore: spacing.before,
       spaceAfter: spacing.after,
       indentLeft: indent.left,
@@ -188,7 +189,6 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
   const allColors: string[] = [];
 
   for (const p of paragraphs) {
-    if (p.fontFamily) allFonts.push(p.fontFamily);
     // Only collect font sizes from body text paragraphs —
     // exclude headings, titles, subtitles, captions, empty paragraphs,
     // and tiny separator lines (< 6pt). GEPA 10–12pt rule applies to body text only.
@@ -198,6 +198,7 @@ export async function parseDocument(buffer: Buffer, metadata: DocumentMetadata):
       && !/^(Title|Subtitle)$/i.test(p.style)
       && !/^(TOC\d|TableofFigures|Footer|Header)$/i.test(p.style)
       && (!p.fontSize || p.fontSize >= 12); // 6pt = 12 half-points; skip separator lines
+    if (p.fontFamily && isBodyText) allFonts.push(p.fontFamily);
     if (p.fontSize && isBodyText) allSizes.push(p.fontSize);
     if (p.color && p.color !== 'auto') allColors.push(p.color);
   }

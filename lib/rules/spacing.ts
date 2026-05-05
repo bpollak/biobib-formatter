@@ -41,7 +41,7 @@ const spacingRules: FormattingRule[] = [
       }
 
       const notDoubleSpaced = bodyParas.filter(p =>
-        p.lineSpacing !== undefined && p.lineSpacing < LINE_SPACING_DOUBLE
+        p.lineSpacing === undefined || p.lineSpacing < LINE_SPACING_DOUBLE
       );
 
       if (notDoubleSpaced.length === 0) {

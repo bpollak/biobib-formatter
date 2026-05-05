@@ -250,14 +250,14 @@ export function extractRuns(paragraphXml: string): string[] {
 /**
  * Parse font information from styles.xml
  */
-export function parseStyleFonts(stylesXml: string): Map<string, { font?: string; size?: number; color?: string }> {
-  const styleMap = new Map<string, { font?: string; size?: number; color?: string }>();
+export function parseStyleFonts(stylesXml: string): Map<string, { font?: string; size?: number; color?: string; lineSpacing?: number }> {
+  const styleMap = new Map<string, { font?: string; size?: number; color?: string; lineSpacing?: number }>();
   const styleRegex = /<w:style[^>]+w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g;
   let match;
   while ((match = styleRegex.exec(stylesXml)) !== null) {
     const styleId = match[1];
     const styleContent = match[2];
-    const info: { font?: string; size?: number; color?: string } = {};
+    const info: { font?: string; size?: number; color?: string; lineSpacing?: number } = {};
     
     const fontMatch = /<w:rFonts[^>]*>/.exec(styleContent);
     if (fontMatch) {
@@ -270,6 +270,11 @@ export function parseStyleFonts(stylesXml: string): Map<string, { font?: string;
     const colorMatch = /<w:color\s+w:val="([^"]+)"/.exec(styleContent);
     if (colorMatch) {
       info.color = colorMatch[1];
+    }
+    const spacingMatch = /<w:spacing[^>]*>/.exec(styleContent);
+    if (spacingMatch) {
+      const lineVal = getAttr(spacingMatch[0], 'w:line');
+      if (lineVal) info.lineSpacing = parseInt(lineVal);
     }
     styleMap.set(styleId, info);
   }

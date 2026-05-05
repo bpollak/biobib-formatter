@@ -63,6 +63,18 @@ export default function HomePage() {
     abortRef.current?.abort();
   }
 
+  function handleDocumentTypeChange(val: DocumentType | null) {
+    if (!val) return;
+    setDocumentType(val);
+    setDegreeType(val === 'dissertation' ? 'doctoral' : 'masters');
+  }
+
+  function handleDegreeTypeChange(val: DegreeType | null) {
+    if (!val) return;
+    setDegreeType(val);
+    setDocumentType(val === 'doctoral' ? 'dissertation' : 'thesis');
+  }
+
   async function handleSubmit() {
     if (!file) return;
     setError(null);
@@ -273,7 +285,7 @@ export default function HomePage() {
                     <ToggleButtonGroup
                       value={documentType}
                       exclusive
-                      onChange={(_, val) => val && setDocumentType(val)}
+                      onChange={(_, val) => handleDocumentTypeChange(val)}
                       size="small"
                     >
                       <ToggleButton value="dissertation" sx={{ px: 2 }}>
@@ -291,7 +303,7 @@ export default function HomePage() {
                     <ToggleButtonGroup
                       value={degreeType}
                       exclusive
-                      onChange={(_, val) => val && setDegreeType(val)}
+                      onChange={(_, val) => handleDegreeTypeChange(val)}
                       size="small"
                     >
                       <ToggleButton value="doctoral" sx={{ px: 2 }}>

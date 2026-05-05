@@ -189,45 +189,94 @@ export function fixFonts(
 }
 
 /**
- * Fix line spacing in body text to double-space.
+ * Fix line spacing in body or abstract text to double-space. Creates missing
+ * paragraph properties / spacing nodes when Word relies on implicit single
+ * spacing defaults.
  */
-export function fixBodySpacing(documentXml: string, changes: ChangeRecord[]): string {
+export function fixBodySpacing(
+  documentXml: string,
+  changes: ChangeRecord[],
+  ruleIds: string[] = ['SPACE-001'],
+  options: { includeAbstractStyles?: boolean } = {}
+): string {
   let spacingFixed = 0;
 
   const result = documentXml.replace(PARAGRAPH_RE, (paragraphXml) => {
     if (/^<w:p\b[^>]*\/>$/.test(paragraphXml)) return paragraphXml;
-    const pPrMatch = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(paragraphXml);
-    if (!pPrMatch) return paragraphXml;
-    const pPrContent = pPrMatch[1];
 
-    const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent);
+    const text = (paragraphXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
+      .map(m => m.replace(/<w:t[^>]*>|<\/w:t>/g, ''))
+      .join('');
+    if (text.trim().length <= 20) return paragraphXml;
+
+    const pPrMatch = /<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/.exec(paragraphXml);
+    const pPrContent = pPrMatch?.[1] ?? '';
+
+    const styleMatch = pPrMatch
+      ? /<w:pStyle\s+w:val="([^"]+)"/.exec(pPrContent)
+      : /<w:pStyle\s+w:val="([^"]+)"/.exec(paragraphXml);
     const styleName = styleMatch ? styleMatch[1] : 'Normal';
-    if (isBodySkipStyle(styleName)) return paragraphXml;
+    const isAbstractStyle = /abstract/i.test(styleName);
+    if (isBodySkipStyle(styleName) && !(options.includeAbstractStyles && isAbstractStyle)) {
+      return paragraphXml;
+    }
+
+    if (!pPrMatch) {
+      const openTagMatch = /<w:p\b[^>]*>/.exec(paragraphXml);
+      if (!openTagMatch) return paragraphXml;
+      spacingFixed++;
+      return paragraphXml.replace(
+        openTagMatch[0],
+        `${openTagMatch[0]}<w:pPr><w:spacing w:line="480" w:lineRule="auto"/></w:pPr>`
+      );
+    }
 
     const spacingMatch = /<w:spacing[^>]*>/.exec(pPrContent);
-    if (!spacingMatch) return paragraphXml;
+    if (!spacingMatch) {
+      spacingFixed++;
+      const newPPr = pPrMatch[0].replace(
+        '</w:pPr>',
+        '<w:spacing w:line="480" w:lineRule="auto"/></w:pPr>'
+      );
+      return paragraphXml.replace(pPrMatch[0], newPPr);
+    }
 
     const lineVal = getXmlAttr(spacingMatch[0], 'w:line');
     const lineRuleVal = getXmlAttr(spacingMatch[0], 'w:lineRule');
     if (lineVal && parseInt(lineVal) >= 480 && lineRuleVal !== 'exact') {
       return paragraphXml;
     }
-    let newSpacing = spacingMatch[0].replace(/w:line="[^"]*"/, 'w:line="480"');
+    let newSpacing = spacingMatch[0];
+    if (/w:line="/.test(newSpacing)) {
+      newSpacing = newSpacing.replace(/w:line="[^"]*"/, 'w:line="480"');
+    } else if (newSpacing.endsWith('/>')) {
+      newSpacing = newSpacing.replace('/>', ' w:line="480"/>');
+    } else {
+      newSpacing = newSpacing.replace('>', ' w:line="480">');
+    }
     if (/w:lineRule="exact"/.test(newSpacing)) {
       newSpacing = newSpacing.replace(/w:lineRule="exact"/, 'w:lineRule="auto"');
+    } else if (!/w:lineRule=/.test(newSpacing)) {
+      if (newSpacing.endsWith('/>')) {
+        newSpacing = newSpacing.replace('/>', ' w:lineRule="auto"/>');
+      } else {
+        newSpacing = newSpacing.replace('>', ' w:lineRule="auto">');
+      }
     }
     spacingFixed++;
     return paragraphXml.replace(spacingMatch[0], newSpacing);
   });
 
   if (spacingFixed > 0) {
-    changes.push({
-      ruleId: 'SPACE-001',
-      description: `Set ${spacingFixed} paragraph(s) to double-spacing`,
-      location: 'Body text paragraphs',
-      before: 'Single or custom spacing',
-      after: 'Double-spaced (480 twips)',
-    });
+    for (const ruleId of ruleIds) {
+      changes.push({
+        ruleId,
+        description: `Set ${spacingFixed} paragraph(s) to double-spacing`,
+        location: ruleId === 'ABSTRACT-004' ? 'Abstract/body text paragraphs' : 'Body text paragraphs',
+        before: 'Single, inherited, or custom spacing',
+        after: 'Double-spaced (480 twips)',
+      });
+    }
   }
 
   return result;

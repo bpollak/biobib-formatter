@@ -14,9 +14,9 @@
  */
 import JSZip from 'jszip';
 import { parseDocument } from '../lib/pipeline/parser';
-import { validateDocument } from '../lib/pipeline/validator';
+import { buildValidationResults, validateDocument } from '../lib/pipeline/validator';
 import { applyAutoFixes } from '../lib/pipeline/fixer';
-import { DocumentMetadata } from '../lib/types';
+import { DocumentMetadata, DocumentModel } from '../lib/types';
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -412,6 +412,98 @@ async function testApiDegenerateInputs() {
     `paragraphs=${doc.paragraphs.length} → /api/check returns 400`);
 }
 
+// ── Test 10: Missing paragraph spacing is detected and created ──────────
+async function testMissingSpacingFix() {
+  console.log("\n── Test: missing <w:spacing> is detected and auto-fixed ──");
+
+  const body = `<w:p>
+    <w:pPr><w:pStyle w:val="Normal"/></w:pPr>
+    <w:r><w:t>This body paragraph has no explicit spacing node, so Word can inherit single spacing.</w:t></w:r>
+  </w:p>`;
+  const buffer = await buildDocx({ documentXml: wrapDocument(body) });
+  const { ruleResults, correctedBuffer, changes } = await processDoc(buffer);
+
+  const space001 = ruleResults.find(r => r.ruleId === 'SPACE-001');
+  expect('validator flags missing spacing as SPACE-001 failure', space001?.status === 'fail',
+    `status=${space001?.status}`);
+  expect('fixer attributes missing spacing to SPACE-001', changes.some(c => c.ruleId === 'SPACE-001'),
+    `${changes.length} change(s)`);
+
+  const xmlOut = await readFromDocx(correctedBuffer, 'word/document.xml');
+  expect('fixer creates double-spacing node', /<w:spacing[^>]*w:line="480"[^>]*w:lineRule="auto"/.test(xmlOut),
+    'w:spacing line=480 inserted');
+}
+
+// ── Test 11: Abstract-only spacing fix is attributed correctly ──────────
+async function testAbstractSpacingAttribution() {
+  console.log("\n── Test: abstract spacing fix is marked auto-fixed ──");
+
+  const body = `<w:p><w:r><w:t>Abstract</w:t></w:r></w:p>
+  <w:p>
+    <w:pPr><w:pStyle w:val="Abstract"/><w:spacing w:line="240" w:lineRule="auto"/></w:pPr>
+    <w:r><w:t>This abstract paragraph is intentionally single-spaced and long enough to be checked.</w:t></w:r>
+  </w:p>
+  <w:p><w:r><w:t>Chapter 1</w:t></w:r></w:p>`;
+  const buffer = await buildDocx({ documentXml: wrapDocument(body) });
+  const metadata: DocumentMetadata = {
+    type: 'dissertation', degreeType: 'doctoral', fileName: 'abstract.docx', fileSize: buffer.length,
+  };
+  const doc = await parseDocument(buffer, metadata);
+  const ruleResults = validateDocument(doc);
+  const { correctedBuffer, changes } = await applyAutoFixes(buffer, doc, ruleResults);
+  const correctedDoc = await parseDocument(correctedBuffer, metadata);
+  const finalResults = buildValidationResults(
+    'abstract-spacing',
+    metadata,
+    ruleResults,
+    changes,
+    validateDocument(correctedDoc)
+  );
+
+  const originalAbstract = ruleResults.find(r => r.ruleId === 'ABSTRACT-004');
+  const finalAbstract = finalResults.rules.find(r => r.ruleId === 'ABSTRACT-004');
+  expect('validator flags ABSTRACT-004', originalAbstract?.status === 'fail',
+    `status=${originalAbstract?.status}`);
+  expect('fixer records ABSTRACT-004 change', changes.some(c => c.ruleId === 'ABSTRACT-004'),
+    `${changes.map(c => c.ruleId).join(', ')}`);
+  expect('final results mark ABSTRACT-004 auto-fixed', finalAbstract?.status === 'auto-fixed',
+    `status=${finalAbstract?.status}`);
+}
+
+// ── Test 12: Type/degree mismatch no longer skips both word-count rules ─
+async function testAbstractTypeDegreeMismatch() {
+  console.log("\n── Test: invalid type/degree metadata does not skip both abstract limits ──");
+
+  const doc: DocumentModel = {
+    metadata: { type: 'dissertation', degreeType: 'masters', fileName: 'mismatch.docx', fileSize: 100 },
+    rawXml: '',
+    stylesXml: '',
+    numberingXml: '',
+    paragraphs: [],
+    margins: [{ top: 3600, bottom: 1440, left: 1440, right: 1440, header: 720, footer: 720, sectionIndex: 0 }],
+    styles: { fonts: ['Times New Roman'], sizes: [24], colors: [], hasColoredText: false, dominantFont: 'Times New Roman', dominantSize: 24 },
+    figures: [],
+    tables: [],
+    references: [],
+    titlePage: {
+      detected: true, hasUniversityName: true, universityNameCorrect: true, hasInLine: true,
+      hasbyLine: true, committeeDetected: false, paragraphIndices: [],
+    },
+    abstract: { detected: true, wordCount: 300, topMargin: 3600, paragraphIndices: [] },
+    pageNumbering: {
+      hasPrelimRoman: true, hasBodyArabic: true, romanStartsAtIii: true,
+      arabicStartsAtOne: true, pageNumbersAtBottom: true, pageNumbersCentered: true,
+    },
+    sections: [{ type: 'title', startParagraphIndex: 0, endParagraphIndex: 0, detected: true, confidence: 'high' }],
+    pages: [],
+  };
+
+  const abstractRules = validateDocument(doc).filter(r => r.ruleId === 'ABSTRACT-001' || r.ruleId === 'ABSTRACT-002');
+  const skippedBoth = abstractRules.every(r => r.status === 'skipped');
+  expect('mismatched metadata does not skip both abstract word-count checks', !skippedBoth,
+    abstractRules.map(r => `${r.ruleId}:${r.status}`).join(', '));
+}
+
 async function main() {
   await testTrackChanges();
   await testHeaderColors();
@@ -422,6 +514,9 @@ async function main() {
   await testDocumentLanguageDetection();
   await testPdfReportPagination();
   await testApiDegenerateInputs();
+  await testMissingSpacingFix();
+  await testAbstractSpacingAttribution();
+  await testAbstractTypeDegreeMismatch();
 
   console.log(`\n${'═'.repeat(60)}`);
   const failures = results.filter(r => !r.ok);

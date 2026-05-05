@@ -30,6 +30,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Only .docx files are accepted' }, { status: 400 });
     }
 
+    if (
+      !(
+        (documentType === 'dissertation' && degreeType === 'doctoral') ||
+        (documentType === 'thesis' && degreeType === 'masters')
+      )
+    ) {
+      return NextResponse.json(
+        { error: "Invalid document details. Choose Dissertation for doctoral work or Thesis for master's work." },
+        { status: 400 }
+      );
+    }
+
     // Only accept references to blobs uploaded through this app's blob store,
     // and require they live under the uploads/ prefix (gated by /api/blob-upload).
     let uploadedBlob;

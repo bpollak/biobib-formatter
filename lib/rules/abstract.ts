@@ -23,9 +23,6 @@ const abstractRules: FormattingRule[] = [
     autoFixable: false,
     appliesTo: 'dissertation',
     check(doc: DocumentModel): RuleResult {
-      if (doc.metadata.degreeType !== 'doctoral') {
-        return { ruleId: 'ABSTRACT-001', category: 'abstract', name: 'Abstract Word Count ≤ 350 (Doctoral)', status: 'skipped', message: 'Not applicable for master\'s theses', autoFixable: false, severity: 'critical' };
-      }
       if (!doc.abstract.detected) {
         return makeResult('ABSTRACT-001', 'Abstract Word Count ≤ 350 (Doctoral)', 'critical', false, false,
           'Abstract section not detected',
@@ -55,9 +52,6 @@ const abstractRules: FormattingRule[] = [
     autoFixable: false,
     appliesTo: 'thesis',
     check(doc: DocumentModel): RuleResult {
-      if (doc.metadata.degreeType !== 'masters') {
-        return { ruleId: 'ABSTRACT-002', category: 'abstract', name: "Abstract Word Count ≤ 250 (Master's)", status: 'skipped', message: 'Not applicable for doctoral dissertations', autoFixable: false, severity: 'critical' };
-      }
       if (!doc.abstract.detected) {
         return makeResult('ABSTRACT-002', "Abstract Word Count ≤ 250 (Master's)", 'critical', false, false,
           'Abstract section not detected',
@@ -135,7 +129,7 @@ const abstractRules: FormattingRule[] = [
         doc.abstract.paragraphIndices.includes(i)
       );
       const notDoubleSpaced = abstractParas.filter(p =>
-        p.lineSpacing !== undefined && p.lineSpacing < 480
+        p.lineSpacing === undefined || p.lineSpacing < 480
       );
       if (notDoubleSpaced.length === 0) {
         return makeResult('ABSTRACT-004', 'Abstract Double-Spaced', 'major', true, true,

@@ -99,9 +99,12 @@ export async function applyAutoFixes(
       for (const f of auxFiles) f.xml = out.extraXmls[i++];
     }
 
-    // Body spacing fix
+    // Body / abstract spacing fix
     if (failingRuleIds.has('SPACE-001') || failingRuleIds.has('ABSTRACT-004')) {
-      documentXml = fixBodySpacing(documentXml, allChanges);
+      const spacingRuleIds = ['SPACE-001', 'ABSTRACT-004'].filter(id => failingRuleIds.has(id));
+      documentXml = fixBodySpacing(documentXml, allChanges, spacingRuleIds, {
+        includeAbstractStyles: failingRuleIds.has('ABSTRACT-004'),
+      });
     }
 
     // First-line indent fix

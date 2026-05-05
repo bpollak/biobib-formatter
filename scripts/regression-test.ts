@@ -252,9 +252,8 @@ function checkFont005(src: ByteSources): DocCheck {
 }
 
 function checkSpace001(src: ByteSources): DocCheck {
-  // After SPACE-001: no body paragraph (mirroring the fixer's exclusion via
-  // isBodySkipStyle) has an explicit <w:spacing> with w:line < 480, except
-  // w:lineRule="exact" which the fixer preserves. Extract paragraphs first,
+  // After SPACE-001: no body paragraph (mirroring the validator/fixer filter)
+  // has an explicit <w:spacing> with w:line < 480. Extract paragraphs first,
   // then test per-paragraph — handles both <w:p/> self-closing form and
   // <w:p>...</w:p> open-close form so we don't span paragraph boundaries.
   let scanned = 0;
@@ -264,7 +263,11 @@ function checkSpace001(src: ByteSources): DocCheck {
   while ((m = pRe.exec(src.documentXml)) !== null) {
     const pXml = m[0];
     if (/^<w:p\b[^>]*\/>$/.test(pXml)) continue;
-    const pPrMatch = /<w:pPr>([\s\S]*?)<\/w:pPr>/.exec(pXml);
+    const text = (pXml.match(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g) || [])
+      .map(t => t.replace(/<w:t[^>]*>|<\/w:t>/g, ''))
+      .join('');
+    if (text.trim().length <= 20) continue;
+    const pPrMatch = /<w:pPr\b[^>]*>([\s\S]*?)<\/w:pPr>/.exec(pXml);
     if (!pPrMatch) continue;
     const pPr = pPrMatch[1];
     const styleMatch = /<w:pStyle\s+w:val="([^"]+)"/.exec(pPr);

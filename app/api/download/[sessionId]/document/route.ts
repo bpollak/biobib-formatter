@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { get } from '@vercel/blob';
+import { del, get } from '@vercel/blob';
 import { assertCorrectedDocumentPathname } from '@/lib/blob-store';
 import {
   buildAttachmentDisposition,
@@ -8,6 +8,46 @@ import {
 import { verifyDocumentDownloadToken } from '@/lib/server/document-download-token';
 
 export const dynamic = 'force-dynamic';
+
+function streamWithBlobCleanup(
+  stream: ReadableStream<Uint8Array>,
+  pathname: string
+): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  let cleaned = false;
+
+  async function cleanup() {
+    if (cleaned) return;
+    cleaned = true;
+    try {
+      await del(pathname);
+    } catch (error) {
+      console.warn('Failed to delete corrected blob after download:', pathname, error);
+    }
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) controller.enqueue(value);
+        }
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+        await cleanup();
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+      await cleanup();
+    },
+  });
+}
 
 export async function GET(
   request: Request,
@@ -43,7 +83,7 @@ export async function GET(
       return NextResponse.json({ error: 'Corrected document not found or expired' }, { status: 404 });
     }
 
-    return new NextResponse(blob.stream, {
+    return new NextResponse(streamWithBlobCleanup(blob.stream, payload.pathname), {
       headers: {
         'Cache-Control': 'private, no-store, max-age=0',
         'Content-Disposition': buildAttachmentDisposition(
