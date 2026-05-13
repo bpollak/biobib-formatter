@@ -62,9 +62,27 @@ ${BIOBIB_INSTRUCTIONS_INLINE}`;
 
 // ── Section slice definitions ────────────────────────────────────────────────
 
-export type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
+export type SliceKey =
+  | 'meta_and_I'
+  | 'II'
+  | 'III_journals_early'
+  | 'III_journals_late'
+  | 'III_other_a'
+  | 'III_other_b';
 
-export const SLICE_KEYS: readonly SliceKey[] = ['meta_and_I', 'II', 'III_journals', 'III_other'];
+export const SLICE_KEYS: readonly SliceKey[] = [
+  'meta_and_I',
+  'II',
+  'III_journals_early',
+  'III_journals_late',
+  'III_other_a',
+  'III_other_b',
+];
+
+// Year boundary used to split peerReviewedJournals into two chunks of
+// roughly comparable size for prolific faculty. Early career CVs will
+// have an empty "late" or "early" slice — cheap, no harm.
+const JOURNAL_SPLIT_YEAR = 2010;
 
 export interface PartialResult {
   sections: Partial<BioBibSections>;
@@ -104,9 +122,8 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_journals: {
-    fields:
-      'Section III peerReviewedJournals ONLY (refereed journal articles). Number entries sequentially starting from 1.',
+  III_journals_early: {
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip articles published after ${JOURNAL_SPLIT_YEAR}. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
     "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
@@ -114,14 +131,32 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_other: {
+  III_journals_late: {
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_SPLIT_YEAR}. Skip articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge).`,
+    schema: `{
+  "sections": {
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_other_a: {
     fields:
-      'Section III everything except peerReviewedJournals: reviewAndInvited, books, chapters, refereedProceedings, otherProceedings, abstracts, popularWorks, additionalProducts. Number sequentially within each subsection.',
+      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1.',
     schema: `{
   "sections": {
     "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
     "books": [{"number": 1, "citation": "", "type": "book"}],
-    "chapters": [{"number": 1, "citation": "", "type": "chapter"}],
+    "chapters": [{"number": 1, "citation": "", "type": "chapter"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_other_b: {
+    fields:
+      'Section III subset B: refereedProceedings, otherProceedings, abstracts, popularWorks, additionalProducts. Number sequentially within each subsection starting at 1.',
+    schema: `{
+  "sections": {
     "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
     "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}],
@@ -278,6 +313,10 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
       }
     }
   }
+
+  // peerReviewedJournals is fed by two slices (early/late), each starting
+  // at number=1. Renumber sequentially across the merged list.
+  sections.peerReviewedJournals = sections.peerReviewedJournals.map((c, i) => ({ ...c, number: i + 1 }));
 
   return { sections, gaps, metadata };
 }
