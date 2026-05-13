@@ -62,9 +62,11 @@ ${BIOBIB_INSTRUCTIONS_INLINE}`;
 
 // ── Section slice definitions ────────────────────────────────────────────────
 
-type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
+export type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
 
-interface PartialResult {
+export const SLICE_KEYS: readonly SliceKey[] = ['meta_and_I', 'II', 'III_journals', 'III_other'];
+
+export interface PartialResult {
   sections: Partial<BioBibSections>;
   gaps?: BioBibGap[];
   metadata?: ConversionResult['metadata'];
@@ -204,7 +206,7 @@ async function callSliceOnce(cv: ParsedCV, slice: SliceKey, apiKey: string): Pro
   }
 }
 
-async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
+export async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
   // One retry on transient failures — slice calls are cheap and parse errors
   // can come from rare formatting blips.
   try {
@@ -244,7 +246,7 @@ function emptySections(): BioBibSections {
   };
 }
 
-function mergeSlices(parts: PartialResult[]): ConversionResult {
+export function mergeSlices(parts: PartialResult[]): ConversionResult {
   const sections = emptySections();
   const gaps: BioBibGap[] = [];
   let metadata: ConversionResult['metadata'] = {
@@ -280,13 +282,5 @@ function mergeSlices(parts: PartialResult[]): ConversionResult {
   return { sections, gaps, metadata };
 }
 
-// ── Public entry point ───────────────────────────────────────────────────────
-
-export async function convertCVtoBioBib(cv: ParsedCV): Promise<ConversionResult> {
-  const apiKey = process.env.LITELLM_API_KEY;
-  if (!apiKey) throw new Error('LITELLM_API_KEY not configured');
-
-  const slices: SliceKey[] = ['meta_and_I', 'II', 'III_journals', 'III_other'];
-  const parts = await Promise.all(slices.map(s => callSlice(cv, s, apiKey)));
-  return mergeSlices(parts);
-}
+// The orchestration (Promise.all over slices + merge) now lives in the
+// async fan-out workers under app/api/slice/* and app/api/finalize/*.
