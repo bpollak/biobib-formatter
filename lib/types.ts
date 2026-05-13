@@ -1,219 +1,127 @@
-// Core types for Dissertation Formatting Agent
+// BioBib Formatter — Core Types
 
-export type DocumentType = 'dissertation' | 'thesis';
-export type DegreeType = 'doctoral' | 'masters';
-export type RuleStatus = 'pass' | 'fail' | 'warning' | 'skipped' | 'auto-fixed';
-export type Severity = 'critical' | 'major' | 'minor';
-
-export type RuleCategory =
-  | 'margins'
-  | 'fonts'
-  | 'pagination'
-  | 'page-order'
-  | 'title-page'
-  | 'approval-page'
-  | 'abstract'
-  | 'spacing'
-  | 'indentation'
-  | 'figures-tables'
-  | 'references'
-  | 'text-formatting'
-  | 'accessibility';
-
-export interface DocumentMetadata {
-  type: DocumentType;
-  degreeType: DegreeType;
-  fileName: string;
-  fileSize: number;
-}
-
-export interface MarginInfo {
-  top: number;    // in twips (1440 = 1")
-  bottom: number;
-  left: number;
-  right: number;
-  header: number;
-  footer: number;
-  sectionIndex: number;
-}
-
-export interface StyleInfo {
-  fonts: string[];
-  sizes: number[];  // in half-points
-  colors: string[];
-  hasColoredText: boolean;
-  dominantFont: string;
-  dominantSize: number;
-}
-
-export interface ParagraphInfo {
-  index: number;
-  text: string;
-  style: string;
-  fontSize?: number;    // half-points
-  fontFamily?: string;
-  bold?: boolean;
-  italic?: boolean;
-  color?: string;
-  lineSpacing?: number; // twips
-  spaceBefore?: number;
-  spaceAfter?: number;
-  indentLeft?: number;  // twips
-  indentRight?: number;
-  indentFirstLine?: number;
-  alignment?: 'left' | 'center' | 'right' | 'justify';
-  isHeading?: boolean;
-  headingLevel?: number;
-  isCaption?: boolean;
-  isEmpty?: boolean;
-}
-
-export interface FigureInfo {
-  index: number;
-  paragraphIndex: number;
-  hasCaption: boolean;
-  captionParagraphIndex?: number;
-  captionPosition?: 'before' | 'after';
-  captionText?: string;
-  hasAltText?: boolean;
-  altText?: string;
-}
-
-export interface TableInfo {
-  index: number;
-  paragraphIndex: number;
-  hasCaption: boolean;
-  captionParagraphIndex?: number;
-  captionPosition?: 'before' | 'after';
-  captionText?: string;
-  hasHeaderRow?: boolean;
-  isMultiPage?: boolean;
-}
-
-export interface ReferenceInfo {
-  index: number;
-  text: string;
-  lineSpacing?: number;
-  spaceAfter?: number;
-  hasEtAl?: boolean;
-}
-
-export interface TitlePageInfo {
-  detected: boolean;
-  hasUniversityName: boolean;
-  universityNameCorrect: boolean;
-  hasInLine: boolean;
-  hasbyLine: boolean;
-  committeeDetected: boolean;
-  committeeChairFirst?: boolean;
-  committeeMembersAlphabetized?: boolean;
-  committeeIndented?: boolean;
-  committeeSingleSpaced?: boolean;
-  year?: string;
-  paragraphIndices: number[];
-}
-
-export interface AbstractInfo {
-  detected: boolean;
-  wordCount: number;
-  topMargin?: number;
-  paragraphIndices: number[];
-}
-
-export interface PageNumberingInfo {
-  hasPrelimRoman: boolean;
-  hasBodyArabic: boolean;
-  romanStartsAtIii: boolean;
-  arabicStartsAtOne: boolean;
-  pageNumbersAtBottom: boolean;
-  pageNumbersCentered: boolean;
-}
-
-export interface PageInfo {
-  index: number;
-  isBlank: boolean;
-  sectionType?: string;
-}
-
-export interface SectionInfo {
-  type: 'title' | 'copyright' | 'approval' | 'dedication' | 'epigraph' | 'toc' | 'acknowledgements' | 'vita' | 'abstract' | 'body' | 'appendix' | 'references' | 'unknown';
-  startParagraphIndex: number;
-  endParagraphIndex: number;
-  detected: boolean;
-  confidence: 'high' | 'medium' | 'low';
-}
-
-export interface DocumentModel {
-  metadata: DocumentMetadata;
-  rawXml: string;
-  stylesXml: string;
-  numberingXml: string;
-  paragraphs: ParagraphInfo[];
-  margins: MarginInfo[];
-  styles: StyleInfo;
-  figures: FigureInfo[];
-  tables: TableInfo[];
-  references: ReferenceInfo[];
-  titlePage: TitlePageInfo;
-  abstract: AbstractInfo;
-  pageNumbering: PageNumberingInfo;
-  sections: SectionInfo[];
-  pages: PageInfo[];
-}
-
-export interface RuleResult {
-  ruleId: string;
-  category: RuleCategory;
-  name: string;
-  status: RuleStatus;
-  message: string;
-  details?: string;
-  autoFixable: boolean;
-  severity: Severity;
-  manualFixInstruction?: string;
-}
-
-export interface ChangeRecord {
-  ruleId: string;
-  description: string;
-  location: string;
-  before: string;
-  after: string;
-}
-
-export interface ValidationResults {
-  sessionId: string;
-  metadata: DocumentMetadata;
-  summary: {
-    total: number;
-    passed: number;
-    failed: number;
-    warned: number;
-    autoFixed: number;
-    skipped: number;
-    overallStatus: 'pass' | 'needs-attention' | 'fail';
-  };
-  rules: RuleResult[];
-  changes: ChangeRecord[];
-  manualFixes: ManualFix[];
-}
-
-export interface ManualFix {
-  ruleId: string;
-  severity: Severity;
-  title: string;
-  instruction: string;
-  location?: string;
-}
-
-export interface FormattingRule {
+export interface ProcessingSession {
   id: string;
-  category: RuleCategory;
-  name: string;
-  description: string;
-  severity: Severity;
-  autoFixable: boolean;
-  appliesTo: 'all' | 'dissertation' | 'thesis';
-  check: (doc: DocumentModel) => RuleResult;
+  fileName: string;
+  status: 'parsing' | 'converting' | 'generating' | 'complete' | 'error';
+  error?: string;
 }
 
+// ── CV Parsing ──────────────────────────────────────────────────────────────
+
+export interface ParsedCV {
+  rawText: string;
+  name?: string;
+  department?: string;
+  title?: string;
+}
+
+// ── AI Conversion Output ─────────────────────────────────────────────────────
+
+export interface EmploymentEntry {
+  from: string;
+  to: string;
+  institution: string;
+  location: string;
+  rank: string;
+}
+
+export interface EducationEntry {
+  school: string;
+  datesFrom: string;
+  datesTo: string;
+  location: string;
+  major: string;
+  degree: string;
+  dateReceived: string;
+}
+
+export interface ServiceEntry {
+  description: string;
+  dates: string;
+  category: 'departmental' | 'university' | 'senate' | 'systemwide' | 'other';
+}
+
+export interface PublicationEntry {
+  number: number;
+  citation: string; // Preserve original format from CV
+  type: 'journal' | 'review' | 'book' | 'chapter' | 'proceedings' | 'abstract' | 'popular' | 'other';
+  isNewSinceLastReview?: boolean;
+}
+
+export interface GrantEntry {
+  title: string;
+  funder: string;
+  amount?: string;
+  period: string;
+  status: 'current' | 'past';
+  role?: string;
+}
+
+export interface BioBibSections {
+  // Section I
+  employment: EmploymentEntry[];
+  education: EducationEntry[];
+  specialization?: string;
+
+  // Section II
+  universityService: ServiceEntry[];
+  publicService: string[];
+  professionalActivities: string[];
+  awards: string[];
+  teaching: string[];
+  grants: GrantEntry[];
+  outreach: string[];
+  clinicalActivities: string[];
+  otherActivities: string[];
+
+  // Section III
+  peerReviewedJournals: PublicationEntry[];
+  reviewAndInvited: PublicationEntry[];
+  books: PublicationEntry[];
+  chapters: PublicationEntry[];
+  refereedProceedings: PublicationEntry[];
+  otherProceedings: PublicationEntry[];
+  abstracts: PublicationEntry[];
+  popularWorks: PublicationEntry[];
+  additionalProducts: PublicationEntry[];
+  workInProgress: PublicationEntry[];
+}
+
+// ── Gap Detection ────────────────────────────────────────────────────────────
+
+export type GapSeverity = 'required' | 'recommended' | 'optional';
+
+export interface BioBibGap {
+  section: string;
+  field: string;
+  instruction: string;
+  severity: GapSeverity;
+}
+
+// ── Full Conversion Result ───────────────────────────────────────────────────
+
+export interface ConversionResult {
+  sections: BioBibSections;
+  gaps: BioBibGap[];
+  metadata: {
+    name: string;
+    department: string;
+    title: string;
+    processedAt: string;
+  };
+}
+
+// ── API Response Shapes ──────────────────────────────────────────────────────
+
+export interface UploadResponse {
+  sessionId: string;
+  result: ConversionResult;
+}
+
+export interface DownloadTokenPayload {
+  sessionId: string;
+  kind: 'document' | 'report';
+  iat: number;
+  exp: number;
+}

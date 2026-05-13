@@ -1,77 +1,44 @@
-import { normalizeBlobPathname } from './blob-paths';
+/**
+ * In-memory blob store for generated BioBib documents.
+ * Entries expire after 30 minutes — stateless, no persistence.
+ */
 
-export type OwnedBlobReference = {
-  access: 'public' | 'private';
-  pathname: string;
-};
+import { ConversionResult } from './types';
 
-function getBlobStoreId(): string {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  const [, , , storeId = ''] = token?.split('_') ?? [];
-
-  if (!storeId) {
-    throw new Error('BLOB_READ_WRITE_TOKEN is not configured');
-  }
-
-  return storeId;
+interface BlobEntry {
+  document: Buffer;
+  fileName: string;
+  result: ConversionResult;
+  expiresAt: number;
 }
 
-function getAllowedBlobHost(access: 'public' | 'private'): string {
-  return `${getBlobStoreId().toLowerCase()}.${access}.blob.vercel-storage.com`;
-}
+const TTL_MS = 30 * 60 * 1000; // 30 minutes
 
-function extractOwnedBlobReference(blobUrl: string): OwnedBlobReference {
-  let parsedUrl: URL;
+class BlobStore {
+  private store = new Map<string, BlobEntry>();
 
-  try {
-    parsedUrl = new URL(blobUrl);
-  } catch {
-    throw new Error('Invalid uploaded file URL');
+  set(sessionId: string, data: Omit<BlobEntry, 'expiresAt'>): void {
+    this.store.set(sessionId, { ...data, expiresAt: Date.now() + TTL_MS });
+    this.gc();
   }
 
-  const hostname = parsedUrl.hostname.toLowerCase();
-  const access = hostname === getAllowedBlobHost('private')
-    ? 'private'
-    : hostname === getAllowedBlobHost('public')
-    ? 'public'
-    : null;
-
-  if (!access) {
-    throw new Error('Only files uploaded through this app may be processed');
+  get(sessionId: string): BlobEntry | undefined {
+    const entry = this.store.get(sessionId);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(sessionId);
+      return undefined;
+    }
+    return entry;
   }
 
-  return {
-    access,
-    pathname: normalizeBlobPathname(decodeURIComponent(parsedUrl.pathname.slice(1))),
-  };
-}
-
-export function resolveOwnedBlobReference(
-  blobPathname: unknown,
-  blobUrl: unknown
-): OwnedBlobReference {
-  if (typeof blobPathname === 'string') {
-    return {
-      access: 'private',
-      pathname: normalizeBlobPathname(blobPathname),
-    };
-  }
-
-  if (typeof blobUrl === 'string') {
-    return extractOwnedBlobReference(blobUrl);
-  }
-
-  throw new Error('No uploaded file reference provided');
-}
-
-export function assertUploadedDocumentPathname(pathname: string): void {
-  if (!pathname.startsWith('uploads/')) {
-    throw new Error('Only files uploaded through this app may be processed');
+  private gc(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (now > entry.expiresAt) this.store.delete(key);
+    }
   }
 }
 
-export function assertCorrectedDocumentPathname(pathname: string): void {
-  if (!pathname.startsWith('corrected/')) {
-    throw new Error('Invalid corrected document path');
-  }
-}
+// Singleton — survives across requests in the same Next.js server process
+export const blobStore = new BlobStore();
