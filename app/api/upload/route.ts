@@ -16,7 +16,7 @@ import { del } from '@vercel/blob';
 import { MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 import { randomUUID } from 'crypto';
 
-export const maxDuration = 120; // 2 min — AI conversion can be slow
+export const maxDuration = 300; // 5 min — full-CV AI conversion can take 60–120s
 
 export async function POST(req: NextRequest) {
   const { blobUrl, fileName } = (await req.json().catch(() => ({}))) as {
