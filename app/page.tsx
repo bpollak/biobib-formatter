@@ -103,7 +103,7 @@ export default function HomePage() {
     <Container maxWidth="md" sx={{ py: 6 }}>
       {/* Header */}
       <Box sx={{ mb: 4, textAlign: 'center' }}>
-        <Typography variant="h4" fontWeight={700} color="primary" gutterBottom>
+        <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
           BioBib Formatter
         </Typography>
         <Typography variant="subtitle1" color="text.secondary">
@@ -120,8 +120,8 @@ export default function HomePage() {
           onDragLeave={() => setDragOver(false)}
           sx={{
             p: 6, textAlign: 'center', cursor: 'pointer',
-            border: dragOver ? '2px dashed #003B5C' : '2px dashed #ccc',
-            bgcolor: dragOver ? '#f0f7ff' : 'background.paper',
+            border: dragOver ? '2px dashed #182B49' : '2px dashed #ccc',
+            bgcolor: dragOver ? '#f0f4fa' : 'background.paper',
             transition: 'all 0.2s',
           }}
           onClick={() => document.getElementById('file-input')?.click()}

@@ -64,7 +64,7 @@ export default function Header() {
                   textTransform: 'uppercase',
                 }}
               >
-                Dissertation Formatting Agent
+                BioBib Formatter
               </Box>
             </Link>
 
