@@ -12,7 +12,9 @@ import ErrorIcon from '@mui/icons-material/Error';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
+import { upload } from '@vercel/blob/client';
 import { ConversionResult, BioBibGap } from '@/lib/types';
+import { ACCEPTED_MIME_TYPES } from '@/lib/constants';
 
 type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
 
@@ -50,27 +52,60 @@ export default function HomePage() {
     setState('uploading');
     setError('');
 
-    const formData = new FormData();
-    formData.append('file', file);
+    let blob;
+    try {
+      blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/upload-token',
+        contentType: ACCEPTED_MIME_TYPES[0],
+      });
+    } catch (e) {
+      setError(`Upload failed: ${(e as Error).message || 'please try again.'}`);
+      setState('error');
+      return;
+    }
 
     setState('processing');
 
+    let res: Response;
     try {
-      const res = await fetch('/api/upload', { method: 'POST', body: formData });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Conversion failed. Please try again.');
-        setState('error');
-        return;
-      }
-
-      setResultState({ sessionId: data.sessionId, result: data.result, fileName: file.name });
-      setState('complete');
+      res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blobUrl: blob.url, fileName: file.name }),
+      });
     } catch (e) {
-      setError('Network error. Please try again.');
+      setError(`Network error: ${(e as Error).message || 'please try again.'}`);
       setState('error');
+      return;
     }
+
+    // Read as text first so we can surface real status codes when the body
+    // isn't JSON (e.g. an HTML 413/504 from the platform).
+    const rawBody = await res.text();
+    let data: { sessionId?: string; result?: ConversionResult; error?: string };
+    try {
+      data = JSON.parse(rawBody);
+    } catch {
+      setError(`Server returned ${res.status} ${res.statusText || ''}`.trim() + '. Please try again.');
+      setState('error');
+      return;
+    }
+
+    if (!res.ok) {
+      setError(data.error || `Server error ${res.status}. Please try again.`);
+      setState('error');
+      return;
+    }
+
+    if (!data.sessionId || !data.result) {
+      setError('Server returned an unexpected response. Please try again.');
+      setState('error');
+      return;
+    }
+
+    setResultState({ sessionId: data.sessionId, result: data.result, fileName: file.name });
+    setState('complete');
   }, []);
 
   const onDrop = useCallback((e: React.DragEvent) => {

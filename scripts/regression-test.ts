@@ -1,23 +1,24 @@
 /**
  * Regression test for the BioBib Formatter upload pipeline.
  *
- * Submits a .docx CV to a target deployment's /api/upload endpoint and
- * validates the round trip: response shape, section counts, and the
- * generated BioBib download.
+ * Mirrors the browser flow:
+ *   1. Upload the .docx CV directly to Vercel Blob using a server-side
+ *      `put()` (requires BLOB_READ_WRITE_TOKEN).
+ *   2. POST { blobUrl, fileName } to /api/upload and validate the result.
+ *   3. Download the generated BioBib and verify it's a valid .docx.
  *
  * Usage:
- *   npm run test:regression -- path/to/cv.docx
- *   BIOBIB_URL=https://biobib-formatter.vercel.app npm run test:regression -- path/to/cv.docx
- *   BIOBIB_URL=http://localhost:3000 npm run test:regression -- path/to/cv.docx
+ *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx
+ *   BIOBIB_URL=https://biobib-formatter.vercel.app BLOB_READ_WRITE_TOKEN=... \
+ *     npm run test:regression -- path/to/cv.docx
  *
- * Exit code 0 = pass, 1 = fail. Designed to be CI-friendly.
+ * Exit code 0 = pass, 1 = fail.
  */
 
 import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
+import { put, del } from '@vercel/blob';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
-
-const VERCEL_BODY_LIMIT_BYTES = 4.5 * 1024 * 1024;
 
 interface Check {
   name: string;
@@ -36,6 +37,10 @@ async function main() {
   const cvPath = process.argv[2];
   if (!cvPath) {
     console.error('Usage: npm run test:regression -- <path-to-cv.docx>');
+    process.exit(2);
+  }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    console.error('BLOB_READ_WRITE_TOKEN must be set (pull from Vercel: `vercel env pull`).');
     process.exit(2);
   }
 
@@ -57,31 +62,35 @@ async function main() {
     info.size <= MAX_FILE_SIZE_BYTES,
   );
 
-  const isVercelHost = /vercel\.app$/.test(new URL(baseUrl).hostname);
-  if (isVercelHost) {
-    record(
-      'CV under Vercel serverless body limit (4.5 MB)',
-      info.size <= VERCEL_BODY_LIMIT_BYTES,
-      info.size > VERCEL_BODY_LIMIT_BYTES
-        ? `${sizeMb.toFixed(2)} MB exceeds Vercel's 4.5 MB request-body cap; /api/upload will return 413 before the function runs.`
-        : undefined,
-    );
+  // ── 2. Upload to Vercel Blob ─────────────────────────────────────────────
+  const fileBytes = await readFile(absPath);
+  let blobUrl: string;
+  try {
+    const blob = await put(basename(absPath), fileBytes, {
+      access: 'public',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      addRandomSuffix: true,
+    });
+    blobUrl = blob.url;
+    record('Uploaded CV to Vercel Blob', true, blobUrl);
+  } catch (e) {
+    record('Uploaded CV to Vercel Blob', false, (e as Error).message);
+    finish();
+    return;
   }
 
-  // ── 2. POST /api/upload ─────────────────────────────────────────────────
-  const fileBytes = await readFile(absPath);
-  const blob = new Blob([fileBytes], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-  const fd = new FormData();
-  fd.append('file', blob, basename(absPath));
-
+  // ── 3. POST blobUrl to /api/upload ───────────────────────────────────────
   const t0 = Date.now();
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/api/upload`, { method: 'POST', body: fd });
-  } catch (err) {
-    record('POST /api/upload reached server', false, `fetch threw: ${(err as Error).message}`);
+    res = await fetch(`${baseUrl}/api/upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ blobUrl, fileName: basename(absPath) }),
+    });
+  } catch (e) {
+    record('POST /api/upload reached server', false, `fetch threw: ${(e as Error).message}`);
+    await del(blobUrl).catch(() => {});
     finish();
     return;
   }
@@ -92,8 +101,8 @@ async function main() {
   const isJson = contentType.includes('application/json');
   record('Response Content-Type is JSON', isJson, contentType || '(none)');
 
-  let body: unknown;
   const rawText = await res.text();
+  let body: unknown;
   if (isJson) {
     try {
       body = JSON.parse(rawText);
@@ -105,11 +114,7 @@ async function main() {
       return;
     }
   } else {
-    record(
-      'Response body parses as JSON',
-      false,
-      `non-JSON response — UI will trip "Network error. Please try again." in app/page.tsx:60`,
-    );
+    record('Response body parses as JSON', false, 'non-JSON response');
     console.error('--- raw body (first 500 chars) ---');
     console.error(rawText.slice(0, 500));
     finish();
@@ -129,7 +134,6 @@ async function main() {
     result?: {
       sections?: Record<string, unknown[]>;
       gaps?: unknown[];
-      metadata?: { name?: string };
     };
   };
 
@@ -145,7 +149,7 @@ async function main() {
   record('Education entries extracted', edu > 0, `${edu} entries`);
   record('Peer-reviewed publications extracted', pubs > 0, `${pubs} entries`);
 
-  // ── 3. GET /api/download/:sessionId/document ─────────────────────────────
+  // ── 4. GET /api/download/:sessionId/document ─────────────────────────────
   if (data.sessionId) {
     const dl = await fetch(`${baseUrl}/api/download/${data.sessionId}/document`);
     record('Download endpoint returns 2xx', dl.ok, `status ${dl.status}`);
