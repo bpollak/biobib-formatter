@@ -68,7 +68,8 @@ export type SliceKey =
   | 'III_journals_early'
   | 'III_journals_late'
   | 'III_other_a'
-  | 'III_other_b';
+  | 'III_other_proc'
+  | 'III_other_misc';
 
 export const SLICE_KEYS: readonly SliceKey[] = [
   'meta_and_I',
@@ -76,7 +77,8 @@ export const SLICE_KEYS: readonly SliceKey[] = [
   'III_journals_early',
   'III_journals_late',
   'III_other_a',
-  'III_other_b',
+  'III_other_proc',
+  'III_other_misc',
 ];
 
 // Year boundary used to split peerReviewedJournals into two chunks of
@@ -152,13 +154,22 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_other_b: {
+  III_other_proc: {
     fields:
-      'Section III subset B: refereedProceedings, otherProceedings, abstracts, popularWorks, additionalProducts. Number sequentially within each subsection starting at 1.',
+      'Section III subset proceedings: refereedProceedings, otherProceedings. Number sequentially within each subsection starting at 1.',
     schema: `{
   "sections": {
     "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
-    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
+    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_other_misc: {
+    fields:
+      'Section III subset miscellaneous: abstracts, popularWorks, additionalProducts. Number sequentially within each subsection starting at 1.',
+    schema: `{
+  "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}],
     "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
     "additionalProducts": [{"number": 1, "citation": "", "type": "other"}]
@@ -214,7 +225,11 @@ async function callSliceOnce(cv: ParsedCV, slice: SliceKey, apiKey: string): Pro
         { role: 'user', content: buildSliceUserPrompt(cv, slice) },
       ],
       temperature: 0.1,
-      max_tokens: 16000,
+      // 12K caps each slice's wall time at ~4 min (Sonnet ~50 tok/s),
+      // leaving headroom under the 300s function budget. Going larger
+      // causes the model to keep generating and time out before
+      // returning anything we can parse.
+      max_tokens: 12000,
       response_format: { type: 'json_object' },
     }),
   });
