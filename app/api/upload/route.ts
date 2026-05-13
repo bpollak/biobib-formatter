@@ -1,22 +1,25 @@
 /**
- * POST /api/upload
- * Accepts { blobUrl, fileName } pointing at a CV uploaded directly to
- * Vercel Blob storage. Fetches the blob, runs the conversion pipeline,
- * and returns a ConversionResult. The client uses /api/upload-token first
- * to obtain a blob URL — this keeps the request body small so it isn't
- * blocked by Vercel's 4.5 MB serverless body limit.
+ * POST /api/upload  (async dispatcher)
+ *
+ * 1. Receive { blobUrl, fileName }.
+ * 2. Fetch + parse the source CV.
+ * 3. Persist manifest.json + cv.txt under jobs/<jobId>/.
+ * 4. Dispatch four /api/slice workers via after() + fetch (each runs in
+ *    its own function invocation with its own 300s budget).
+ * 5. Return { jobId } immediately (HTTP 202). Client polls /api/status.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { parseCV } from '@/lib/docx/reader';
-import { convertCVtoBioBib } from '@/lib/pipeline/converter';
-import { generateBioBibDocx } from '@/lib/docx/writer';
-import { blobStore } from '@/lib/blob-store';
+import { after } from 'next/server';
 import { del } from '@vercel/blob';
-import { MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 import { randomUUID } from 'crypto';
+import { parseCV } from '@/lib/docx/reader';
+import { SLICE_KEYS } from '@/lib/pipeline/converter';
+import { writeManifest, writeCvText } from '@/lib/jobs/store';
+import { INTERNAL_SECRET_HEADER, getInternalSecret } from '@/lib/jobs/auth';
+import { MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
-export const maxDuration = 300; // 5 min — full-CV AI conversion can take 60–120s
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   const { blobUrl, fileName } = (await req.json().catch(() => ({}))) as {
@@ -29,6 +32,16 @@ export async function POST(req: NextRequest) {
   }
   if (!fileName.endsWith('.docx')) {
     return NextResponse.json({ error: 'Only .docx files are accepted.' }, { status: 400 });
+  }
+
+  // Fail fast at the boundary if the internal secret is missing.
+  try {
+    getInternalSecret();
+  } catch {
+    return NextResponse.json(
+      { error: 'Server misconfigured: INTERNAL_API_SECRET is not set.' },
+      { status: 500 },
+    );
   }
 
   const blobRes = await fetch(blobUrl);
@@ -48,29 +61,38 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = Buffer.from(await blobRes.arrayBuffer());
-  const sessionId = randomUUID();
+  const cv = await parseCV(buffer);
+  const jobId = randomUUID();
 
-  let result;
-  let docxBuffer;
-  try {
-    const cv = await parseCV(buffer);
-    result = await convertCVtoBioBib(cv);
-    docxBuffer = await generateBioBibDocx(result);
-  } catch (e) {
-    const msg = (e as Error).message || 'Unknown error during conversion.';
-    console.error('[/api/upload] conversion failed:', e);
-    del(blobUrl).catch(() => {});
-    return NextResponse.json({ error: `Conversion failed: ${msg}` }, { status: 500 });
-  }
-
-  blobStore.set(sessionId, {
-    document: docxBuffer,
-    fileName: fileName.replace('.docx', '') + '-biobib.docx',
-    result,
+  // Persist the parsed text so workers don't re-parse a multi-MB docx.
+  await writeCvText(jobId, cv.rawText);
+  await writeManifest(jobId, {
+    fileName,
+    sliceKeys: [...SLICE_KEYS],
+    createdAt: Date.now(),
+    sourceBlobUrl: blobUrl,
   });
 
-  // Best-effort cleanup — the source CV blob isn't needed after processing.
+  // Workers don't need the source .docx — they use cv.txt. Clean up now.
   del(blobUrl).catch(() => {});
 
-  return NextResponse.json({ sessionId, result });
+  const origin = req.nextUrl.origin;
+  const secret = getInternalSecret();
+
+  after(async () => {
+    // Each fetch's child returns 202 immediately and runs its real work in
+    // its own after(). We only need the dispatch to commit (sub-second).
+    await Promise.allSettled(
+      SLICE_KEYS.map(key =>
+        fetch(`${origin}/api/slice/${jobId}/${key}`, {
+          method: 'POST',
+          headers: { [INTERNAL_SECRET_HEADER]: secret },
+        }).catch(err => {
+          console.error(`[/api/upload] dispatch failed for slice "${key}":`, err);
+        }),
+      ),
+    );
+  });
+
+  return NextResponse.json({ jobId }, { status: 202 });
 }

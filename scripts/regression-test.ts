@@ -1,11 +1,12 @@
 /**
- * Regression test for the BioBib Formatter upload pipeline.
+ * Regression test for the BioBib Formatter async pipeline.
  *
  * Mirrors the browser flow:
- *   1. Upload the .docx CV directly to Vercel Blob using a server-side
- *      `put()` (requires BLOB_READ_WRITE_TOKEN).
- *   2. POST { blobUrl, fileName } to /api/upload and validate the result.
- *   3. Download the generated BioBib and verify it's a valid .docx.
+ *   1. Upload the .docx CV directly to Vercel Blob via server-side put()
+ *      (requires BLOB_READ_WRITE_TOKEN).
+ *   2. POST { blobUrl, fileName } to /api/upload → expect { jobId } in <2s.
+ *   3. Poll /api/status/<jobId> every 3s up to 8 minutes until terminal.
+ *   4. Download /api/download/<jobId> and verify the .docx zip signature.
  *
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx
@@ -17,7 +18,7 @@
 
 import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
-import { put, del } from '@vercel/blob';
+import { put } from '@vercel/blob';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
 
 interface Check {
@@ -32,6 +33,23 @@ const record = (name: string, pass: boolean, detail?: string) => {
   const icon = pass ? 'PASS' : 'FAIL';
   console.log(`[${icon}] ${name}${detail ? ` — ${detail}` : ''}`);
 };
+
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 8 * 60 * 1000;
+
+type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
+type SliceState = 'pending' | 'done' | 'failed';
+
+interface StatusResponse {
+  state: 'pending' | 'merging' | 'complete' | 'failed' | 'failed_partial';
+  slices: Record<SliceKey, SliceState>;
+  result?: {
+    sections?: Record<string, unknown[]>;
+    gaps?: unknown[];
+  };
+  error?: string;
+  startedAt: number;
+}
 
 async function main() {
   const cvPath = process.argv[2];
@@ -49,20 +67,13 @@ async function main() {
   console.log(`Target: ${baseUrl}`);
   console.log(`CV:     ${absPath}\n`);
 
-  // ── 1. Pre-flight file checks ────────────────────────────────────────────
+  // 1. File checks
   const info = await stat(absPath);
   const sizeMb = info.size / 1024 / 1024;
-  record(
-    'CV file exists and is .docx',
-    absPath.endsWith('.docx') && info.isFile(),
-    `${sizeMb.toFixed(2)} MB`,
-  );
-  record(
-    `CV under app size limit (${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB)`,
-    info.size <= MAX_FILE_SIZE_BYTES,
-  );
+  record('CV file exists and is .docx', absPath.endsWith('.docx') && info.isFile(), `${sizeMb.toFixed(2)} MB`);
+  record(`CV under app size limit (${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB)`, info.size <= MAX_FILE_SIZE_BYTES);
 
-  // ── 2. Upload to Vercel Blob ─────────────────────────────────────────────
+  // 2. Upload to Vercel Blob (simulating the browser client-direct upload)
   const fileBytes = await readFile(absPath);
   let blobUrl: string;
   try {
@@ -79,103 +90,115 @@ async function main() {
     return;
   }
 
-  // ── 3. POST blobUrl to /api/upload ───────────────────────────────────────
-  const t0 = Date.now();
-  let res: Response;
+  // 3. POST /api/upload — should return jobId quickly
+  const tUpload = Date.now();
+  let upRes: Response;
   try {
-    res = await fetch(`${baseUrl}/api/upload`, {
+    upRes = await fetch(`${baseUrl}/api/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ blobUrl, fileName: basename(absPath) }),
     });
   } catch (e) {
     record('POST /api/upload reached server', false, `fetch threw: ${(e as Error).message}`);
-    await del(blobUrl).catch(() => {});
     finish();
     return;
   }
-  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-  record('POST /api/upload reached server', true, `${res.status} in ${elapsed}s`);
+  const uploadElapsed = ((Date.now() - tUpload) / 1000);
+  record('POST /api/upload reached server', true, `${upRes.status} in ${uploadElapsed.toFixed(2)}s`);
+  record('Upload response is fast (<5s) — dispatcher only, no AI', uploadElapsed < 5);
 
-  const contentType = res.headers.get('content-type') ?? '';
-  const isJson = contentType.includes('application/json');
-  record('Response Content-Type is JSON', isJson, contentType || '(none)');
+  const upBody = (await upRes.json()) as { jobId?: string; error?: string };
+  if (!upRes.ok || !upBody.jobId) {
+    record('Response has jobId', false, upBody.error ?? '(no error field)');
+    finish();
+    return;
+  }
+  record('Response has jobId', true, upBody.jobId);
+  const jobId = upBody.jobId;
 
-  const rawText = await res.text();
-  let body: unknown;
-  if (isJson) {
-    try {
-      body = JSON.parse(rawText);
-    } catch (e) {
-      record('Response body parses as JSON', false, (e as Error).message);
-      console.error('--- raw body (first 500 chars) ---');
-      console.error(rawText.slice(0, 500));
+  // 4. Poll /api/status until terminal
+  console.log('\nPolling /api/status...');
+  const tPoll = Date.now();
+  let lastStatus: StatusResponse | null = null;
+  const printedSliceTransitions = new Set<string>();
+
+  while (Date.now() - tPoll < POLL_TIMEOUT_MS) {
+    await sleep(POLL_INTERVAL_MS);
+    const r = await fetch(`${baseUrl}/api/status/${jobId}`, { cache: 'no-store' });
+    if (!r.ok) {
+      record('Status endpoint reachable', false, `status ${r.status}`);
       finish();
       return;
     }
-  } else {
-    record('Response body parses as JSON', false, 'non-JSON response');
-    console.error('--- raw body (first 500 chars) ---');
-    console.error(rawText.slice(0, 500));
+    const s = (await r.json()) as StatusResponse;
+    lastStatus = s;
+
+    for (const [k, st] of Object.entries(s.slices)) {
+      const key = `${k}:${st}`;
+      if (st !== 'pending' && !printedSliceTransitions.has(key)) {
+        printedSliceTransitions.add(key);
+        const elapsed = ((Date.now() - tPoll) / 1000).toFixed(1);
+        console.log(`       [${elapsed}s] slice "${k}" → ${st}`);
+      }
+    }
+
+    if (s.state !== 'pending' && s.state !== 'merging') break;
+  }
+
+  if (!lastStatus) {
+    record('Reached terminal status', false, 'no status received');
     finish();
     return;
   }
 
-  if (!res.ok) {
-    const errMsg = (body as { error?: string }).error ?? '(no error field)';
-    record(`HTTP 2xx from /api/upload`, false, `status ${res.status}: ${errMsg}`);
+  const pollElapsed = ((Date.now() - tPoll) / 1000);
+  record('Reached terminal status', lastStatus.state !== 'pending' && lastStatus.state !== 'merging',
+    `state=${lastStatus.state} in ${pollElapsed.toFixed(1)}s`);
+
+  record('Job completed without total failure', lastStatus.state !== 'failed',
+    lastStatus.state === 'failed' ? lastStatus.error ?? '(no error message)' : '');
+
+  if (lastStatus.state === 'failed') {
     finish();
     return;
   }
-  record('HTTP 2xx from /api/upload', true);
 
-  const data = body as {
-    sessionId?: string;
-    result?: {
-      sections?: Record<string, unknown[]>;
-      gaps?: unknown[];
-    };
-  };
+  record('Response has result.sections', !!lastStatus.result?.sections);
+  record('Response has result.gaps array', Array.isArray(lastStatus.result?.gaps));
 
-  record('Response has sessionId', typeof data.sessionId === 'string' && data.sessionId.length > 0);
-  record('Response has result.sections', !!data.result?.sections);
-  record('Response has result.gaps array', Array.isArray(data.result?.gaps));
-
-  const s = data.result?.sections ?? {};
-  const emp = (s.employment as unknown[] | undefined)?.length ?? 0;
-  const edu = (s.education as unknown[] | undefined)?.length ?? 0;
-  const pubs = (s.peerReviewedJournals as unknown[] | undefined)?.length ?? 0;
+  const sec = lastStatus.result?.sections ?? {};
+  const emp = (sec.employment as unknown[] | undefined)?.length ?? 0;
+  const edu = (sec.education as unknown[] | undefined)?.length ?? 0;
+  const pubs = (sec.peerReviewedJournals as unknown[] | undefined)?.length ?? 0;
   const otherPubs =
-    ((s.reviewAndInvited as unknown[] | undefined)?.length ?? 0) +
-    ((s.books as unknown[] | undefined)?.length ?? 0) +
-    ((s.chapters as unknown[] | undefined)?.length ?? 0) +
-    ((s.refereedProceedings as unknown[] | undefined)?.length ?? 0) +
-    ((s.otherProceedings as unknown[] | undefined)?.length ?? 0) +
-    ((s.abstracts as unknown[] | undefined)?.length ?? 0) +
-    ((s.popularWorks as unknown[] | undefined)?.length ?? 0) +
-    ((s.additionalProducts as unknown[] | undefined)?.length ?? 0);
+    ((sec.reviewAndInvited as unknown[] | undefined)?.length ?? 0) +
+    ((sec.books as unknown[] | undefined)?.length ?? 0) +
+    ((sec.chapters as unknown[] | undefined)?.length ?? 0) +
+    ((sec.refereedProceedings as unknown[] | undefined)?.length ?? 0) +
+    ((sec.otherProceedings as unknown[] | undefined)?.length ?? 0) +
+    ((sec.abstracts as unknown[] | undefined)?.length ?? 0) +
+    ((sec.popularWorks as unknown[] | undefined)?.length ?? 0) +
+    ((sec.additionalProducts as unknown[] | undefined)?.length ?? 0);
   const sectionII =
-    ((s.universityService as unknown[] | undefined)?.length ?? 0) +
-    ((s.awards as unknown[] | undefined)?.length ?? 0) +
-    ((s.grants as unknown[] | undefined)?.length ?? 0) +
-    ((s.teaching as unknown[] | undefined)?.length ?? 0);
+    ((sec.universityService as unknown[] | undefined)?.length ?? 0) +
+    ((sec.awards as unknown[] | undefined)?.length ?? 0) +
+    ((sec.grants as unknown[] | undefined)?.length ?? 0) +
+    ((sec.teaching as unknown[] | undefined)?.length ?? 0);
 
   record('Employment entries extracted', emp > 0, `${emp} entries`);
   record('Education entries extracted', edu > 0, `${edu} entries`);
   record('Peer-reviewed publications extracted', pubs > 0, `${pubs} entries`);
-  record('Section II content extracted (any of service/awards/grants/teaching)', sectionII > 0, `${sectionII} entries`);
+  record('Section II content extracted', sectionII > 0, `${sectionII} entries`);
   record('Section III non-journal publications extracted', otherPubs > 0, `${otherPubs} entries`);
-  record('Conversion completed within 180s (parallel-chunked target)', Number(elapsed) < 180, `${elapsed}s`);
 
-  // ── 4. GET /api/download/:sessionId/document ─────────────────────────────
-  if (data.sessionId) {
-    const dl = await fetch(`${baseUrl}/api/download/${data.sessionId}/document`);
-    record('Download endpoint returns 2xx', dl.ok, `status ${dl.status}`);
-    if (dl.ok) {
-      const buf = Buffer.from(await dl.arrayBuffer());
-      const isDocx = buf.slice(0, 2).toString('hex') === '504b'; // PK zip header
-      record('Downloaded file is a valid .docx (zip signature)', isDocx, `${buf.length} bytes`);
-    }
+  // 5. Download
+  const dl = await fetch(`${baseUrl}/api/download/${jobId}`);
+  record('Download endpoint returns 2xx', dl.ok, `status ${dl.status}`);
+  if (dl.ok) {
+    const buf = Buffer.from(await dl.arrayBuffer());
+    const isDocx = buf.slice(0, 2).toString('hex') === '504b';
+    record('Downloaded file is a valid .docx (zip signature)', isDocx, `${buf.length} bytes`);
   }
 
   finish();
@@ -190,6 +213,10 @@ function finish() {
     process.exit(1);
   }
   process.exit(0);
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 main().catch(err => {

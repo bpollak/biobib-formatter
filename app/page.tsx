@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Button, Paper, LinearProgress,
-  Alert, Chip, Divider, List, ListItem, ListItemIcon, ListItemText,
-  Accordion, AccordionSummary, AccordionDetails,
+  Alert, Chip, List, ListItem, ListItemIcon, ListItemText,
+  Accordion, AccordionSummary, AccordionDetails, Stack,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
@@ -12,17 +12,36 @@ import ErrorIcon from '@mui/icons-material/Error';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import { upload } from '@vercel/blob/client';
-import { ConversionResult, BioBibGap } from '@/lib/types';
+import { ConversionResult } from '@/lib/types';
 import { ACCEPTED_MIME_TYPES } from '@/lib/constants';
 
 type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
+type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
+type SliceState = 'pending' | 'done' | 'failed';
+
+interface JobStatusResponse {
+  state: 'pending' | 'merging' | 'complete' | 'failed' | 'failed_partial';
+  slices: Record<SliceKey, SliceState>;
+  result?: ConversionResult;
+  error?: string;
+  startedAt: number;
+}
 
 interface ResultState {
-  sessionId: string;
+  jobId: string;
   result: ConversionResult;
   fileName: string;
+  partial: boolean;
 }
+
+const SLICE_LABELS: Record<SliceKey, string> = {
+  meta_and_I: 'Section I — Employment & Education',
+  II: 'Section II — Professional Data',
+  III_journals: 'Section III — Peer-Reviewed Journals',
+  III_other: 'Section III — Other Publications',
+};
 
 const SEVERITY_COLOR = {
   required: 'error' as const,
@@ -36,11 +55,99 @@ const SEVERITY_ICON = {
   optional: <CheckCircleIcon color="info" />,
 };
 
+const POLL_INTERVAL_MS = 3000;
+const POLL_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard cap
+
 export default function HomePage() {
   const [state, setState] = useState<AppState>('idle');
   const [error, setError] = useState<string>('');
   const [resultState, setResultState] = useState<ResultState | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [slices, setSlices] = useState<Record<SliceKey, SliceState>>({
+    meta_and_I: 'pending', II: 'pending', III_journals: 'pending', III_other: 'pending',
+  });
+  const pollTimerRef = useRef<number | null>(null);
+
+  // Clean up the polling timer on unmount or state reset.
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current !== null) {
+        window.clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const startPolling = useCallback((jobId: string, fileName: string) => {
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+
+    const tick = async () => {
+      if (Date.now() > deadline) {
+        setError('Conversion timed out after 8 minutes. Please try again.');
+        setState('error');
+        return;
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(`/api/status/${jobId}`, { cache: 'no-store' });
+      } catch {
+        // Network blip — retry on next tick.
+        pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
+        return;
+      }
+
+      if (!res.ok) {
+        // 404 right after upload can happen briefly while the manifest write
+        // propagates. Retry instead of erroring out.
+        if (res.status === 404 && Date.now() - deadline + POLL_TIMEOUT_MS < 10_000) {
+          pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
+          return;
+        }
+        setError(`Status check failed (${res.status}).`);
+        setState('error');
+        return;
+      }
+
+      const status = (await res.json()) as JobStatusResponse;
+      setSlices(status.slices);
+
+      if (status.state === 'pending' || status.state === 'merging') {
+        pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
+        return;
+      }
+
+      if (status.state === 'failed') {
+        setError(status.error || 'Conversion failed. Please try again.');
+        setState('error');
+        return;
+      }
+
+      // complete or failed_partial — both have a usable result + download.
+      if (!status.result) {
+        setError('Conversion finished but no result was produced.');
+        setState('error');
+        return;
+      }
+
+      setResultState({
+        jobId,
+        result: status.result,
+        fileName,
+        partial: status.state === 'failed_partial',
+      });
+      setState('complete');
+    };
+
+    pollTimerRef.current = window.setTimeout(tick, 500); // first tick fast
+  }, []);
 
   const processFile = useCallback(async (file: File) => {
     if (!file.name.endsWith('.docx')) {
@@ -51,6 +158,7 @@ export default function HomePage() {
 
     setState('uploading');
     setError('');
+    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals: 'pending', III_other: 'pending' });
 
     let blob;
     try {
@@ -80,10 +188,8 @@ export default function HomePage() {
       return;
     }
 
-    // Read as text first so we can surface real status codes when the body
-    // isn't JSON (e.g. an HTML 413/504 from the platform).
     const rawBody = await res.text();
-    let data: { sessionId?: string; result?: ConversionResult; error?: string };
+    let data: { jobId?: string; error?: string };
     try {
       data = JSON.parse(rawBody);
     } catch {
@@ -98,15 +204,14 @@ export default function HomePage() {
       return;
     }
 
-    if (!data.sessionId || !data.result) {
-      setError('Server returned an unexpected response. Please try again.');
+    if (!data.jobId) {
+      setError('Server returned no jobId.');
       setState('error');
       return;
     }
 
-    setResultState({ sessionId: data.sessionId, result: data.result, fileName: file.name });
-    setState('complete');
-  }, []);
+    startPolling(data.jobId, file.name);
+  }, [startPolling]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -122,21 +227,22 @@ export default function HomePage() {
 
   const onDownload = () => {
     if (!resultState) return;
-    window.open(`/api/download/${resultState.sessionId}/document`, '_blank');
+    window.open(`/api/download/${resultState.jobId}`, '_blank');
   };
 
   const onReset = () => {
+    stopPolling();
     setState('idle');
     setResultState(null);
     setError('');
+    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals: 'pending', III_other: 'pending' });
   };
 
-  // Count section completion
   const sectionSummary = resultState ? buildSectionSummary(resultState.result) : null;
+  const sliceKeys = ['meta_and_I', 'II', 'III_journals', 'III_other'] as const;
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
-      {/* Header */}
       <Box sx={{ mb: 4, textAlign: 'center' }}>
         <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
           BioBib Formatter
@@ -146,7 +252,6 @@ export default function HomePage() {
         </Typography>
       </Box>
 
-      {/* Upload Zone */}
       {(state === 'idle' || state === 'error') && (
         <Paper
           variant="outlined"
@@ -177,23 +282,42 @@ export default function HomePage() {
         <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>
       )}
 
-      {/* Processing */}
       {(state === 'uploading' || state === 'processing') && (
         <Paper variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
           <Typography variant="h6" gutterBottom>
-            {state === 'uploading' ? 'Uploading CV...' : 'Converting to BioBib format...'}
+            {state === 'uploading' ? 'Uploading CV…' : 'Converting to BioBib format…'}
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            {state === 'processing' ? 'AI is mapping your CV to the BioBib structure. This takes 30–90 seconds for a full CV.' : ''}
+            {state === 'processing'
+              ? 'Four AI workers extract sections in parallel. Large CVs can take 1–5 minutes.'
+              : ''}
           </Typography>
-          <LinearProgress sx={{ borderRadius: 2 }} />
+          <LinearProgress sx={{ borderRadius: 2, mb: 3 }} />
+          {state === 'processing' && (
+            <Stack spacing={1} sx={{ textAlign: 'left', maxWidth: 460, mx: 'auto' }}>
+              {sliceKeys.map((k) => (
+                <Box key={k} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {slices[k] === 'done' && <CheckCircleIcon color="success" fontSize="small" />}
+                  {slices[k] === 'failed' && <ErrorIcon color="error" fontSize="small" />}
+                  {slices[k] === 'pending' && <HourglassEmptyIcon color="action" fontSize="small" />}
+                  <Typography variant="body2" color={slices[k] === 'pending' ? 'text.secondary' : 'text.primary'}>
+                    {SLICE_LABELS[k]}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
         </Paper>
       )}
 
-      {/* Results */}
       {state === 'complete' && resultState && sectionSummary && (
         <Box>
-          {/* Download CTA */}
+          {resultState.partial && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Some sections failed to convert; the BioBib has placeholders for those. You can still download and edit it.
+            </Alert>
+          )}
+
           <Paper sx={{ p: 3, mb: 3, bgcolor: 'primary.main', color: 'white' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
@@ -213,7 +337,6 @@ export default function HomePage() {
             </Box>
           </Paper>
 
-          {/* Section status */}
           <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
             <Typography variant="h6" gutterBottom fontWeight={600}>Section Completion</Typography>
             <List dense>
@@ -233,7 +356,6 @@ export default function HomePage() {
             </List>
           </Paper>
 
-          {/* Gap report */}
           {resultState.result.gaps.length > 0 && (
             <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom fontWeight={600}>
@@ -274,8 +396,6 @@ export default function HomePage() {
     </Container>
   );
 }
-
-// ── Helper: build section summary from ConversionResult ──────────────────────
 
 function buildSectionSummary(result: ConversionResult) {
   const s = result.sections;
