@@ -248,7 +248,27 @@ async function urlOrThrow(pathname: string): Promise<string> {
 async function readJson<T>(pathname: string): Promise<T | null> {
   const url = await urlOrNull(pathname);
   if (!url) return null;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to read ${pathname}: ${res.status}`);
-  return (await res.json()) as T;
+  // Retry a couple of times: head() can return a URL before the CDN has
+  // fully propagated the just-written content, in which case fetch may
+  // return an empty body that JSON.parse rejects.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) {
+        lastErr = new Error(`fetch ${pathname} returned ${res.status}`);
+      } else {
+        const text = await res.text();
+        if (!text) {
+          lastErr = new Error(`fetch ${pathname} returned empty body`);
+        } else {
+          return JSON.parse(text) as T;
+        }
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+    if (attempt < 2) await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+  }
+  throw new Error(`Failed to read ${pathname} after 3 attempts: ${(lastErr as Error)?.message ?? lastErr}`);
 }
