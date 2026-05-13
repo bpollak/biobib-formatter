@@ -2,15 +2,15 @@
  * POST /api/slice/[jobId]/[sliceKey]  (internal)
  *
  * Runs ONE AI slice for a job. Lives in its own Vercel function
- * invocation with a fresh 300s budget. Writes its result (or terminal
+ * invocation with a fresh 600s budget on Vercel Pro. Writes its result (or terminal
  * error) to Vercel Blob, then triggers /api/finalize if it appears to
  * be the last slice to complete.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
-import { checkInternalSecret, getInternalSecret, INTERNAL_SECRET_HEADER } from '@/lib/jobs/auth';
-import { callSlice, SLICE_KEYS, SliceKey } from '@/lib/pipeline/converter';
+import { checkInternalSecret, getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
+import { callSliceWithSignal, SLICE_KEYS, SliceKey } from '@/lib/pipeline/converter';
 import {
   readCvText,
   readManifest,
@@ -20,7 +20,9 @@ import {
 } from '@/lib/jobs/store';
 import { head, BlobNotFoundError } from '@vercel/blob';
 
-export const maxDuration = 300;
+export const maxDuration = 600;
+
+const LITELLM_TIMEOUT_MS = 570_000;
 
 const isSliceKey = (s: string): s is SliceKey => (SLICE_KEYS as readonly string[]).includes(s);
 
@@ -49,7 +51,7 @@ export async function POST(
   const origin = req.nextUrl.origin;
   const internalSecret = getInternalSecret();
 
-  // Return 202 immediately; real work runs in after() with its own 300s budget.
+  // Return 202 immediately; real work runs in after() with its own function budget.
   after(async () => {
     try {
       const manifest = await readManifest(jobId);
@@ -61,13 +63,19 @@ export async function POST(
       const rawText = await readCvText(jobId);
       const cv = { rawText };
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), LITELLM_TIMEOUT_MS);
       try {
-        const partial = await callSlice(cv, sliceKey, apiKey);
+        const partial = await callSliceWithSignal(cv, sliceKey, apiKey, controller.signal);
         await writeSliceResult(jobId, sliceKey, partial);
       } catch (e) {
         await writeSliceError(jobId, sliceKey, {
-          message: (e as Error).message || 'Unknown slice error',
+          message: controller.signal.aborted
+            ? `Slice exceeded ${Math.round(LITELLM_TIMEOUT_MS / 1000)}s model timeout.`
+            : (e as Error).message || 'Unknown slice error',
         });
+      } finally {
+        clearTimeout(timeout);
       }
 
       // After writing outcome, check whether we're the last to finish.
@@ -98,7 +106,7 @@ async function maybeTriggerFinalize(
 
   fetch(`${origin}/api/finalize/${jobId}`, {
     method: 'POST',
-    headers: { [INTERNAL_SECRET_HEADER]: secret },
+    headers: getInternalFetchHeaders(secret),
   }).catch(err => console.error(`[slice] finalize dispatch failed:`, err));
 }
 

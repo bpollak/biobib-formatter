@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { computeStatus } from '@/lib/jobs/store';
-import { INTERNAL_SECRET_HEADER, getInternalSecret } from '@/lib/jobs/auth';
+import { getInternalFetchHeaders } from '@/lib/jobs/auth';
 
 export async function GET(
   req: NextRequest,
@@ -27,10 +27,9 @@ export async function GET(
 
     if (status.needsFinalizeKick) {
       try {
-        const secret = getInternalSecret();
         fetch(`${req.nextUrl.origin}/api/finalize/${jobId}`, {
           method: 'POST',
-          headers: { [INTERNAL_SECRET_HEADER]: secret },
+          headers: getInternalFetchHeaders(),
         }).catch(err => console.error(`[/api/status ${jobId}] finalize kick failed:`, err));
       } catch (e) {
         console.error(`[/api/status ${jobId}] cannot kick finalize:`, (e as Error).message);

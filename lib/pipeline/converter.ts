@@ -1,14 +1,14 @@
 /**
  * AI Conversion Pipeline
  *
- * Converts a parsed CV to a UCSD BioBib by issuing four scoped, parallel
+ * Converts a parsed CV to a UCSD BioBib by issuing scoped, parallel
  * AI calls — one per logical slice — and merging the partial results.
  *
  * Why chunked: a single call generating the full ConversionResult JSON
  * for a 150+ publication CV produces 30K+ output tokens, which takes
- * 5–10 minutes of wall time and exceeds Vercel's 300s function cap.
- * Splitting into four calls run in parallel keeps each call under
- * ~10K output tokens (~30–60s) and total wall time near max(durations).
+ * 5–10 minutes of wall time and can exceed serverless function caps.
+ * Splitting into smaller calls run in parallel keeps each call well under
+ * the Vercel function cap and total wall time near max(durations).
  */
 
 import { ParsedCV, ConversionResult, BioBibSections, BioBibGap } from '../types';
@@ -64,21 +64,27 @@ ${BIOBIB_INSTRUCTIONS_INLINE}`;
 
 export type SliceKey =
   | 'meta_and_I'
-  | 'II'
+  | 'II_service'
+  | 'II_teaching_grants'
+  | 'II_other'
   | 'III_journals_early'
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_other_misc';
+  | 'III_abstracts'
+  | 'III_popular_products';
 
 export const SLICE_KEYS: readonly SliceKey[] = [
   'meta_and_I',
-  'II',
+  'II_service',
+  'II_teaching_grants',
+  'II_other',
   'III_journals_early',
   'III_journals_late',
   'III_other_a',
   'III_other_proc',
-  'III_other_misc',
+  'III_abstracts',
+  'III_popular_products',
 ];
 
 // Year boundary used to split peerReviewedJournals into two chunks of
@@ -106,17 +112,35 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  II: {
+  II_service: {
     fields:
-      'Section II only: universityService, publicService, professionalActivities, awards, teaching, grants, outreach, clinicalActivities, otherActivities',
+      'Section II subset: universityService, publicService, professionalActivities, awards',
     schema: `{
   "sections": {
     "universityService": [{"description": "", "dates": "", "category": "departmental|university|senate|systemwide|other"}],
     "publicService": [""],
     "professionalActivities": [""],
-    "awards": [""],
+    "awards": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_teaching_grants: {
+    fields:
+      'Section II subset: teaching and research support/grants only',
+    schema: `{
+  "sections": {
     "teaching": [""],
-    "grants": [{"title": "", "funder": "", "amount": "", "period": "", "status": "current|past", "role": ""}],
+    "grants": [{"title": "", "funder": "", "amount": "", "period": "", "status": "current|past", "role": ""}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_other: {
+    fields:
+      'Section II subset: outreach, clinicalActivities, otherActivities only',
+    schema: `{
+  "sections": {
     "outreach": [""],
     "clinicalActivities": [""],
     "otherActivities": [""]
@@ -165,12 +189,21 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_other_misc: {
+  III_abstracts: {
     fields:
-      'Section III subset miscellaneous: abstracts, popularWorks, additionalProducts. Number sequentially within each subsection starting at 1.',
+      'Section III subset miscellaneous: abstracts only. Number sequentially starting at 1.',
     schema: `{
   "sections": {
-    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}],
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_popular_products: {
+    fields:
+      'Section III subset miscellaneous: popularWorks and additionalProducts only. Number sequentially within each subsection starting at 1.',
+    schema: `{
+  "sections": {
     "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
     "additionalProducts": [{"number": 1, "citation": "", "type": "other"}]
   },
@@ -211,13 +244,23 @@ function stripJsonFences(s: string): string {
   return (fence ? fence[1] : trimmed).trim();
 }
 
-async function callSliceOnce(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
+interface CallSliceOptions {
+  signal?: AbortSignal;
+}
+
+async function callSliceOnce(
+  cv: ParsedCV,
+  slice: SliceKey,
+  apiKey: string,
+  options: CallSliceOptions = {},
+): Promise<PartialResult> {
   const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
+    signal: options.signal,
     body: JSON.stringify({
       model: LITELLM_MODEL,
       messages: [
@@ -225,8 +268,8 @@ async function callSliceOnce(cv: ParsedCV, slice: SliceKey, apiKey: string): Pro
         { role: 'user', content: buildSliceUserPrompt(cv, slice) },
       ],
       temperature: 0.1,
-      // 12K caps each slice's wall time at ~4 min (Sonnet ~50 tok/s),
-      // leaving headroom under the 300s function budget. Going larger
+      // 12K caps each slice's output while preserving large bibliography slices.
+      // Going larger
       // causes the model to keep generating and time out before
       // returning anything we can parse.
       max_tokens: 12000,
@@ -262,9 +305,29 @@ export async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): 
   try {
     return await callSliceOnce(cv, slice, apiKey);
   } catch (e) {
+    if (isAbortError(e)) throw e;
     console.warn(`[converter] slice "${slice}" failed, retrying once:`, (e as Error).message);
     return await callSliceOnce(cv, slice, apiKey);
   }
+}
+
+export async function callSliceWithSignal(
+  cv: ParsedCV,
+  slice: SliceKey,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<PartialResult> {
+  try {
+    return await callSliceOnce(cv, slice, apiKey, { signal });
+  } catch (e) {
+    if (isAbortError(e)) throw e;
+    console.warn(`[converter] slice "${slice}" failed, retrying once:`, (e as Error).message);
+    return await callSliceOnce(cv, slice, apiKey, { signal });
+  }
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
 }
 
 // ── Merge partial results into the final ConversionResult ────────────────────

@@ -11,11 +11,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 
 export const INTERNAL_SECRET_HEADER = 'x-internal-secret';
+const VERCEL_PROTECTION_BYPASS_HEADER = 'x-vercel-protection-bypass';
 
 export function getInternalSecret(): string {
   const secret = process.env.INTERNAL_API_SECRET;
   if (!secret) throw new Error('INTERNAL_API_SECRET not configured');
   return secret;
+}
+
+export function getInternalFetchHeaders(secret = getInternalSecret()): Record<string, string> {
+  const headers: Record<string, string> = { [INTERNAL_SECRET_HEADER]: secret };
+  const protectionBypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (protectionBypass) {
+    headers[VERCEL_PROTECTION_BYPASS_HEADER] = protectionBypass;
+  }
+  return headers;
 }
 
 export function checkInternalSecret(req: NextRequest): NextResponse | null {

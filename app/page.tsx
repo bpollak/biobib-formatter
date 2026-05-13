@@ -20,12 +20,15 @@ import { ACCEPTED_MIME_TYPES } from '@/lib/constants';
 type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
 type SliceKey =
   | 'meta_and_I'
-  | 'II'
+  | 'II_service'
+  | 'II_teaching_grants'
+  | 'II_other'
   | 'III_journals_early'
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_other_misc';
+  | 'III_abstracts'
+  | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
 interface JobStatusResponse {
@@ -45,13 +48,24 @@ interface ResultState {
 
 const SLICE_LABELS: Record<SliceKey, string> = {
   meta_and_I: 'Section I — Employment & Education',
-  II: 'Section II — Professional Data',
+  II_service: 'Section II — Service, Activities, Awards',
+  II_teaching_grants: 'Section II — Teaching & Research Support',
+  II_other: 'Section II — Outreach, Clinical, Other',
   III_journals_early: `Section III — Peer-Reviewed Journals (≤ 2010)`,
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
   III_other_a: 'Section III — Books, Chapters, Reviews',
   III_other_proc: 'Section III — Conference Proceedings',
-  III_other_misc: 'Section III — Abstracts, Popular, Other',
+  III_abstracts: 'Section III — Abstracts',
+  III_popular_products: 'Section III — Popular Works & Products',
 };
+
+const SLICE_KEYS = Object.keys(SLICE_LABELS) as SliceKey[];
+
+const initialSlices = (): Record<SliceKey, SliceState> =>
+  SLICE_KEYS.reduce((acc, key) => {
+    acc[key] = 'pending';
+    return acc;
+  }, {} as Record<SliceKey, SliceState>);
 
 const SEVERITY_COLOR = {
   required: 'error' as const,
@@ -66,16 +80,14 @@ const SEVERITY_ICON = {
 };
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes hard cap
+const POLL_TIMEOUT_MS = 12 * 60 * 1000; // Pro slice budget + finalize headroom
 
 export default function HomePage() {
   const [state, setState] = useState<AppState>('idle');
   const [error, setError] = useState<string>('');
   const [resultState, setResultState] = useState<ResultState | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [slices, setSlices] = useState<Record<SliceKey, SliceState>>({
-    meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending',
-  });
+  const [slices, setSlices] = useState<Record<SliceKey, SliceState>>(initialSlices);
   const pollTimerRef = useRef<number | null>(null);
 
   // Clean up the polling timer on unmount or state reset.
@@ -101,7 +113,7 @@ export default function HomePage() {
     const tick = async () => {
       const elapsedMs = Date.now() - startedAt;
       if (elapsedMs > POLL_TIMEOUT_MS) {
-        setError('Conversion timed out after 8 minutes. Please try again.');
+        setError('Conversion timed out after 12 minutes. Please try again.');
         setState('error');
         return;
       }
@@ -170,7 +182,7 @@ export default function HomePage() {
 
     setState('uploading');
     setError('');
-    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending' });
+    setSlices(initialSlices());
 
     let blob;
     try {
@@ -247,11 +259,10 @@ export default function HomePage() {
     setState('idle');
     setResultState(null);
     setError('');
-    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending' });
+    setSlices(initialSlices());
   };
 
   const sectionSummary = resultState ? buildSectionSummary(resultState.result) : null;
-  const sliceKeys = ['meta_and_I', 'II', 'III_journals_early', 'III_journals_late', 'III_other_a', 'III_other_proc', 'III_other_misc'] as const;
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
@@ -301,13 +312,13 @@ export default function HomePage() {
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             {state === 'processing'
-              ? 'Four AI workers extract sections in parallel. Large CVs can take 1–5 minutes.'
+              ? 'AI workers extract sections in parallel. Large CVs can take several minutes.'
               : ''}
           </Typography>
           <LinearProgress sx={{ borderRadius: 2, mb: 3 }} />
           {state === 'processing' && (
             <Stack spacing={1} sx={{ textAlign: 'left', maxWidth: 460, mx: 'auto' }}>
-              {sliceKeys.map((k) => (
+              {SLICE_KEYS.map((k) => (
                 <Box key={k} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   {slices[k] === 'done' && <CheckCircleIcon color="success" fontSize="small" />}
                   {slices[k] === 'failed' && <ErrorIcon color="error" fontSize="small" />}

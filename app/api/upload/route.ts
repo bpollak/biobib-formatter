@@ -4,19 +4,19 @@
  * 1. Receive { blobUrl, fileName }.
  * 2. Fetch + parse the source CV.
  * 3. Persist manifest.json + cv.txt under jobs/<jobId>/.
- * 4. Dispatch four /api/slice workers via after() + fetch (each runs in
- *    its own function invocation with its own 300s budget).
+ * 4. Dispatch /api/slice workers via after() + fetch (each runs in
+ *    its own function invocation).
  * 5. Return { jobId } immediately (HTTP 202). Client polls /api/status.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
-import { del } from '@vercel/blob';
+import { del, get } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { parseCV } from '@/lib/docx/reader';
 import { SLICE_KEYS } from '@/lib/pipeline/converter';
 import { writeManifest, writeCvText } from '@/lib/jobs/store';
-import { INTERNAL_SECRET_HEADER, getInternalSecret } from '@/lib/jobs/auth';
+import { getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
 import { MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
 export const maxDuration = 30;
@@ -44,15 +44,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const blobRes = await fetch(blobUrl);
-  if (!blobRes.ok) {
+  const uploadedBlob = await get(blobUrl, { access: 'public' });
+  if (!uploadedBlob) {
     return NextResponse.json(
-      { error: `Could not fetch uploaded file (status ${blobRes.status}).` },
+      { error: 'Could not fetch uploaded file.' },
       { status: 400 },
     );
   }
 
-  const contentLength = Number(blobRes.headers.get('content-length') ?? 0);
+  const contentLength = uploadedBlob.blob.size ?? Number(uploadedBlob.headers.get('content-length') ?? 0);
   if (contentLength > MAX_FILE_SIZE_BYTES) {
     return NextResponse.json(
       { error: `File exceeds ${MAX_FILE_SIZE_BYTES / 1024 / 1024}MB limit.` },
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const buffer = Buffer.from(await blobRes.arrayBuffer());
+  const buffer = Buffer.from(await new Response(uploadedBlob.stream).arrayBuffer());
   const cv = await parseCV(buffer);
   const jobId = randomUUID();
 
@@ -82,11 +82,12 @@ export async function POST(req: NextRequest) {
   after(async () => {
     // Each fetch's child returns 202 immediately and runs its real work in
     // its own after(). We only need the dispatch to commit (sub-second).
+    const headers = getInternalFetchHeaders(secret);
     await Promise.allSettled(
       SLICE_KEYS.map(key =>
         fetch(`${origin}/api/slice/${jobId}/${key}`, {
           method: 'POST',
-          headers: { [INTERNAL_SECRET_HEADER]: secret },
+          headers,
         }).catch(err => {
           console.error(`[/api/upload] dispatch failed for slice "${key}":`, err);
         }),

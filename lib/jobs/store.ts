@@ -167,7 +167,7 @@ export interface JobStatus {
   needsFinalizeKick?: boolean;
 }
 
-const SLICE_TIMEOUT_MS = 320_000; // maxDuration of slice + 20s cushion
+const SLICE_TIMEOUT_MS = 620_000; // maxDuration of slice + 20s cushion
 const FINALIZE_TIMEOUT_MS = 90_000;
 
 export async function computeStatus(jobId: string): Promise<JobStatus | null> {
@@ -215,9 +215,20 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
   }
 
   // Mark stale pending slices as failed once the per-slice timeout has passed.
+  // If any slice finished, let finalize produce a partial document rather than
+  // losing all completed work because one worker was terminated by the platform.
   if (ageMs > SLICE_TIMEOUT_MS) {
     for (const k of manifest.sliceKeys) {
       if (slices[k] === 'pending') slices[k] = 'failed';
+    }
+    if (manifest.sliceKeys.some(k => slices[k] === 'done')) {
+      return {
+        state: 'merging',
+        slices,
+        error: 'One or more slice workers timed out; finalizing completed sections.',
+        startedAt: manifest.createdAt,
+        needsFinalizeKick: true,
+      };
     }
     return { state: 'failed', slices, error: 'One or more slice workers timed out.', startedAt: manifest.createdAt };
   }

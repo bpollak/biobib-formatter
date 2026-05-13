@@ -81,7 +81,7 @@ export async function POST(
       await writeFinalDocx(jobId, docxBuffer);
 
       await writeFinalStatus(jobId, {
-        state: failedSlices.length > 0 ? 'failed_partial' : 'complete',
+        state: failedSlices.length === 0 ? 'complete' : parts.length > 0 ? 'failed_partial' : 'failed',
         error: failedSlices.length > 0 ? `Slices failed: ${failedSlices.join('; ')}` : undefined,
         completedAt: Date.now(),
       });

@@ -5,7 +5,7 @@
  *   1. Upload the .docx CV directly to Vercel Blob via server-side put()
  *      (requires BLOB_READ_WRITE_TOKEN).
  *   2. POST { blobUrl, fileName } to /api/upload → expect { jobId } in <2s.
- *   3. Poll /api/status/<jobId> every 3s up to 8 minutes until terminal.
+ *   3. Poll /api/status/<jobId> every 3s up to 12 minutes until terminal.
  *   4. Download /api/download/<jobId> and verify the .docx zip signature.
  *
  * Usage:
@@ -35,9 +35,19 @@ const record = (name: string, pass: boolean, detail?: string) => {
 };
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 8 * 60 * 1000;
+const POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
-type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
+type SliceKey =
+  | 'meta_and_I'
+  | 'II_service'
+  | 'II_teaching_grants'
+  | 'II_other'
+  | 'III_journals_early'
+  | 'III_journals_late'
+  | 'III_other_a'
+  | 'III_other_proc'
+  | 'III_abstracts'
+  | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
 interface StatusResponse {
