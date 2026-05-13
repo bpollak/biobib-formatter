@@ -71,7 +71,8 @@ export type SliceKey =
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts'
+  | 'III_abstracts_early'
+  | 'III_abstracts_late'
   | 'III_popular_products';
 
 export const SLICE_KEYS: readonly SliceKey[] = [
@@ -83,7 +84,8 @@ export const SLICE_KEYS: readonly SliceKey[] = [
   'III_journals_late',
   'III_other_a',
   'III_other_proc',
-  'III_abstracts',
+  'III_abstracts_early',
+  'III_abstracts_late',
   'III_popular_products',
 ];
 
@@ -189,9 +191,17 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_abstracts: {
-    fields:
-      'Section III subset miscellaneous: abstracts only. Number sequentially starting at 1.',
+  III_abstracts_early: {
+    fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip abstracts published after ${JOURNAL_SPLIT_YEAR}. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    schema: `{
+  "sections": {
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_abstracts_late: {
+    fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published AFTER ${JOURNAL_SPLIT_YEAR}. Skip abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Number sequentially starting at 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
@@ -395,6 +405,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   // peerReviewedJournals is fed by two slices (early/late), each starting
   // at number=1. Renumber sequentially across the merged list.
   sections.peerReviewedJournals = sections.peerReviewedJournals.map((c, i) => ({ ...c, number: i + 1 }));
+  sections.abstracts = sections.abstracts.map((c, i) => ({ ...c, number: i + 1 }));
 
   return { sections, gaps, metadata };
 }

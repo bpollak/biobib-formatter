@@ -27,7 +27,8 @@ type SliceKey =
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts'
+  | 'III_abstracts_early'
+  | 'III_abstracts_late'
   | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
@@ -55,7 +56,8 @@ const SLICE_LABELS: Record<SliceKey, string> = {
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
   III_other_a: 'Section III — Books, Chapters, Reviews',
   III_other_proc: 'Section III — Conference Proceedings',
-  III_abstracts: 'Section III — Abstracts',
+  III_abstracts_early: `Section III — Abstracts (≤ 2010)`,
+  III_abstracts_late: 'Section III — Abstracts (> 2010)',
   III_popular_products: 'Section III — Popular Works & Products',
 };
 

@@ -46,7 +46,8 @@ type SliceKey =
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts'
+  | 'III_abstracts_early'
+  | 'III_abstracts_late'
   | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
