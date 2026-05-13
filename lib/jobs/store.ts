@@ -8,7 +8,7 @@
  */
 
 import { put, head, list, del, BlobNotFoundError } from '@vercel/blob';
-import { ConversionResult, BioBibSections } from '../types';
+import { ConversionResult } from '../types';
 import { SLICE_KEYS, SliceKey, PartialResult } from '../pipeline/converter';
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -150,6 +150,13 @@ export interface JobStatus {
   result?: ConversionResult;
   error?: string;
   startedAt: number;
+  /**
+   * True when every slice has written a terminal outcome (result or error)
+   * but no finalize has started. The status route uses this to fire a
+   * fallback /api/finalize dispatch — protects against the rare case where
+   * the last-slice's in-process trigger missed.
+   */
+  needsFinalizeKick?: boolean;
 }
 
 const SLICE_TIMEOUT_MS = 320_000; // maxDuration of slice + 20s cushion
@@ -193,18 +200,18 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
     return { state: 'merging', slices, startedAt: manifest.createdAt };
   }
 
+  // All slices terminal but finalize never started — the last slice's
+  // in-process trigger likely missed. Flag for the route to kick.
+  if (allTerminal) {
+    return { state: 'merging', slices, startedAt: manifest.createdAt, needsFinalizeKick: true };
+  }
+
   // Mark stale pending slices as failed once the per-slice timeout has passed.
   if (ageMs > SLICE_TIMEOUT_MS) {
-    let mutated = false;
     for (const k of manifest.sliceKeys) {
-      if (slices[k] === 'pending') {
-        slices[k] = 'failed';
-        mutated = true;
-      }
+      if (slices[k] === 'pending') slices[k] = 'failed';
     }
-    if (mutated) {
-      return { state: 'failed', slices, error: 'One or more slice workers timed out.', startedAt: manifest.createdAt };
-    }
+    return { state: 'failed', slices, error: 'One or more slice workers timed out.', startedAt: manifest.createdAt };
   }
 
   return { state: 'pending', slices, startedAt: manifest.createdAt };
@@ -244,32 +251,4 @@ async function readJson<T>(pathname: string): Promise<T | null> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to read ${pathname}: ${res.status}`);
   return (await res.json()) as T;
-}
-
-// Re-export for convenience: callers building the merge step need the empty-section template.
-export function emptySections(): BioBibSections {
-  return {
-    employment: [],
-    education: [],
-    specialization: '',
-    universityService: [],
-    publicService: [],
-    professionalActivities: [],
-    awards: [],
-    teaching: [],
-    grants: [],
-    outreach: [],
-    clinicalActivities: [],
-    otherActivities: [],
-    peerReviewedJournals: [],
-    reviewAndInvited: [],
-    books: [],
-    chapters: [],
-    refereedProceedings: [],
-    otherProceedings: [],
-    abstracts: [],
-    popularWorks: [],
-    additionalProducts: [],
-    workInProgress: [],
-  };
 }

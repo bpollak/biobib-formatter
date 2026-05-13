@@ -18,7 +18,8 @@ export async function GET(
   }
 
   const manifest = await readManifest(jobId);
-  const downloadName = manifest?.fileName?.replace(/\.docx$/i, '') + '-biobib.docx' || 'biobib.docx';
+  const stem = manifest?.fileName?.replace(/\.docx$/i, '');
+  const downloadName = stem ? `${stem}-biobib.docx` : 'biobib.docx';
 
   const res = await fetch(url);
   if (!res.ok || !res.body) {
