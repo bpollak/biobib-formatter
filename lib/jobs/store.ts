@@ -7,7 +7,7 @@
  * ops without needing a separate KV store.
  */
 
-import { put, head, list, del, BlobNotFoundError } from '@vercel/blob';
+import { put, head, list, get, del, BlobNotFoundError } from '@vercel/blob';
 import { ConversionResult } from '../types';
 import { SLICE_KEYS, SliceKey, PartialResult } from '../pipeline/converter';
 
@@ -49,10 +49,11 @@ export async function writeCvText(jobId: string, text: string): Promise<void> {
 }
 
 export async function readCvText(jobId: string): Promise<string> {
-  const url = await urlOrThrow(path.cv(jobId));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Could not read cv.txt for job ${jobId}: ${res.status}`);
-  return res.text();
+  const result = await get(path.cv(jobId), { access: 'public' });
+  if (!result || result.statusCode !== 200) {
+    throw new Error(`Could not read cv.txt for job ${jobId}`);
+  }
+  return new Response(result.stream).text();
 }
 
 // ── Per-slice results ────────────────────────────────────────────────────────
@@ -120,8 +121,15 @@ export async function writeFinalStatus(jobId: string, status: FinalStatus): Prom
   await put(path.status(jobId), JSON.stringify(status), PUT_OPTS);
 }
 
-export async function getFinalDocxUrl(jobId: string): Promise<string | null> {
-  return urlOrNull(path.docx(jobId));
+/**
+ * Returns a readable stream of the final BioBib docx, or null if not yet generated.
+ * Uses get() so the request is authenticated against the Blob store; the public
+ * CDN URL is not accessible under Deployment Protection.
+ */
+export async function getFinalDocxStream(jobId: string): Promise<ReadableStream<Uint8Array> | null> {
+  const result = await get(path.docx(jobId), { access: 'public' });
+  if (!result || result.statusCode !== 200) return null;
+  return result.stream;
 }
 
 export async function readFinalResult(jobId: string): Promise<ConversionResult | null> {
@@ -229,46 +237,16 @@ async function headExists(pathname: string): Promise<boolean> {
   }
 }
 
-async function urlOrNull(pathname: string): Promise<string | null> {
-  try {
-    const meta = await head(pathname);
-    return meta.url;
-  } catch (e) {
-    if (e instanceof BlobNotFoundError) return null;
-    throw e;
-  }
-}
-
-async function urlOrThrow(pathname: string): Promise<string> {
-  const url = await urlOrNull(pathname);
-  if (!url) throw new Error(`Blob not found: ${pathname}`);
-  return url;
-}
-
+// Authenticated reads via the SDK's get(). Plain fetch() against the public
+// CDN URL returns 403 when Vercel Deployment Protection is enabled — get()
+// adds Bearer auth via BLOB_READ_WRITE_TOKEN and bypasses that gate.
 async function readJson<T>(pathname: string): Promise<T | null> {
-  const url = await urlOrNull(pathname);
-  if (!url) return null;
-  // Retry a couple of times: head() can return a URL before the CDN has
-  // fully propagated the just-written content, in which case fetch may
-  // return an empty body that JSON.parse rejects.
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) {
-        lastErr = new Error(`fetch ${pathname} returned ${res.status}`);
-      } else {
-        const text = await res.text();
-        if (!text) {
-          lastErr = new Error(`fetch ${pathname} returned empty body`);
-        } else {
-          return JSON.parse(text) as T;
-        }
-      }
-    } catch (e) {
-      lastErr = e;
-    }
-    if (attempt < 2) await new Promise(r => setTimeout(r, 200 * (attempt + 1)));
+  const result = await get(pathname, { access: 'public' });
+  if (!result) return null;
+  if (result.statusCode !== 200) {
+    throw new Error(`Unexpected status ${result.statusCode} reading ${pathname}`);
   }
-  throw new Error(`Failed to read ${pathname} after 3 attempts: ${(lastErr as Error)?.message ?? lastErr}`);
+  const text = await new Response(result.stream).text();
+  if (!text) throw new Error(`Empty body for ${pathname}`);
+  return JSON.parse(text) as T;
 }
