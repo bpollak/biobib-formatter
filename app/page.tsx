@@ -24,7 +24,8 @@ type SliceKey =
   | 'III_journals_early'
   | 'III_journals_late'
   | 'III_other_a'
-  | 'III_other_b';
+  | 'III_other_proc'
+  | 'III_other_misc';
 type SliceState = 'pending' | 'done' | 'failed';
 
 interface JobStatusResponse {
@@ -48,7 +49,8 @@ const SLICE_LABELS: Record<SliceKey, string> = {
   III_journals_early: `Section III — Peer-Reviewed Journals (≤ 2010)`,
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
   III_other_a: 'Section III — Books, Chapters, Reviews',
-  III_other_b: 'Section III — Proceedings & Other',
+  III_other_proc: 'Section III — Conference Proceedings',
+  III_other_misc: 'Section III — Abstracts, Popular, Other',
 };
 
 const SEVERITY_COLOR = {
@@ -72,7 +74,7 @@ export default function HomePage() {
   const [resultState, setResultState] = useState<ResultState | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [slices, setSlices] = useState<Record<SliceKey, SliceState>>({
-    meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_b: 'pending',
+    meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending',
   });
   const pollTimerRef = useRef<number | null>(null);
 
@@ -168,7 +170,7 @@ export default function HomePage() {
 
     setState('uploading');
     setError('');
-    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_b: 'pending' });
+    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending' });
 
     let blob;
     try {
@@ -245,11 +247,11 @@ export default function HomePage() {
     setState('idle');
     setResultState(null);
     setError('');
-    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_b: 'pending' });
+    setSlices({ meta_and_I: 'pending', II: 'pending', III_journals_early: 'pending', III_journals_late: 'pending', III_other_a: 'pending', III_other_proc: 'pending', III_other_misc: 'pending' });
   };
 
   const sectionSummary = resultState ? buildSectionSummary(resultState.result) : null;
-  const sliceKeys = ['meta_and_I', 'II', 'III_journals_early', 'III_journals_late', 'III_other_a', 'III_other_b'] as const;
+  const sliceKeys = ['meta_and_I', 'II', 'III_journals_early', 'III_journals_late', 'III_other_a', 'III_other_proc', 'III_other_misc'] as const;
 
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
