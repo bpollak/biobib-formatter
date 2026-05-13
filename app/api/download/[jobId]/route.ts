@@ -2,18 +2,20 @@
  * GET /api/download/[jobId]
  *
  * Streams the finalized BioBib .docx from Vercel Blob. Public-by-jobId.
+ * Streams through the authenticated SDK get() — plain fetch() of the
+ * public CDN URL is 403'd by Deployment Protection.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getFinalDocxUrl, readManifest } from '@/lib/jobs/store';
+import { getFinalDocxStream, readManifest } from '@/lib/jobs/store';
 
 export async function GET(
   _req: NextRequest,
   ctx: { params: Promise<{ jobId: string }> },
 ) {
   const { jobId } = await ctx.params;
-  const url = await getFinalDocxUrl(jobId);
-  if (!url) {
+  const stream = await getFinalDocxStream(jobId);
+  if (!stream) {
     return NextResponse.json({ error: 'Document not ready.' }, { status: 404 });
   }
 
@@ -21,12 +23,7 @@ export async function GET(
   const stem = manifest?.fileName?.replace(/\.docx$/i, '');
   const downloadName = stem ? `${stem}-biobib.docx` : 'biobib.docx';
 
-  const res = await fetch(url);
-  if (!res.ok || !res.body) {
-    return NextResponse.json({ error: 'Could not fetch generated docx.' }, { status: 502 });
-  }
-
-  return new NextResponse(res.body, {
+  return new NextResponse(stream, {
     status: 200,
     headers: {
       'Content-Type':
