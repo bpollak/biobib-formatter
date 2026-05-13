@@ -138,10 +138,14 @@ const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey): string => {
 CV TEXT:
 ${cv.rawText}
 
-Return a JSON object with EXACTLY this schema. Include every key shown; use empty arrays/strings for items you do not extract:
+Return ONE raw JSON object with EXACTLY this schema. Include every key shown; use empty arrays/strings for items you do not extract:
 ${schema}
 
-Rules:
+Output rules — IMPORTANT:
+- Respond with raw JSON only. Do NOT wrap the JSON in markdown code fences (no \`\`\`json or \`\`\`). Do NOT prefix or suffix with any prose.
+- The first character of your response must be "{" and the last character must be "}".
+
+Content rules:
 - Only populate the fields listed above. Do not include keys for other sections.
 - Preserve citation text exactly — do not reformat or standardize.
 - Employment must be chronological (oldest first). Publications must be chronological and numbered sequentially within each subsection.
@@ -151,7 +155,15 @@ Rules:
 
 // ── Single-slice fetch ───────────────────────────────────────────────────────
 
-async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
+// Some upstream models wrap their JSON in markdown code fences despite
+// response_format: { type: 'json_object' }. Strip them defensively.
+function stripJsonFences(s: string): string {
+  const trimmed = s.trim();
+  const fence = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+  return (fence ? fence[1] : trimmed).trim();
+}
+
+async function callSliceOnce(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
   const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
@@ -180,14 +192,26 @@ async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise
   const finishReason = data.choices?.[0]?.finish_reason;
   if (!content) throw new Error(`Empty response from AI on slice "${slice}"`);
 
+  const cleaned = stripJsonFences(content);
   try {
-    return JSON.parse(content) as PartialResult;
+    return JSON.parse(cleaned) as PartialResult;
   } catch (e) {
     const hint =
       finishReason === 'length'
         ? ` (response was truncated at max_tokens — slice "${slice}" is too large for the current output cap)`
         : '';
     throw new Error(`AI returned invalid JSON on slice "${slice}"${hint}: ${(e as Error).message}`);
+  }
+}
+
+async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
+  // One retry on transient failures — slice calls are cheap and parse errors
+  // can come from rare formatting blips.
+  try {
+    return await callSliceOnce(cv, slice, apiKey);
+  } catch (e) {
+    console.warn(`[converter] slice "${slice}" failed, retrying once:`, (e as Error).message);
+    return await callSliceOnce(cv, slice, apiKey);
   }
 }
 
