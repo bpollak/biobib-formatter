@@ -1,12 +1,21 @@
 /**
  * AI Conversion Pipeline
- * Sends parsed CV text to LiteLLM and returns structured BioBib sections + gaps.
+ *
+ * Converts a parsed CV to a UCSD BioBib by issuing four scoped, parallel
+ * AI calls — one per logical slice — and merging the partial results.
+ *
+ * Why chunked: a single call generating the full ConversionResult JSON
+ * for a 150+ publication CV produces 30K+ output tokens, which takes
+ * 5–10 minutes of wall time and exceeds Vercel's 300s function cap.
+ * Splitting into four calls run in parallel keeps each call under
+ * ~10K output tokens (~30–60s) and total wall time near max(durations).
  */
 
-import { ParsedCV, ConversionResult } from '../types';
+import { ParsedCV, ConversionResult, BioBibSections, BioBibGap } from '../types';
 import { LITELLM_BASE_URL, LITELLM_MODEL } from '../constants';
 
-// Inline BioBib instructions — kept here so no file I/O required at runtime
+// ── BioBib reference text shared by all section prompts ──────────────────────
+
 const BIOBIB_INSTRUCTIONS_INLINE = `
 Section I: Employment History and Education
 - List all employment chronologically from first academic position to present
@@ -41,27 +50,45 @@ B. Other Work:
 C. Work in Progress (optional — only if submitting material with file)
 `.trim();
 
-const SYSTEM_PROMPT = `You are an expert in UC San Diego academic affairs, specifically the Academic Biography and Bibliography (BioBib) form used for faculty academic reviews.
+const BASE_SYSTEM = `You are an expert in UC San Diego academic affairs, specifically the Academic Biography and Bibliography (BioBib) form used for faculty academic reviews.
 
-Your task is to convert a faculty CV into the UCSD BioBib format. You will:
-1. Extract and classify all content from the CV into the correct BioBib sections
-2. Preserve citation formatting exactly as it appears in the CV — do not reformat citations
-3. Identify gaps where required BioBib fields cannot be filled from the CV, and generate specific, actionable instructions for each gap
+Your task is to extract part of a UCSD BioBib from a faculty CV. You must:
+1. Extract ONLY the fields you are asked to extract in this call. Leave every other field as an empty array or empty string.
+2. Preserve citation formatting exactly as it appears in the CV — do not reformat citations.
+3. Identify gaps where required fields cannot be filled from the CV ONLY for the slice you were asked about.
 
-UCSD BioBib Requirements:
+UCSD BioBib reference:
 ${BIOBIB_INSTRUCTIONS_INLINE}`;
 
-const buildUserPrompt = (cv: ParsedCV) => `Convert this faculty CV to BioBib format.
+// ── Section slice definitions ────────────────────────────────────────────────
 
-CV TEXT:
-${cv.rawText}
+type SliceKey = 'meta_and_I' | 'II' | 'III_journals' | 'III_other';
 
-Return a JSON object with this exact schema:
-{
+interface PartialResult {
+  sections: Partial<BioBibSections>;
+  gaps?: BioBibGap[];
+  metadata?: ConversionResult['metadata'];
+}
+
+const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
+  meta_and_I: {
+    fields:
+      'metadata (name, department, title), Section I (employment, education, specialization)',
+    schema: `{
+  "metadata": { "name": "", "department": "", "title": "" },
   "sections": {
     "employment": [{"from": "", "to": "", "institution": "", "location": "", "rank": ""}],
     "education": [{"school": "", "datesFrom": "", "datesTo": "", "location": "", "major": "", "degree": "", "dateReceived": ""}],
-    "specialization": "",
+    "specialization": ""
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II: {
+    fields:
+      'Section II only: universityService, publicService, professionalActivities, awards, teaching, grants, outreach, clinicalActivities, otherActivities',
+    schema: `{
+  "sections": {
     "universityService": [{"description": "", "dates": "", "category": "departmental|university|senate|systemwide|other"}],
     "publicService": [""],
     "professionalActivities": [""],
@@ -70,8 +97,26 @@ Return a JSON object with this exact schema:
     "grants": [{"title": "", "funder": "", "amount": "", "period": "", "status": "current|past", "role": ""}],
     "outreach": [""],
     "clinicalActivities": [""],
-    "otherActivities": [""],
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
+    "otherActivities": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_journals: {
+    fields:
+      'Section III peerReviewedJournals ONLY (refereed journal articles). Number entries sequentially starting from 1.',
+    schema: `{
+  "sections": {
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_other: {
+    fields:
+      'Section III everything except peerReviewedJournals: reviewAndInvited, books, chapters, refereedProceedings, otherProceedings, abstracts, popularWorks, additionalProducts. Number sequentially within each subsection.',
+    schema: `{
+  "sections": {
     "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
     "books": [{"number": 1, "citation": "", "type": "book"}],
     "chapters": [{"number": 1, "citation": "", "type": "chapter"}],
@@ -79,72 +124,145 @@ Return a JSON object with this exact schema:
     "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}],
     "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
-    "additionalProducts": [{"number": 1, "citation": "", "type": "other"}],
-    "workInProgress": []
+    "additionalProducts": [{"number": 1, "citation": "", "type": "other"}]
   },
-  "gaps": [
-    {
-      "section": "Section II — Teaching",
-      "field": "Graduate students supervised",
-      "instruction": "Add names, degree type (PhD/MS), and graduation year for each graduate student you have advised.",
-      "severity": "required|recommended|optional"
-    }
-  ],
-  "metadata": {
-    "name": "",
-    "department": "",
-    "title": "",
-    "processedAt": "${new Date().toISOString()}"
-  }
-}
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+};
+
+const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey): string => {
+  const { fields, schema } = SLICE_PROMPTS[slice];
+  return `Extract from this faculty CV the following BioBib fields ONLY: ${fields}.
+
+CV TEXT:
+${cv.rawText}
+
+Return a JSON object with EXACTLY this schema. Include every key shown; use empty arrays/strings for items you do not extract:
+${schema}
 
 Rules:
-- Employment entries must be in chronological order (oldest first)
-- Publications must be numbered sequentially within each subsection, chronological order
-- Preserve citation text exactly — do not reformat or standardize
-- For gaps, be specific: name the exact field and give actionable instructions
-- If a section has no content and it is optional, omit from gaps
-- workInProgress should always be empty (cannot be auto-filled)
-- severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion`;
+- Only populate the fields listed above. Do not include keys for other sections.
+- Preserve citation text exactly — do not reformat or standardize.
+- Employment must be chronological (oldest first). Publications must be chronological and numbered sequentially within each subsection.
+- For gaps, only flag fields that belong to the slice above. Be specific and actionable.
+- severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.`;
+};
 
-export async function convertCVtoBioBib(cv: ParsedCV): Promise<ConversionResult> {
-  const apiKey = process.env.LITELLM_API_KEY;
-  if (!apiKey) throw new Error('LITELLM_API_KEY not configured');
+// ── Single-slice fetch ───────────────────────────────────────────────────────
 
+async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
   const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: LITELLM_MODEL,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildUserPrompt(cv) },
+        { role: 'system', content: BASE_SYSTEM },
+        { role: 'user', content: buildSliceUserPrompt(cv, slice) },
       ],
       temperature: 0.1,
-      max_tokens: 32000,
+      max_tokens: 16000,
       response_format: { type: 'json_object' },
     }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`LiteLLM API error ${response.status}: ${err}`);
+    throw new Error(`LiteLLM API error ${response.status} on slice "${slice}": ${err}`);
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   const finishReason = data.choices?.[0]?.finish_reason;
-  if (!content) throw new Error('Empty response from AI');
+  if (!content) throw new Error(`Empty response from AI on slice "${slice}"`);
 
   try {
-    return JSON.parse(content) as ConversionResult;
+    return JSON.parse(content) as PartialResult;
   } catch (e) {
-    const hint = finishReason === 'length'
-      ? ' (response was truncated at max_tokens — CV is too large for current output cap)'
-      : '';
-    throw new Error(`AI returned invalid JSON${hint}: ${(e as Error).message}`);
+    const hint =
+      finishReason === 'length'
+        ? ` (response was truncated at max_tokens — slice "${slice}" is too large for the current output cap)`
+        : '';
+    throw new Error(`AI returned invalid JSON on slice "${slice}"${hint}: ${(e as Error).message}`);
   }
+}
+
+// ── Merge partial results into the final ConversionResult ────────────────────
+
+function emptySections(): BioBibSections {
+  return {
+    employment: [],
+    education: [],
+    specialization: '',
+    universityService: [],
+    publicService: [],
+    professionalActivities: [],
+    awards: [],
+    teaching: [],
+    grants: [],
+    outreach: [],
+    clinicalActivities: [],
+    otherActivities: [],
+    peerReviewedJournals: [],
+    reviewAndInvited: [],
+    books: [],
+    chapters: [],
+    refereedProceedings: [],
+    otherProceedings: [],
+    abstracts: [],
+    popularWorks: [],
+    additionalProducts: [],
+    workInProgress: [],
+  };
+}
+
+function mergeSlices(parts: PartialResult[]): ConversionResult {
+  const sections = emptySections();
+  const gaps: BioBibGap[] = [];
+  let metadata: ConversionResult['metadata'] = {
+    name: '',
+    department: '',
+    title: '',
+    processedAt: new Date().toISOString(),
+  };
+
+  for (const part of parts) {
+    if (part.metadata) {
+      metadata = { ...metadata, ...part.metadata, processedAt: metadata.processedAt };
+    }
+    if (part.gaps) gaps.push(...part.gaps);
+    if (!part.sections) continue;
+    // Merge: array fields concat, scalar fields take first non-empty value.
+    for (const key of Object.keys(part.sections) as (keyof BioBibSections)[]) {
+      const incoming = part.sections[key];
+      if (incoming === undefined) continue;
+      if (Array.isArray(incoming)) {
+        const existing = sections[key];
+        if (Array.isArray(existing)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (sections[key] as any[]) = existing.concat(incoming as any[]);
+        }
+      } else if (typeof incoming === 'string' && incoming && !sections[key]) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (sections[key] as any) = incoming;
+      }
+    }
+  }
+
+  return { sections, gaps, metadata };
+}
+
+// ── Public entry point ───────────────────────────────────────────────────────
+
+export async function convertCVtoBioBib(cv: ParsedCV): Promise<ConversionResult> {
+  const apiKey = process.env.LITELLM_API_KEY;
+  if (!apiKey) throw new Error('LITELLM_API_KEY not configured');
+
+  const slices: SliceKey[] = ['meta_and_I', 'II', 'III_journals', 'III_other'];
+  const parts = await Promise.all(slices.map(s => callSlice(cv, s, apiKey)));
+  return mergeSlices(parts);
 }

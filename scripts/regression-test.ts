@@ -145,9 +145,27 @@ async function main() {
   const emp = (s.employment as unknown[] | undefined)?.length ?? 0;
   const edu = (s.education as unknown[] | undefined)?.length ?? 0;
   const pubs = (s.peerReviewedJournals as unknown[] | undefined)?.length ?? 0;
+  const otherPubs =
+    ((s.reviewAndInvited as unknown[] | undefined)?.length ?? 0) +
+    ((s.books as unknown[] | undefined)?.length ?? 0) +
+    ((s.chapters as unknown[] | undefined)?.length ?? 0) +
+    ((s.refereedProceedings as unknown[] | undefined)?.length ?? 0) +
+    ((s.otherProceedings as unknown[] | undefined)?.length ?? 0) +
+    ((s.abstracts as unknown[] | undefined)?.length ?? 0) +
+    ((s.popularWorks as unknown[] | undefined)?.length ?? 0) +
+    ((s.additionalProducts as unknown[] | undefined)?.length ?? 0);
+  const sectionII =
+    ((s.universityService as unknown[] | undefined)?.length ?? 0) +
+    ((s.awards as unknown[] | undefined)?.length ?? 0) +
+    ((s.grants as unknown[] | undefined)?.length ?? 0) +
+    ((s.teaching as unknown[] | undefined)?.length ?? 0);
+
   record('Employment entries extracted', emp > 0, `${emp} entries`);
   record('Education entries extracted', edu > 0, `${edu} entries`);
   record('Peer-reviewed publications extracted', pubs > 0, `${pubs} entries`);
+  record('Section II content extracted (any of service/awards/grants/teaching)', sectionII > 0, `${sectionII} entries`);
+  record('Section III non-journal publications extracted', otherPubs > 0, `${otherPubs} entries`);
+  record('Conversion completed within 180s (parallel-chunked target)', Number(elapsed) < 180, `${elapsed}s`);
 
   // ── 4. GET /api/download/:sessionId/document ─────────────────────────────
   if (data.sessionId) {
