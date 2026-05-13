@@ -50,9 +50,18 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await blobRes.arrayBuffer());
   const sessionId = randomUUID();
 
-  const cv = await parseCV(buffer);
-  const result = await convertCVtoBioBib(cv);
-  const docxBuffer = await generateBioBibDocx(result);
+  let result;
+  let docxBuffer;
+  try {
+    const cv = await parseCV(buffer);
+    result = await convertCVtoBioBib(cv);
+    docxBuffer = await generateBioBibDocx(result);
+  } catch (e) {
+    const msg = (e as Error).message || 'Unknown error during conversion.';
+    console.error('[/api/upload] conversion failed:', e);
+    del(blobUrl).catch(() => {});
+    return NextResponse.json({ error: `Conversion failed: ${msg}` }, { status: 500 });
+  }
 
   blobStore.set(sessionId, {
     document: docxBuffer,
