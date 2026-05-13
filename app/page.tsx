@@ -86,10 +86,11 @@ export default function HomePage() {
   };
 
   const startPolling = useCallback((jobId: string, fileName: string) => {
-    const deadline = Date.now() + POLL_TIMEOUT_MS;
+    const startedAt = Date.now();
 
     const tick = async () => {
-      if (Date.now() > deadline) {
+      const elapsedMs = Date.now() - startedAt;
+      if (elapsedMs > POLL_TIMEOUT_MS) {
         setError('Conversion timed out after 8 minutes. Please try again.');
         setState('error');
         return;
@@ -106,8 +107,8 @@ export default function HomePage() {
 
       if (!res.ok) {
         // 404 right after upload can happen briefly while the manifest write
-        // propagates. Retry instead of erroring out.
-        if (res.status === 404 && Date.now() - deadline + POLL_TIMEOUT_MS < 10_000) {
+        // propagates. Retry within the first 10s, error out after that.
+        if (res.status === 404 && elapsedMs < 10_000) {
           pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
           return;
         }
