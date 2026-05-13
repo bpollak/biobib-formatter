@@ -112,7 +112,8 @@ export default function HomePage() {
           pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
           return;
         }
-        setError(`Status check failed (${res.status}).`);
+        const detail = await res.json().then(b => (b as { detail?: string; error?: string }).detail ?? (b as { error?: string }).error).catch(() => null);
+        setError(`Status check failed (${res.status})${detail ? `: ${detail}` : ''}`);
         setState('error');
         return;
       }
