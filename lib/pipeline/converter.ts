@@ -124,7 +124,7 @@ export async function convertCVtoBioBib(cv: ParsedCV): Promise<ConversionResult>
         { role: 'user', content: buildUserPrompt(cv) },
       ],
       temperature: 0.1,
-      max_tokens: 16000,
+      max_tokens: 32000,
       response_format: { type: 'json_object' },
     }),
   });
@@ -136,7 +136,15 @@ export async function convertCVtoBioBib(cv: ParsedCV): Promise<ConversionResult>
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
+  const finishReason = data.choices?.[0]?.finish_reason;
   if (!content) throw new Error('Empty response from AI');
 
-  return JSON.parse(content) as ConversionResult;
+  try {
+    return JSON.parse(content) as ConversionResult;
+  } catch (e) {
+    const hint = finishReason === 'length'
+      ? ' (response was truncated at max_tokens — CV is too large for current output cap)'
+      : '';
+    throw new Error(`AI returned invalid JSON${hint}: ${(e as Error).message}`);
+  }
 }
