@@ -72,7 +72,11 @@ export type SliceKey =
   | 'II_teaching'
   | 'II_grants'
   | 'II_external'
-  | 'II_presentations_other'
+  | 'II_presentations_pre_2000'
+  | 'II_presentations_2000_2010'
+  | 'II_presentations_2011_2020'
+  | 'II_presentations_post_2020'
+  | 'II_diversity_other'
   | 'III_journals_pre_2000'
   | 'III_journals_2000_2010'
   | 'III_journals_late'
@@ -90,7 +94,11 @@ export const SLICE_KEYS: readonly SliceKey[] = [
   'II_teaching',
   'II_grants',
   'II_external',
-  'II_presentations_other',
+  'II_presentations_pre_2000',
+  'II_presentations_2000_2010',
+  'II_presentations_2011_2020',
+  'II_presentations_post_2020',
+  'II_diversity_other',
   'III_journals_pre_2000',
   'III_journals_2000_2010',
   'III_journals_late',
@@ -113,6 +121,12 @@ const ABSTRACT_MID_END = 2010;
 const ABSTRACT_LATE_START = 2011;
 const ABSTRACT_LATE_END = 2020;
 const ABSTRACT_POST_2020_START = 2021;
+const PRESENTATION_PRE_2000_END = 1999;
+const PRESENTATION_MID_START = 2000;
+const PRESENTATION_MID_END = 2010;
+const PRESENTATION_LATE_START = 2011;
+const PRESENTATION_LATE_END = 2020;
+const PRESENTATION_POST_2020_START = 2021;
 
 export interface PartialResult {
   sections: Partial<BioBibSections>;
@@ -182,13 +196,55 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  II_presentations_other: {
+  II_presentations_pre_2000: {
     fields:
-      'Section II subset: presentations, invitedPresentations, diversityContributions, outreach, clinicalActivities, and otherActivities only. Do not extract professional committee service, reviewing, teaching, or grants.',
+      `Section II subset: presentations and invitedPresentations ONLY for items dated ${PRESENTATION_PRE_2000_END} or earlier. Skip presentations dated ${PRESENTATION_MID_START} or later. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
     schema: `{
   "sections": {
     "presentations": [""],
-    "invitedPresentations": [""],
+    "invitedPresentations": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_presentations_2000_2010: {
+    fields:
+      `Section II subset: presentations and invitedPresentations ONLY for items dated from ${PRESENTATION_MID_START} through ${PRESENTATION_MID_END}, inclusive. Skip presentations outside that date range. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    schema: `{
+  "sections": {
+    "presentations": [""],
+    "invitedPresentations": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_presentations_2011_2020: {
+    fields:
+      `Section II subset: presentations and invitedPresentations ONLY for items dated from ${PRESENTATION_LATE_START} through ${PRESENTATION_LATE_END}, inclusive. Skip presentations outside that date range. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    schema: `{
+  "sections": {
+    "presentations": [""],
+    "invitedPresentations": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_presentations_post_2020: {
+    fields:
+      `Section II subset: presentations and invitedPresentations ONLY for items dated ${PRESENTATION_POST_2020_START} or later. Skip presentations dated before ${PRESENTATION_POST_2020_START}. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    schema: `{
+  "sections": {
+    "presentations": [""],
+    "invitedPresentations": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_diversity_other: {
+    fields:
+      'Section II subset: diversityContributions, outreach, clinicalActivities, and otherActivities only. Do not extract presentations, professional committee service, reviewing, teaching, or grants.',
+    schema: `{
+  "sections": {
     "diversityContributions": [""],
     "outreach": [""],
     "clinicalActivities": [""],

@@ -24,7 +24,11 @@ type SliceKey =
   | 'II_teaching'
   | 'II_grants'
   | 'II_external'
-  | 'II_presentations_other'
+  | 'II_presentations_pre_2000'
+  | 'II_presentations_2000_2010'
+  | 'II_presentations_2011_2020'
+  | 'II_presentations_post_2020'
+  | 'II_diversity_other'
   | 'III_journals_pre_2000'
   | 'III_journals_2000_2010'
   | 'III_journals_late'
@@ -58,7 +62,11 @@ const SLICE_LABELS: Record<SliceKey, string> = {
   II_teaching: 'Section II — Teaching & Mentoring',
   II_grants: 'Section II — Contracts & Grants',
   II_external: 'Section II — External Activities & Reviews',
-  II_presentations_other: 'Section II — Presentations, Diversity, Other',
+  II_presentations_pre_2000: 'Section II — Presentations (< 2000)',
+  II_presentations_2000_2010: 'Section II — Presentations (2000–2010)',
+  II_presentations_2011_2020: 'Section II — Presentations (2011–2020)',
+  II_presentations_post_2020: 'Section II — Presentations (> 2020)',
+  II_diversity_other: 'Section II — Diversity, Outreach, Other',
   III_journals_pre_2000: 'Section III — Peer-Reviewed Journals (< 2000)',
   III_journals_2000_2010: 'Section III — Peer-Reviewed Journals (2000–2010)',
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
