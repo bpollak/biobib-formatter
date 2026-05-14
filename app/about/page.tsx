@@ -13,24 +13,24 @@ import ArticleIcon from '@mui/icons-material/Article';
 
 const PIPELINE_STEPS = [
   {
-    title: '1. Upload and parse',
-    body: 'The browser uploads a .docx CV directly to managed object storage, then POSTs the file URL to /api/upload. The server validates the file, reads it through the authenticated storage SDK, parses the Word document into text, writes cv.txt and manifest.json under jobs/<jobId>/, deletes the original uploaded source file, and returns HTTP 202 with a jobId.',
+    title: '1. You upload a Word CV',
+    body: 'The app accepts a .docx CV, checks that the file is valid and under the size limit, and reads the text from the Word document. The original uploaded CV file is removed after the text has been read.',
   },
   {
-    title: '2. Parallel AI extraction',
-    body: 'The upload route dispatches 20 independent slice workers. Each worker reads the same parsed CV text and asks LiteLLM for only one bounded BioBib subset, returning strict JSON. This keeps large CVs inside serverless function limits and avoids one giant model response.',
+    title: '2. The CV is split into smaller review tasks',
+    body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 20 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
   },
   {
-    title: '3. Blob-backed job state',
-    body: 'Each slice writes either slice-<key>.json or slice-<key>.error under the job prefix. The status route derives progress from those append-only artifacts instead of mutating a central record.',
+    title: '3. Progress is tracked while the work runs',
+    body: 'Each task saves its result as it finishes. The progress screen checks those saved results and shows which parts are still running, complete, or failed.',
   },
   {
-    title: '4. Finalize and generate DOCX',
-    body: 'When all slices are terminal, /api/finalize acquires a Blob-backed lock, merges successful slices, deduplicates common repeated arrays, filters known nonemployment appointment artifacts, renumbers publication categories, writes result.json and biobib.docx, then records complete, failed_partial, or failed status.',
+    title: '4. The app assembles the BioBib',
+    body: 'After the smaller parts finish, the app combines the results, removes common duplicates, keeps many non-employment roles out of employment history, renumbers publication lists, and creates a new BioBib Word document.',
   },
   {
-    title: '5. Poll and download',
-    body: 'The client polls /api/status/<jobId> every few seconds. When the job completes, /api/download/<jobId> streams the generated BioBib .docx back from managed object storage.',
+    title: '5. You download the draft',
+    body: 'When processing is complete, the app shows a download button for the generated BioBib .docx. If a section could not be completed, the app can still return a partial draft with the completed sections and notes about what needs review.',
   },
 ];
 
@@ -38,69 +38,69 @@ const SLICE_GROUPS = [
   {
     label: 'Section I',
     items: [
-      'meta_and_I: name, department, title, employment, education, specialization',
+      'Name, department, title, employment history, education, and areas of specialization.',
     ],
   },
   {
     label: 'Section II',
     items: [
-      'II_service: university service, public service, memberships, awards',
-      'II_teaching: teaching and student instructional activities',
-      'II_grants: current and past contracts/grants',
-      'II_external: professional activities, consulting, reviewer activity, external reviews',
-      'II_presentations_pre_2000 / 2000_2010 / 2011_2020 / post_2020: date-bounded invited presentations',
-      'II_diversity_other: diversity contributions, outreach, clinical activities, other activities',
+      'University service, public service, memberships, awards, and honors.',
+      'Teaching and student instructional activities, including advisees and postdocs when listed.',
+      'Current and past contracts and grants.',
+      'Professional activities, consulting, reviewer activity, and external reviews.',
+      'Invited presentations, grouped by date range so long CVs can finish reliably.',
+      'Diversity contributions, outreach, clinical activities, and other activities.',
     ],
   },
   {
     label: 'Section III',
     items: [
-      'III_journals_pre_2000 / 2000_2010 / late: date-bounded peer-reviewed journal articles',
-      'III_other_a: review/invited articles, books, book chapters',
-      'III_other_proc: refereed and other conference proceedings',
-      'III_abstracts_pre_2000 / 2000_2010 / 2011_2020 / post_2020: date-bounded abstracts',
-      'III_popular_products: popular works, additional products, the faculty member\'s own thesis, patents, work in progress',
+      'Peer-reviewed journal articles, grouped by date range.',
+      'Review and invited articles, books, and book chapters.',
+      'Refereed and other conference proceedings.',
+      'Conference abstracts, grouped by date range.',
+      'Popular works, additional research products, the faculty member\'s own thesis, patents, and work in progress.',
     ],
   },
 ];
 
 const OUTPUT_RULES = [
-  'Preserves citation text from the CV instead of reformatting citations.',
-  'Splits large journal, abstract, and presentation lists by year range to reduce model truncation.',
-  'Keeps optional publication metadata sparse unless the CV explicitly provides it.',
-  'Deduplicates merged Section II arrays and grants after all slices finish.',
-  'Filters obvious nonemployment appointment artifacts from Section I employment, such as fellowships, visiting titles, senate offices, and committee/chair service roles.',
-  'Renders a UCSD BioBib-style Word document with Section I tables, Section II subsection headings, contracts/grants tables, Section III bibliography subsections, theses, patents, and work-in-progress handling.',
-  'Produces a gap list for fields the workers identify as missing or needing confirmation.',
+  'Keeps citation text as close as possible to the way it appears in the CV.',
+  'Breaks long journal, abstract, and presentation lists into smaller date ranges so large CVs are more likely to finish.',
+  'Avoids adding extra publication details unless the CV clearly provides them.',
+  'Removes many duplicate entries after the sections are combined.',
+  'Tries to keep fellowships, visiting titles, senate offices, and service roles out of Section I employment when they are not true employment history.',
+  'Creates a Word document with BioBib-style Section I tables, Section II subsections, grant tables, and Section III bibliography subsections.',
+  'Creates a list of items that may need manual review or confirmation.',
 ];
 
 const CURRENT_LIMITATIONS = [
-  'The system can only extract facts present in the uploaded CV text. It does not reliably reconstruct missing month-level dates, professor step history, or legacy BioBib-only entries when those details are absent from the CV.',
-  'The generated BioBib is a draft. Faculty or department staff should review classifications, dates, new-since-last-review markers, and any gap warnings before submission.',
-  'The source upload file is deleted after parsing, but job artifacts needed for polling and download are written to managed object storage under jobs/<jobId>/. The current codebase does not implement automatic job cleanup.',
-  'If one or more workers fail or time out after other slices succeed, the app can finalize a failed_partial BioBib using the completed sections rather than losing all work.',
+  'The app can only use information it can read from the uploaded CV. It cannot reliably recreate details that are missing from the CV, such as exact month-level dates, professor step history, or entries that only appear in an older BioBib.',
+  'The generated BioBib is a draft. Faculty or department staff should review section placement, dates, new-since-last-review markers, and any gap warnings before submission.',
+  'The original uploaded CV file is removed after the app reads it. Some temporary working files are kept so the progress page and download button can work. They are not cleaned up automatically yet.',
+  'If one part fails after other parts succeed, the app can still return a partial BioBib using the completed sections instead of losing the whole conversion.',
 ];
 
 const FAQ_ITEMS = [
   {
     q: 'What file formats are accepted?',
-    a: 'Only .docx files are accepted. The parser reads the Word document and converts it to plain text before any AI extraction runs.',
+    a: 'Only .docx files are accepted. The app reads the Word document and converts it to text before filling out the BioBib draft.',
   },
   {
-    q: 'How many AI workers run?',
-    a: 'The current pipeline runs 20 slice workers. They cover Section I, six Section II extraction groups, and thirteen Section III bibliography/product groups.',
+    q: 'Why does conversion take a few minutes?',
+    a: 'The app breaks the CV into 20 smaller BioBib parts and works on several parts at the same time. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
   },
   {
-    q: 'Why is the pipeline split into so many slices?',
-    a: 'Large faculty CVs can produce very large bibliography and presentation outputs. Smaller bounded workers reduce model truncation, fit serverless function limits, and allow the app to keep useful completed sections if one worker fails.',
+    q: 'What does the app fill in?',
+    a: 'It drafts employment, education, university service, memberships, awards, teaching and student activity, grants, professional activity, presentations, publications, abstracts, patents, and related BioBib sections when those details are available in the CV.',
   },
   {
-    q: 'What happens if a worker fails?',
-    a: 'The failed worker writes a slice error. If at least one slice completed, finalize can still produce a partial BioBib and mark the job failed_partial. If all slices fail or finalize fails, the job is marked failed.',
+    q: 'What happens if one section fails?',
+    a: 'If most of the work completes but one section fails, the app can still create a partial draft. The result will show that some content needs review instead of discarding all completed work.',
   },
   {
     q: 'Does the app preserve the uploaded CV?',
-    a: 'The uploaded source blob is deleted after the server parses it into text. The parsed text, slice JSON, final result JSON, status JSON, and generated BioBib are stored under the job prefix so polling and download can work.',
+    a: 'The original uploaded CV file is removed after the app reads it. Some temporary working files are kept for progress tracking and download, including the text read from the CV, the section results, status information, and the generated BioBib.',
   },
   {
     q: 'Does this replace academic personnel review?',
@@ -116,16 +116,15 @@ export default function AboutPage() {
           About the BioBib Formatter
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
-          The BioBib Formatter converts a faculty CV in Word format into a draft UCSD Academic
-          Biography and Bibliography document. The current codebase uses an asynchronous,
-          storage-backed, 20-worker AI pipeline so large CVs can complete within serverless
-          limits and still produce a usable document if isolated sections need manual correction.
+          The BioBib Formatter turns a faculty CV in Word format into a draft UCSD Academic
+          Biography and Bibliography document. It breaks the CV into smaller pieces, works on
+          those pieces, combines the results, and creates a downloadable Word file.
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
-          <Chip label=".docx input only" size="small" />
-          <Chip label="20 extraction slices" size="small" color="primary" />
-          <Chip label="Storage-backed job state" size="small" />
-          <Chip label="DOCX output" size="small" color="success" />
+          <Chip label="Word CV input" size="small" />
+          <Chip label="20 review parts" size="small" color="primary" />
+          <Chip label="Progress tracking" size="small" />
+          <Chip label="Word BioBib output" size="small" color="success" />
         </Box>
       </Box>
 
@@ -151,7 +150,7 @@ export default function AboutPage() {
 
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
-          Extraction Slices
+          What the App Looks For
         </Typography>
         {SLICE_GROUPS.map((group) => (
           <Box key={group.label} sx={{ mb: 3 }}>
@@ -176,7 +175,7 @@ export default function AboutPage() {
 
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 2 }}>
-          Current Output Behavior
+          What the Draft Does
         </Typography>
         <Box component="ul" sx={{ pl: 3, mt: 0 }}>
           {OUTPUT_RULES.map((rule) => (
@@ -191,7 +190,7 @@ export default function AboutPage() {
 
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 2 }}>
-          Known Boundaries
+          What Still Needs Review
         </Typography>
         <Box component="ul" sx={{ pl: 3, mt: 0 }}>
           {CURRENT_LIMITATIONS.map((item) => (
