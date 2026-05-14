@@ -11,6 +11,8 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ArticleIcon from '@mui/icons-material/Article';
 
+const PAGE_MAX_WIDTH = 1170;
+
 const PIPELINE_STEPS = [
   {
     title: '1. You upload a Word CV',
@@ -110,12 +112,12 @@ const FAQ_ITEMS = [
 
 export default function AboutPage() {
   return (
-    <Container maxWidth="md" sx={{ py: 6 }}>
+    <Container maxWidth={false} sx={{ maxWidth: PAGE_MAX_WIDTH, py: 6 }}>
       <Box sx={{ mb: 5 }}>
         <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
           About the BioBib Formatter
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
+        <Typography variant="body1" color="text.secondary">
           The BioBib Formatter turns a faculty CV in Word format into a draft UCSD Academic
           Biography and Bibliography document. It breaks the CV into smaller pieces, works on
           those pieces, combines the results, and creates a downloadable Word file.
