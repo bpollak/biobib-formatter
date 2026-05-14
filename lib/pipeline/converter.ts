@@ -451,12 +451,30 @@ interface CallSliceOptions {
   signal?: AbortSignal;
 }
 
+function supportsCustomTemperature(model: string): boolean {
+  return !model.startsWith('gpt-5');
+}
+
 async function callSliceOnce(
   cv: ParsedCV,
   slice: SliceKey,
   apiKey: string,
   options: CallSliceOptions = {},
 ): Promise<PartialResult> {
+  const requestBody = {
+    model: LITELLM_MODEL,
+    messages: [
+      { role: 'system', content: BASE_SYSTEM },
+      { role: 'user', content: buildSliceUserPrompt(cv, slice) },
+    ],
+    // 12K caps each slice's output while preserving large bibliography slices.
+    // Going larger causes the model to keep generating and time out before
+    // returning anything we can parse.
+    max_tokens: 12000,
+    response_format: { type: 'json_object' },
+    ...(supportsCustomTemperature(LITELLM_MODEL) ? { temperature: 0.1 } : {}),
+  };
+
   const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
@@ -464,20 +482,7 @@ async function callSliceOnce(
       Authorization: `Bearer ${apiKey}`,
     },
     signal: options.signal,
-    body: JSON.stringify({
-      model: LITELLM_MODEL,
-      messages: [
-        { role: 'system', content: BASE_SYSTEM },
-        { role: 'user', content: buildSliceUserPrompt(cv, slice) },
-      ],
-      temperature: 0.1,
-      // 12K caps each slice's output while preserving large bibliography slices.
-      // Going larger
-      // causes the model to keep generating and time out before
-      // returning anything we can parse.
-      max_tokens: 12000,
-      response_format: { type: 'json_object' },
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
