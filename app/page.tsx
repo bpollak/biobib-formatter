@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box, Container, Typography, Button, Paper, LinearProgress,
   Alert, Chip, List, ListItem, ListItemIcon, ListItemText,
-  Accordion, AccordionSummary, AccordionDetails, Stack,
+  Accordion, AccordionSummary, AccordionDetails, Stack, Divider,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
@@ -13,6 +13,10 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
+import DescriptionIcon from '@mui/icons-material/Description';
+import TaskAltIcon from '@mui/icons-material/TaskAlt';
+import FactCheckIcon from '@mui/icons-material/FactCheck';
+import ArticleIcon from '@mui/icons-material/Article';
 import { upload } from '@vercel/blob/client';
 import { ConversionResult } from '@/lib/types';
 import { ACCEPTED_MIME_TYPES } from '@/lib/constants';
@@ -101,6 +105,25 @@ const SEVERITY_ICON = {
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_TIMEOUT_MS = 12 * 60 * 1000; // Pro slice budget + finalize headroom
+const PAGE_MAX_WIDTH = 1170;
+
+const HOME_FEATURES = [
+  {
+    icon: <DescriptionIcon fontSize="small" />,
+    title: 'Starts from a Word CV',
+    body: 'Upload a .docx CV and the app reads the text into a BioBib draft workflow.',
+  },
+  {
+    icon: <TaskAltIcon fontSize="small" />,
+    title: 'Tracks each section',
+    body: 'Long CVs are split into smaller review parts so you can see what has finished.',
+  },
+  {
+    icon: <FactCheckIcon fontSize="small" />,
+    title: 'Flags review items',
+    body: 'The final result includes notes for items that still need human confirmation.',
+  },
+];
 
 export default function HomePage() {
   const [state, setState] = useState<AppState>('idle');
@@ -283,16 +306,84 @@ export default function HomePage() {
   };
 
   const sectionSummary = resultState ? buildSectionSummary(resultState.result) : null;
+  const completedSlices = SLICE_KEYS.filter((k) => slices[k] === 'done').length;
+  const failedSlices = SLICE_KEYS.filter((k) => slices[k] === 'failed').length;
+  const progressValue = Math.round(((completedSlices + failedSlices) / SLICE_KEYS.length) * 100);
 
   return (
-    <Container maxWidth="md" sx={{ py: 6 }}>
-      <Box sx={{ mb: 4, textAlign: 'center' }}>
-        <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
-          BioBib Formatter
-        </Typography>
-        <Typography variant="subtitle1" color="text.secondary">
-          Upload your faculty CV (.docx) and receive a completed UCSD Academic Biography &amp; Bibliography form.
-        </Typography>
+    <Container maxWidth={false} sx={{ maxWidth: PAGE_MAX_WIDTH, py: { xs: 4, md: 6 } }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.35fr) minmax(300px, 0.65fr)' },
+          gap: { xs: 3, md: 4 },
+          alignItems: 'start',
+          mb: 4,
+        }}
+      >
+        <Box>
+          <Typography
+            variant="h1"
+            sx={{
+              color: '#182B49',
+              fontSize: { xs: '2.6rem', md: '3.8rem' },
+              lineHeight: 0.95,
+              mb: 1.5,
+            }}
+          >
+            Turn a faculty CV into a BioBib draft.
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 720, mb: 2 }}>
+            Upload a Word CV and receive a downloadable UCSD Academic Biography and
+            Bibliography document with section summaries and review notes.
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            <Chip icon={<DescriptionIcon />} label=".docx input" size="small" />
+            <Chip icon={<TaskAltIcon />} label="20 review parts" color="primary" size="small" />
+            <Chip icon={<ArticleIcon />} label="BioBib .docx output" color="success" size="small" />
+          </Box>
+        </Box>
+
+        <Paper
+          variant="outlined"
+          sx={{
+            p: 3,
+            borderColor: '#D7DEE8',
+            backgroundColor: '#F8FAFC',
+          }}
+        >
+          <Typography variant="h6" fontWeight={700} sx={{ color: '#182B49', mb: 2 }}>
+            What the app does
+          </Typography>
+          <Stack spacing={2.25}>
+            {HOME_FEATURES.map((item) => (
+              <Box key={item.title} sx={{ display: 'flex', gap: 1.5 }}>
+                <Box
+                  sx={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#00629B',
+                    backgroundColor: '#EAF3F9',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  {item.icon}
+                </Box>
+                <Box>
+                  <Typography variant="body2" fontWeight={700} sx={{ color: '#182B49' }}>
+                    {item.title}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {item.body}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Stack>
+        </Paper>
       </Box>
 
       {(state === 'idle' || state === 'error') && (
@@ -302,22 +393,50 @@ export default function HomePage() {
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
           sx={{
-            p: 6, textAlign: 'center', cursor: 'pointer',
+            p: { xs: 3, sm: 5 },
+            textAlign: 'center',
+            cursor: 'pointer',
             border: dragOver ? '2px dashed #182B49' : '2px dashed #ccc',
             bgcolor: dragOver ? '#f0f4fa' : 'background.paper',
             transition: 'all 0.2s',
+            minHeight: 300,
+            display: 'grid',
+            placeItems: 'center',
+            boxShadow: dragOver ? '0 10px 30px rgba(24, 43, 73, 0.12)' : 'none',
           }}
           onClick={() => document.getElementById('file-input')?.click()}
         >
-          <UploadFileIcon sx={{ fontSize: 64, color: 'primary.main', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>Drop your CV here</Typography>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            or click to browse — .docx files only
-          </Typography>
-          <input id="file-input" type="file" accept=".docx" hidden onChange={onFileChange} />
-          <Button variant="contained" sx={{ mt: 2 }} onClick={(e) => { e.stopPropagation(); document.getElementById('file-input')?.click(); }}>
-            Choose File
-          </Button>
+          <Box>
+            <Box
+              sx={{
+                width: 78,
+                height: 78,
+                borderRadius: '50%',
+                display: 'grid',
+                placeItems: 'center',
+                mx: 'auto',
+                mb: 2,
+                color: '#00629B',
+                backgroundColor: '#EAF3F9',
+              }}
+            >
+              <UploadFileIcon sx={{ fontSize: 42 }} />
+            </Box>
+            <Typography variant="h5" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
+              Drop your CV here
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              or browse for a Word document. Accepted format: .docx
+            </Typography>
+            <input id="file-input" type="file" accept=".docx" hidden onChange={onFileChange} />
+            <Button
+              variant="contained"
+              startIcon={<UploadFileIcon />}
+              onClick={(e) => { e.stopPropagation(); document.getElementById('file-input')?.click(); }}
+            >
+              Choose File
+            </Button>
+          </Box>
         </Paper>
       )}
 
@@ -326,20 +445,52 @@ export default function HomePage() {
       )}
 
       {(state === 'uploading' || state === 'processing') && (
-        <Paper variant="outlined" sx={{ p: 6, textAlign: 'center' }}>
-          <Typography variant="h6" gutterBottom>
-            {state === 'uploading' ? 'Uploading CV…' : 'Converting to BioBib format…'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            {state === 'processing'
-              ? 'AI workers extract sections in parallel. Large CVs can take several minutes.'
-              : ''}
-          </Typography>
-          <LinearProgress sx={{ borderRadius: 2, mb: 3 }} />
+        <Paper variant="outlined" sx={{ p: { xs: 3, sm: 4 } }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+            <Box>
+              <Typography variant="h5" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
+                {state === 'uploading' ? 'Uploading CV' : 'Building your BioBib draft'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {state === 'processing'
+                  ? 'The app is reviewing the CV in smaller parts. Large CVs can take a few minutes.'
+                  : 'The Word document is being uploaded before conversion begins.'}
+              </Typography>
+            </Box>
+            {state === 'processing' && (
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'start', flexWrap: 'wrap' }}>
+                <Chip label={`${completedSlices}/${SLICE_KEYS.length} complete`} color="success" size="small" />
+                {failedSlices > 0 && <Chip label={`${failedSlices} failed`} color="error" size="small" />}
+              </Stack>
+            )}
+          </Box>
+          <LinearProgress
+            variant={state === 'processing' ? 'determinate' : 'indeterminate'}
+            value={state === 'processing' ? progressValue : undefined}
+            sx={{ height: 8, borderRadius: 999, mb: 3 }}
+          />
           {state === 'processing' && (
-            <Stack spacing={1} sx={{ textAlign: 'left', maxWidth: 460, mx: 'auto' }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+                gap: 1,
+              }}
+            >
               {SLICE_KEYS.map((k) => (
-                <Box key={k} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box
+                  key={k}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    p: 1.25,
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 1,
+                    backgroundColor: slices[k] === 'pending' ? '#FFFFFF' : '#F8FAFC',
+                    minHeight: 48,
+                  }}
+                >
                   {slices[k] === 'done' && <CheckCircleIcon color="success" fontSize="small" />}
                   {slices[k] === 'failed' && <ErrorIcon color="error" fontSize="small" />}
                   {slices[k] === 'pending' && <HourglassEmptyIcon color="action" fontSize="small" />}
@@ -348,7 +499,7 @@ export default function HomePage() {
                   </Typography>
                 </Box>
               ))}
-            </Stack>
+            </Box>
           )}
         </Paper>
       )}
@@ -361,10 +512,10 @@ export default function HomePage() {
             </Alert>
           )}
 
-          <Paper sx={{ p: 3, mb: 3, bgcolor: 'primary.main', color: 'white' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Paper sx={{ p: { xs: 3, sm: 4 }, mb: 3, bgcolor: 'primary.main', color: 'white' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
               <Box>
-                <Typography variant="h6" fontWeight={700}>BioBib Generated</Typography>
+                <Typography variant="h5" fontWeight={700}>BioBib draft is ready</Typography>
                 <Typography variant="body2" sx={{ opacity: 0.85 }}>
                   {sectionSummary.autoFilled} sections completed automatically · {sectionSummary.gaps.required} required gaps
                 </Typography>
@@ -380,9 +531,19 @@ export default function HomePage() {
             </Box>
           </Paper>
 
-          <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-            <Typography variant="h6" gutterBottom fontWeight={600}>Section Completion</Typography>
-            <List dense>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 0.9fr) minmax(280px, 0.45fr)' },
+              gap: 3,
+              mb: 3,
+            }}
+          >
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom fontWeight={700} sx={{ color: '#182B49' }}>
+                Section completion
+              </Typography>
+              <List dense>
               {sectionSummary.sections.map((s, i) => (
                 <ListItem key={i} disablePadding sx={{ mb: 0.5 }}>
                   <ListItemIcon sx={{ minWidth: 32 }}>
@@ -396,12 +557,33 @@ export default function HomePage() {
                   />
                 </ListItem>
               ))}
-            </List>
-          </Paper>
+              </List>
+            </Paper>
+
+            <Paper variant="outlined" sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom fontWeight={700} sx={{ color: '#182B49' }}>
+                Review summary
+              </Typography>
+              <Stack divider={<Divider flexItem />} spacing={1.75}>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">Required</Typography>
+                  <Typography variant="h5" fontWeight={700}>{sectionSummary.gaps.required}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">Recommended</Typography>
+                  <Typography variant="h5" fontWeight={700}>{sectionSummary.gaps.recommended}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">Optional</Typography>
+                  <Typography variant="h5" fontWeight={700}>{sectionSummary.gaps.optional}</Typography>
+                </Box>
+              </Stack>
+            </Paper>
+          </Box>
 
           {resultState.result.gaps.length > 0 && (
             <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
-              <Typography variant="h6" gutterBottom fontWeight={600}>
+              <Typography variant="h6" gutterBottom fontWeight={700} sx={{ color: '#182B49' }}>
                 Manual Completion Required
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
