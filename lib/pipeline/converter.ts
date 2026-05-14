@@ -69,34 +69,50 @@ ${BIOBIB_INSTRUCTIONS_INLINE}`;
 export type SliceKey =
   | 'meta_and_I'
   | 'II_service'
-  | 'II_teaching_grants'
-  | 'II_other'
-  | 'III_journals_early'
+  | 'II_teaching'
+  | 'II_grants'
+  | 'II_external'
+  | 'II_presentations_other'
+  | 'III_journals_pre_2000'
+  | 'III_journals_2000_2010'
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts_early'
-  | 'III_abstracts_late'
+  | 'III_abstracts_pre_2000'
+  | 'III_abstracts_2000_2010'
+  | 'III_abstracts_2011_2020'
+  | 'III_abstracts_post_2020'
   | 'III_popular_products';
 
 export const SLICE_KEYS: readonly SliceKey[] = [
   'meta_and_I',
   'II_service',
-  'II_teaching_grants',
-  'II_other',
-  'III_journals_early',
+  'II_teaching',
+  'II_grants',
+  'II_external',
+  'II_presentations_other',
+  'III_journals_pre_2000',
+  'III_journals_2000_2010',
   'III_journals_late',
   'III_other_a',
   'III_other_proc',
-  'III_abstracts_early',
-  'III_abstracts_late',
+  'III_abstracts_pre_2000',
+  'III_abstracts_2000_2010',
+  'III_abstracts_2011_2020',
+  'III_abstracts_post_2020',
   'III_popular_products',
 ];
 
-// Year boundary used to split peerReviewedJournals into two chunks of
-// roughly comparable size for prolific faculty. Early career CVs will
-// have an empty "late" or "early" slice — cheap, no harm.
-const JOURNAL_SPLIT_YEAR = 2010;
+// Year boundaries keep prolific CVs from producing >12K-token JSON slices.
+const JOURNAL_PRE_2000_END = 1999;
+const JOURNAL_MID_START = 2000;
+const JOURNAL_MID_END = 2010;
+const ABSTRACT_PRE_2000_END = 1999;
+const ABSTRACT_MID_START = 2000;
+const ABSTRACT_MID_END = 2010;
+const ABSTRACT_LATE_START = 2011;
+const ABSTRACT_LATE_END = 2020;
+const ABSTRACT_POST_2020_START = 2021;
 
 export interface PartialResult {
   sections: Partial<BioBibSections>;
@@ -131,64 +147,91 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  II_teaching_grants: {
+  II_teaching: {
     fields:
-      'Section II subset: teaching, studentInstructionalActivities, and contracts/grants only',
+      'Section II subset: teaching and studentInstructionalActivities only. Include courses, doctoral students, masters students, postdocs, undergraduates, visitors, staff scientists, and mentoring entries. Do not extract grants.',
     schema: `{
   "sections": {
     "teaching": [""],
-    "studentInstructionalActivities": [""],
+    "studentInstructionalActivities": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  II_grants: {
+    fields:
+      'Section II subset: contracts/grants only. Extract current and past support with title, funder/agency, amount or totalAward including indirect costs when available, period, role, and co-PI/corresponding share when available.',
+    schema: `{
+  "sections": {
     "grants": [{"title": "", "funder": "", "amount": "", "totalAward": "", "period": "", "status": "current|past", "role": "", "coPIsShare": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  II_other: {
+  II_external: {
     fields:
-      'Section II subset: professionalActivities, externalProfessionalActivities, consulting, reviewerActivities, presentations, invitedPresentations, diversityContributions, outreach, clinicalActivities, otherActivities, externalReviews only',
+      'Section II subset: professionalActivities, externalProfessionalActivities, consulting, reviewerActivities, and externalReviews only. Do not extract presentations or teaching.',
     schema: `{
   "sections": {
     "professionalActivities": [""],
     "externalProfessionalActivities": [""],
     "consulting": [""],
     "reviewerActivities": [""],
-    "presentations": [""],
-    "invitedPresentations": [""],
-    "diversityContributions": [""],
-    "outreach": [""],
-    "clinicalActivities": [""],
-    "otherActivities": [""],
     "externalReviews": [""]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_journals_early: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip articles published after ${JOURNAL_SPLIT_YEAR}. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include articleKind when the CV marks RESEARCH ARTICLE or REVIEW ARTICLE. Preserve asterisks, New labels, contribution notes, URLs, and previously-listed references when present.`,
+  II_presentations_other: {
+    fields:
+      'Section II subset: presentations, invitedPresentations, diversityContributions, outreach, clinicalActivities, and otherActivities only. Do not extract professional committee service, reviewing, teaching, or grants.',
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "presentations": [""],
+    "invitedPresentations": [""],
+    "diversityContributions": [""],
+    "outreach": [""],
+    "clinicalActivities": [""],
+    "otherActivities": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_journals_pre_2000: {
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_PRE_2000_END} or earlier. Skip articles published in ${JOURNAL_MID_START} or later. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    schema: `{
+  "sections": {
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_journals_2000_2010: {
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published from ${JOURNAL_MID_START} through ${JOURNAL_MID_END}, inclusive. Skip articles outside that date range. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    schema: `{
+  "sections": {
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_journals_late: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_SPLIT_YEAR}. Skip articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include articleKind when the CV marks RESEARCH ARTICLE or REVIEW ARTICLE. Preserve asterisks, New labels, contribution notes, URLs, and previously-listed references when present.`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_MID_END}. Skip articles published in ${JOURNAL_MID_END} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_other_a: {
     fields:
-      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1. Preserve new-review markers, old BioBib section references, contribution notes, and URLs when present.',
+      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1. Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.',
     schema: `{
   "sections": {
-    "reviewAndInvited": [{"number": 1, "citation": "", "type": "review", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "books": [{"number": 1, "citation": "", "type": "book", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "chapters": [{"number": 1, "citation": "", "type": "chapter", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
+    "books": [{"number": 1, "citation": "", "type": "book"}],
+    "chapters": [{"number": 1, "citation": "", "type": "chapter"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -198,26 +241,44 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
       'Section III subset proceedings: refereedProceedings and otherProceedings. Number sequentially within each subsection starting at 1. Refereed proceedings belong under Primary Published Work; non-refereed conference proceedings belong under Other Work.',
     schema: `{
   "sections": {
-    "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
+    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_abstracts_early: {
-    fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip abstracts published after ${JOURNAL_SPLIT_YEAR}. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+  III_abstracts_pre_2000: {
+    fields: `Section III abstracts ONLY — abstracts published in ${ABSTRACT_PRE_2000_END} or earlier. Skip abstracts published in ${ABSTRACT_MID_START} or later. Number sequentially starting at 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
-    "abstracts": [{"number": 1, "citation": "", "type": "abstract", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  III_abstracts_late: {
-    fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published AFTER ${JOURNAL_SPLIT_YEAR}. Skip abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+  III_abstracts_2000_2010: {
+    fields: `Section III abstracts ONLY — abstracts published from ${ABSTRACT_MID_START} through ${ABSTRACT_MID_END}, inclusive. Skip abstracts outside that date range. Number sequentially starting at 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
-    "abstracts": [{"number": 1, "citation": "", "type": "abstract", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_abstracts_2011_2020: {
+    fields: `Section III abstracts ONLY — abstracts published from ${ABSTRACT_LATE_START} through ${ABSTRACT_LATE_END}, inclusive. Skip abstracts outside that date range. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    schema: `{
+  "sections": {
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`,
+  },
+  III_abstracts_post_2020: {
+    fields: `Section III abstracts ONLY — abstracts published in ${ABSTRACT_POST_2020_START} or later. Skip abstracts published before ${ABSTRACT_POST_2020_START}. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    schema: `{
+  "sections": {
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -227,11 +288,11 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
       'Section III subset miscellaneous: popularWorks, additionalProducts, theses, patents, and workInProgress only. Number sequentially within each subsection starting at 1. Put dissertations/theses in theses and patent or patent-license material in patents.',
     schema: `{
   "sections": {
-    "popularWorks": [{"number": 1, "citation": "", "type": "popular", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "additionalProducts": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "theses": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "patents": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
-    "workInProgress": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
+    "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
+    "additionalProducts": [{"number": 1, "citation": "", "type": "other"}],
+    "theses": [{"number": 1, "citation": "", "type": "other"}],
+    "patents": [{"number": 1, "citation": "", "type": "other"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "other"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -245,7 +306,7 @@ const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey): string => {
 CV TEXT:
 ${cv.rawText}
 
-Return ONE raw JSON object with EXACTLY this schema. Include every key shown; use empty arrays/strings for items you do not extract:
+Return ONE raw JSON object with this schema. Include every key shown; use empty arrays/strings for items you do not extract. You may add optional publication fields (articleKind, isNewSinceLastReview, previouslyListedAs, contributionNote, reviewMaterialUrl, bioBibSection, originalNumber) only when the CV explicitly provides that information:
 ${schema}
 
 Output rules — IMPORTANT:
@@ -431,8 +492,8 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
     }
   }
 
-  // peerReviewedJournals is fed by two slices (early/late), each starting
-  // at number=1. Renumber sequentially across the merged list.
+  // Several publication categories are fed by multiple bounded slices, each
+  // starting at number=1. Renumber sequentially across the merged list.
   sections.peerReviewedJournals = renumberPublications(sections.peerReviewedJournals);
   sections.abstracts = renumberPublications(sections.abstracts);
   sections.reviewAndInvited = renumberPublications(sections.reviewAndInvited);

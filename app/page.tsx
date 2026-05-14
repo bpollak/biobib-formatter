@@ -21,14 +21,19 @@ type AppState = 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
 type SliceKey =
   | 'meta_and_I'
   | 'II_service'
-  | 'II_teaching_grants'
-  | 'II_other'
-  | 'III_journals_early'
+  | 'II_teaching'
+  | 'II_grants'
+  | 'II_external'
+  | 'II_presentations_other'
+  | 'III_journals_pre_2000'
+  | 'III_journals_2000_2010'
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts_early'
-  | 'III_abstracts_late'
+  | 'III_abstracts_pre_2000'
+  | 'III_abstracts_2000_2010'
+  | 'III_abstracts_2011_2020'
+  | 'III_abstracts_post_2020'
   | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
@@ -50,14 +55,19 @@ interface ResultState {
 const SLICE_LABELS: Record<SliceKey, string> = {
   meta_and_I: 'Section I — Employment & Education',
   II_service: 'Section II — Service, Memberships, Awards',
-  II_teaching_grants: 'Section II — Teaching & Research Support',
-  II_other: 'Section II — External Activities & Reviews',
-  III_journals_early: `Section III — Peer-Reviewed Journals (≤ 2010)`,
+  II_teaching: 'Section II — Teaching & Mentoring',
+  II_grants: 'Section II — Contracts & Grants',
+  II_external: 'Section II — External Activities & Reviews',
+  II_presentations_other: 'Section II — Presentations, Diversity, Other',
+  III_journals_pre_2000: 'Section III — Peer-Reviewed Journals (< 2000)',
+  III_journals_2000_2010: 'Section III — Peer-Reviewed Journals (2000–2010)',
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
   III_other_a: 'Section III — Books, Chapters, Reviews',
   III_other_proc: 'Section III — Conference Proceedings',
-  III_abstracts_early: `Section III — Abstracts (≤ 2010)`,
-  III_abstracts_late: 'Section III — Abstracts (> 2010)',
+  III_abstracts_pre_2000: 'Section III — Abstracts (< 2000)',
+  III_abstracts_2000_2010: 'Section III — Abstracts (2000–2010)',
+  III_abstracts_2011_2020: 'Section III — Abstracts (2011–2020)',
+  III_abstracts_post_2020: 'Section III — Abstracts (> 2020)',
   III_popular_products: 'Section III — Popular Works & Products',
 };
 

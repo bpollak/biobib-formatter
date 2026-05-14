@@ -40,14 +40,19 @@ const POLL_TIMEOUT_MS = 12 * 60 * 1000;
 type SliceKey =
   | 'meta_and_I'
   | 'II_service'
-  | 'II_teaching_grants'
-  | 'II_other'
-  | 'III_journals_early'
+  | 'II_teaching'
+  | 'II_grants'
+  | 'II_external'
+  | 'II_presentations_other'
+  | 'III_journals_pre_2000'
+  | 'III_journals_2000_2010'
   | 'III_journals_late'
   | 'III_other_a'
   | 'III_other_proc'
-  | 'III_abstracts_early'
-  | 'III_abstracts_late'
+  | 'III_abstracts_pre_2000'
+  | 'III_abstracts_2000_2010'
+  | 'III_abstracts_2011_2020'
+  | 'III_abstracts_post_2020'
   | 'III_popular_products';
 type SliceState = 'pending' | 'done' | 'failed';
 
@@ -190,12 +195,18 @@ async function main() {
     ((sec.otherProceedings as unknown[] | undefined)?.length ?? 0) +
     ((sec.abstracts as unknown[] | undefined)?.length ?? 0) +
     ((sec.popularWorks as unknown[] | undefined)?.length ?? 0) +
-    ((sec.additionalProducts as unknown[] | undefined)?.length ?? 0);
+    ((sec.additionalProducts as unknown[] | undefined)?.length ?? 0) +
+    ((sec.theses as unknown[] | undefined)?.length ?? 0) +
+    ((sec.patents as unknown[] | undefined)?.length ?? 0);
   const sectionII =
     ((sec.universityService as unknown[] | undefined)?.length ?? 0) +
+    ((sec.memberships as unknown[] | undefined)?.length ?? 0) +
     ((sec.awards as unknown[] | undefined)?.length ?? 0) +
     ((sec.grants as unknown[] | undefined)?.length ?? 0) +
-    ((sec.teaching as unknown[] | undefined)?.length ?? 0);
+    ((sec.teaching as unknown[] | undefined)?.length ?? 0) +
+    ((sec.studentInstructionalActivities as unknown[] | undefined)?.length ?? 0) +
+    ((sec.externalProfessionalActivities as unknown[] | undefined)?.length ?? 0) +
+    ((sec.presentations as unknown[] | undefined)?.length ?? 0);
 
   record('Employment entries extracted', emp > 0, `${emp} entries`);
   record('Education entries extracted', edu > 0, `${edu} entries`);
