@@ -51,6 +51,7 @@ interface JobStatusResponse {
   result?: ConversionResult;
   error?: string;
   startedAt: number;
+  aiModel?: string;
 }
 
 interface ResultState {

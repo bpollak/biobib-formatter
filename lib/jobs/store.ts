@@ -34,6 +34,7 @@ export interface JobManifest {
   sliceKeys: SliceKey[];
   createdAt: number;
   sourceBlobUrl: string;
+  aiModel?: string;
 }
 
 export async function writeManifest(jobId: string, manifest: JobManifest): Promise<void> {
@@ -158,6 +159,7 @@ export interface JobStatus {
   result?: ConversionResult;
   error?: string;
   startedAt: number;
+  aiModel?: string;
   /**
    * True when every slice has written a terminal outcome (result or error)
    * but no finalize has started. The status route uses this to fire a
@@ -194,7 +196,14 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
   const finalStatus = await readFinalStatus(jobId);
   if (finalStatus) {
     const result = (await readFinalResult(jobId)) ?? undefined;
-    return { state: finalStatus.state, slices, result, error: finalStatus.error, startedAt: manifest.createdAt };
+    return {
+      state: finalStatus.state,
+      slices,
+      result,
+      error: finalStatus.error,
+      startedAt: manifest.createdAt,
+      aiModel: manifest.aiModel,
+    };
   }
 
   const lockExists = await headExists(path.lock(jobId));
@@ -203,15 +212,27 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
 
   if (allTerminal && lockExists) {
     if (ageMs > FINALIZE_TIMEOUT_MS + SLICE_TIMEOUT_MS) {
-      return { state: 'failed', slices, error: 'Finalize step crashed or timed out.', startedAt: manifest.createdAt };
+      return {
+        state: 'failed',
+        slices,
+        error: 'Finalize step crashed or timed out.',
+        startedAt: manifest.createdAt,
+        aiModel: manifest.aiModel,
+      };
     }
-    return { state: 'merging', slices, startedAt: manifest.createdAt };
+    return { state: 'merging', slices, startedAt: manifest.createdAt, aiModel: manifest.aiModel };
   }
 
   // All slices terminal but finalize never started — the last slice's
   // in-process trigger likely missed. Flag for the route to kick.
   if (allTerminal) {
-    return { state: 'merging', slices, startedAt: manifest.createdAt, needsFinalizeKick: true };
+    return {
+      state: 'merging',
+      slices,
+      startedAt: manifest.createdAt,
+      aiModel: manifest.aiModel,
+      needsFinalizeKick: true,
+    };
   }
 
   // Mark stale pending slices as failed once the per-slice timeout has passed.
@@ -227,13 +248,20 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
         slices,
         error: 'One or more slice workers timed out; finalizing completed sections.',
         startedAt: manifest.createdAt,
+        aiModel: manifest.aiModel,
         needsFinalizeKick: true,
       };
     }
-    return { state: 'failed', slices, error: 'One or more slice workers timed out.', startedAt: manifest.createdAt };
+    return {
+      state: 'failed',
+      slices,
+      error: 'One or more slice workers timed out.',
+      startedAt: manifest.createdAt,
+      aiModel: manifest.aiModel,
+    };
   }
 
-  return { state: 'pending', slices, startedAt: manifest.createdAt };
+  return { state: 'pending', slices, startedAt: manifest.createdAt, aiModel: manifest.aiModel };
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────

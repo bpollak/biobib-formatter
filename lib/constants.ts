@@ -9,7 +9,7 @@ export const ACCEPTED_MIME_TYPES = [
 
 // TritonAI LiteLLM Gateway
 export const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL || 'https://tritonai-api.ucsd.edu';
-export const LITELLM_MODEL = process.env.LITELLM_MODEL || 'claude-sonnet-4-6';
+export const LITELLM_MODEL = process.env.LITELLM_MODEL || 'gpt-5.5';
 
 // Session TTL for download tokens (15 minutes)
 export const DOWNLOAD_TOKEN_TTL_SECONDS = 15 * 60;

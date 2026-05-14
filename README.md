@@ -38,7 +38,7 @@ Open [http://localhost:3000](http://localhost:3000)
 |---|---|
 | `LITELLM_API_KEY` | TritonAI API key |
 | `LITELLM_BASE_URL` | Gateway URL (default: https://tritonai-api.ucsd.edu) |
-| `LITELLM_MODEL` | Model to use (default: claude-sonnet-4-6) |
+| `LITELLM_MODEL` | Model to use (default: gpt-5.5) |
 
 ## Deployment
 
