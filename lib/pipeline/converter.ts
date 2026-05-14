@@ -18,20 +18,23 @@ import { LITELLM_BASE_URL, LITELLM_MODEL } from '../constants';
 
 const BIOBIB_INSTRUCTIONS_INLINE = `
 Section I: Employment History and Education
-- List all employment chronologically from first academic position to present
-- Include all UC employment, part-time appointments, periods of non-employment
+- List all applicable employment chronologically from first academic or research position to present
+- Preserve month-level date ranges when present in the CV
+- Include teaching assistantships, research assistantships, visiting academic appointments, and UC employment when listed as appointments/employment
+- Do not convert honors, fellowships, committee service, talks, or grant roles into employment unless the CV explicitly lists them as employment or appointments
 - Education: list schools, dates, location, major, degree, date received
 
-Section II: Professional Data (9 categories, all required — indicate "none" if not applicable):
+Section II: Professional Data (UCSD BioBib categories — preserve dates and labels):
 1. University Service (departmental, college, Academic Senate, campus, systemwide)
 2. Public Service
-3. Professional Activities (society memberships, editorial boards, conference roles)
+3. Memberships
 4. Awards and Honors (with dates)
-5. Teaching (courses taught, graduate students supervised, postdocs)
-6. Research Support (current and past grants — title, funder, amount, period, role)
-7. Outreach / Public Engagement
-8. Clinical Activities
-9. Other Activities
+5. Contracts and Grants (title, agency, total award including indirect costs if available, time period, role, co-PI share)
+6. External Professional Activities (committee service, conference organization, consulting, reviewing, funding agencies, journals, presentations)
+7. Contributions to Promoting Diversity
+8. Other Activities
+9. Student Instructional Activities (doctoral students, postdocs, masters students, undergraduates, visitors, staff scientists)
+10. External Reviews of Primary Creative Work
 
 Section III: Bibliography
 All citations must be numbered, chronological, discipline-appropriate format.
@@ -44,9 +47,9 @@ A. Primary Published or Creative Work:
     d. Refereed Conference Proceedings (include acceptance rate if available)
 B. Other Work:
   - Other Conference Proceedings
-  - Abstracts
+  - Abstracts of Non-Refereed Conference Proceedings
   - Popular Works
-  - Additional Products (patents, software, datasets, etc.)
+  - Additional Products (theses, patents/licenses, software, datasets, etc.)
 C. Work in Progress (optional — only if submitting material with file)
 `.trim();
 
@@ -55,7 +58,8 @@ const BASE_SYSTEM = `You are an expert in UC San Diego academic affairs, specifi
 Your task is to extract part of a UCSD BioBib from a faculty CV. You must:
 1. Extract ONLY the fields you are asked to extract in this call. Leave every other field as an empty array or empty string.
 2. Preserve citation formatting exactly as it appears in the CV — do not reformat citations.
-3. Identify gaps where required fields cannot be filled from the CV ONLY for the slice you were asked about.
+3. Identify gaps sparingly. Only flag true missing data for fields in your slice when the BioBib explicitly requires manual completion. Do not create gaps for optional empty sections.
+4. Prefer empty arrays over speculative entries. If the CV does not provide a section, leave the corresponding array empty.
 
 UCSD BioBib reference:
 ${BIOBIB_INSTRUCTIONS_INLINE}`;
@@ -103,7 +107,7 @@ export interface PartialResult {
 const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   meta_and_I: {
     fields:
-      'metadata (name, department, title), Section I (employment, education, specialization)',
+      'metadata (name in Last, First Middle format when inferable, department, title), Section I (employment, education, specialization)',
     schema: `{
   "metadata": { "name": "", "department": "", "title": "" },
   "sections": {
@@ -116,12 +120,12 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   },
   II_service: {
     fields:
-      'Section II subset: universityService, publicService, professionalActivities, awards',
+      'Section II subset: universityService, publicService, memberships, awards',
     schema: `{
   "sections": {
-    "universityService": [{"description": "", "dates": "", "category": "departmental|university|senate|systemwide|other"}],
+    "universityService": [{"description": "", "dates": "", "category": "departmental|college|campus|university|senate|systemwide|other"}],
     "publicService": [""],
-    "professionalActivities": [""],
+    "memberships": [""],
     "awards": [""]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
@@ -129,64 +133,73 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   },
   II_teaching_grants: {
     fields:
-      'Section II subset: teaching and research support/grants only',
+      'Section II subset: teaching, studentInstructionalActivities, and contracts/grants only',
     schema: `{
   "sections": {
     "teaching": [""],
-    "grants": [{"title": "", "funder": "", "amount": "", "period": "", "status": "current|past", "role": ""}]
+    "studentInstructionalActivities": [""],
+    "grants": [{"title": "", "funder": "", "amount": "", "totalAward": "", "period": "", "status": "current|past", "role": "", "coPIsShare": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   II_other: {
     fields:
-      'Section II subset: outreach, clinicalActivities, otherActivities only',
+      'Section II subset: professionalActivities, externalProfessionalActivities, consulting, reviewerActivities, presentations, invitedPresentations, diversityContributions, outreach, clinicalActivities, otherActivities, externalReviews only',
     schema: `{
   "sections": {
+    "professionalActivities": [""],
+    "externalProfessionalActivities": [""],
+    "consulting": [""],
+    "reviewerActivities": [""],
+    "presentations": [""],
+    "invitedPresentations": [""],
+    "diversityContributions": [""],
     "outreach": [""],
     "clinicalActivities": [""],
-    "otherActivities": [""]
+    "otherActivities": [""],
+    "externalReviews": [""]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_journals_early: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip articles published after ${JOURNAL_SPLIT_YEAR}. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge).`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip articles published after ${JOURNAL_SPLIT_YEAR}. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include articleKind when the CV marks RESEARCH ARTICLE or REVIEW ARTICLE. Preserve asterisks, New labels, contribution notes, URLs, and previously-listed references when present.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_journals_late: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_SPLIT_YEAR}. Skip articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge).`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_SPLIT_YEAR}. Skip articles published in ${JOURNAL_SPLIT_YEAR} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include articleKind when the CV marks RESEARCH ARTICLE or REVIEW ARTICLE. Preserve asterisks, New labels, contribution notes, URLs, and previously-listed references when present.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_other_a: {
     fields:
-      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1.',
+      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1. Preserve new-review markers, old BioBib section references, contribution notes, and URLs when present.',
     schema: `{
   "sections": {
-    "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
-    "books": [{"number": 1, "citation": "", "type": "book"}],
-    "chapters": [{"number": 1, "citation": "", "type": "chapter"}]
+    "reviewAndInvited": [{"number": 1, "citation": "", "type": "review", "articleKind": "research|review|creative|other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "books": [{"number": 1, "citation": "", "type": "book", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "chapters": [{"number": 1, "citation": "", "type": "chapter", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_other_proc: {
     fields:
-      'Section III subset proceedings: refereedProceedings, otherProceedings. Number sequentially within each subsection starting at 1.',
+      'Section III subset proceedings: refereedProceedings and otherProceedings. Number sequentially within each subsection starting at 1. Refereed proceedings belong under Primary Published Work; non-refereed conference proceedings belong under Other Work.',
     schema: `{
   "sections": {
-    "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
-    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}]
+    "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -195,7 +208,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
     fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Skip abstracts published after ${JOURNAL_SPLIT_YEAR}. Number sequentially starting at 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
-    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -204,18 +217,21 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
     fields: `Section III subset miscellaneous: abstracts ONLY — abstracts published AFTER ${JOURNAL_SPLIT_YEAR}. Skip abstracts published in ${JOURNAL_SPLIT_YEAR} or earlier. Number sequentially starting at 1 (numbering will be re-done at merge).`,
     schema: `{
   "sections": {
-    "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
+    "abstracts": [{"number": 1, "citation": "", "type": "abstract", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_popular_products: {
     fields:
-      'Section III subset miscellaneous: popularWorks and additionalProducts only. Number sequentially within each subsection starting at 1.',
+      'Section III subset miscellaneous: popularWorks, additionalProducts, theses, patents, and workInProgress only. Number sequentially within each subsection starting at 1. Put dissertations/theses in theses and patent or patent-license material in patents.',
     schema: `{
   "sections": {
-    "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
-    "additionalProducts": [{"number": 1, "citation": "", "type": "other"}]
+    "popularWorks": [{"number": 1, "citation": "", "type": "popular", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "additionalProducts": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "theses": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "patents": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "other", "bioBibSection": "", "originalNumber": "", "isNewSinceLastReview": false, "previouslyListedAs": "", "contributionNote": "", "reviewMaterialUrl": ""}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -239,7 +255,9 @@ Output rules — IMPORTANT:
 Content rules:
 - Only populate the fields listed above. Do not include keys for other sections.
 - Preserve citation text exactly — do not reformat or standardize.
-- Employment must be chronological (oldest first). Publications must be chronological and numbered sequentially within each subsection.
+- Employment must be chronological (oldest first), preserve month-level dates, and include academic assistantships/appointments when the CV lists them.
+- Publications must be chronological and numbered sequentially within each subsection. Keep labels such as "New", asterisks, "RESEARCH ARTICLE", "REVIEW ARTICLE", "previously B.1", contribution notes, and URLs if present.
+- For Section II categories with no evidence in the CV, return an empty array. Do not add a gap unless the missing item is truly required for BioBib submission.
 - For gaps, only flag fields that belong to the slice above. Be specific and actionable.
 - severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.`;
 };
@@ -350,12 +368,21 @@ function emptySections(): BioBibSections {
     universityService: [],
     publicService: [],
     professionalActivities: [],
+    memberships: [],
     awards: [],
     teaching: [],
+    studentInstructionalActivities: [],
     grants: [],
+    externalProfessionalActivities: [],
+    consulting: [],
+    reviewerActivities: [],
+    presentations: [],
+    invitedPresentations: [],
+    diversityContributions: [],
     outreach: [],
     clinicalActivities: [],
     otherActivities: [],
+    externalReviews: [],
     peerReviewedJournals: [],
     reviewAndInvited: [],
     books: [],
@@ -365,6 +392,8 @@ function emptySections(): BioBibSections {
     abstracts: [],
     popularWorks: [],
     additionalProducts: [],
+    theses: [],
+    patents: [],
     workInProgress: [],
   };
 }
@@ -404,10 +433,24 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
 
   // peerReviewedJournals is fed by two slices (early/late), each starting
   // at number=1. Renumber sequentially across the merged list.
-  sections.peerReviewedJournals = sections.peerReviewedJournals.map((c, i) => ({ ...c, number: i + 1 }));
-  sections.abstracts = sections.abstracts.map((c, i) => ({ ...c, number: i + 1 }));
+  sections.peerReviewedJournals = renumberPublications(sections.peerReviewedJournals);
+  sections.abstracts = renumberPublications(sections.abstracts);
+  sections.reviewAndInvited = renumberPublications(sections.reviewAndInvited);
+  sections.books = renumberPublications(sections.books);
+  sections.chapters = renumberPublications(sections.chapters);
+  sections.refereedProceedings = renumberPublications(sections.refereedProceedings);
+  sections.otherProceedings = renumberPublications(sections.otherProceedings);
+  sections.popularWorks = renumberPublications(sections.popularWorks);
+  sections.additionalProducts = renumberPublications(sections.additionalProducts);
+  sections.theses = renumberPublications(sections.theses);
+  sections.patents = renumberPublications(sections.patents);
+  sections.workInProgress = renumberPublications(sections.workInProgress);
 
   return { sections, gaps, metadata };
+}
+
+function renumberPublications<T extends { number: number }>(items: T[]): T[] {
+  return items.map((c, i) => ({ ...c, number: i + 1 }));
 }
 
 // The orchestration (Promise.all over slices + merge) now lives in the

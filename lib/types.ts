@@ -39,23 +39,38 @@ export interface EducationEntry {
 export interface ServiceEntry {
   description: string;
   dates: string;
-  category: 'departmental' | 'university' | 'senate' | 'systemwide' | 'other';
+  category:
+    | 'departmental'
+    | 'college'
+    | 'campus'
+    | 'university'
+    | 'senate'
+    | 'systemwide'
+    | 'other';
 }
 
 export interface PublicationEntry {
   number: number;
   citation: string; // Preserve original format from CV
   type: 'journal' | 'review' | 'book' | 'chapter' | 'proceedings' | 'abstract' | 'popular' | 'other';
+  articleKind?: 'research' | 'review' | 'creative' | 'other';
+  bioBibSection?: string;
+  originalNumber?: string;
   isNewSinceLastReview?: boolean;
+  previouslyListedAs?: string;
+  contributionNote?: string;
+  reviewMaterialUrl?: string;
 }
 
 export interface GrantEntry {
   title: string;
   funder: string;
   amount?: string;
+  totalAward?: string;
   period: string;
   status: 'current' | 'past';
   role?: string;
+  coPIsShare?: string;
 }
 
 export interface BioBibSections {
@@ -68,12 +83,21 @@ export interface BioBibSections {
   universityService: ServiceEntry[];
   publicService: string[];
   professionalActivities: string[];
+  memberships: string[];
   awards: string[];
   teaching: string[];
+  studentInstructionalActivities: string[];
   grants: GrantEntry[];
+  externalProfessionalActivities: string[];
+  consulting: string[];
+  reviewerActivities: string[];
+  presentations: string[];
+  invitedPresentations: string[];
+  diversityContributions: string[];
   outreach: string[];
   clinicalActivities: string[];
   otherActivities: string[];
+  externalReviews: string[];
 
   // Section III
   peerReviewedJournals: PublicationEntry[];
@@ -85,6 +109,8 @@ export interface BioBibSections {
   abstracts: PublicationEntry[];
   popularWorks: PublicationEntry[];
   additionalProducts: PublicationEntry[];
+  theses: PublicationEntry[];
+  patents: PublicationEntry[];
   workInProgress: PublicationEntry[];
 }
 

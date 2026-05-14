@@ -49,9 +49,9 @@ interface ResultState {
 
 const SLICE_LABELS: Record<SliceKey, string> = {
   meta_and_I: 'Section I — Employment & Education',
-  II_service: 'Section II — Service, Activities, Awards',
+  II_service: 'Section II — Service, Memberships, Awards',
   II_teaching_grants: 'Section II — Teaching & Research Support',
-  II_other: 'Section II — Outreach, Clinical, Other',
+  II_other: 'Section II — External Activities & Reviews',
   III_journals_early: `Section III — Peer-Reviewed Journals (≤ 2010)`,
   III_journals_late: 'Section III — Peer-Reviewed Journals (> 2010)',
   III_other_a: 'Section III — Books, Chapters, Reviews',
@@ -428,9 +428,11 @@ function buildSectionSummary(result: ConversionResult) {
     { label: 'Section I — Employment History', filled: s.employment.length > 0, count: s.employment.length },
     { label: 'Section I — Education', filled: s.education.length > 0, count: s.education.length },
     { label: 'Section II — University Service', filled: s.universityService.length > 0, count: s.universityService.length },
+    { label: 'Section II — Memberships', filled: s.memberships.length > 0, count: s.memberships.length },
     { label: 'Section II — Awards and Honors', filled: s.awards.length > 0, count: s.awards.length },
     { label: 'Section II — Research Support', filled: s.grants.length > 0, count: s.grants.length },
-    { label: 'Section II — Teaching', filled: s.teaching.length > 0 },
+    { label: 'Section II — Student Instructional Activities', filled: (s.studentInstructionalActivities.length + s.teaching.length) > 0 },
+    { label: 'Section II — External Professional Activities', filled: (s.professionalActivities.length + s.externalProfessionalActivities.length + s.presentations.length + s.invitedPresentations.length) > 0 },
     { label: 'Section III — Peer-Reviewed Publications', filled: s.peerReviewedJournals.length > 0, count: s.peerReviewedJournals.length },
     { label: 'Section III — Other Publications', filled: (s.reviewAndInvited.length + s.books.length + s.chapters.length) > 0 },
   ];
