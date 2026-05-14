@@ -23,15 +23,19 @@ const PIPELINE_STEPS = [
     body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 20 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
   },
   {
-    title: '3. Progress is tracked while the work runs',
+    title: '3. GPT 5.5 reviews each part',
+    body: 'The app sends each smaller part through UCSD TritonAI using GPT 5.5. This gives the app more room to read long CVs and return structured BioBib draft content.',
+  },
+  {
+    title: '4. Progress is tracked while the work runs',
     body: 'Each task saves its result as it finishes. The progress screen checks those saved results and shows which parts are still running, complete, or failed.',
   },
   {
-    title: '4. The app assembles the BioBib',
+    title: '5. The app assembles the BioBib',
     body: 'After the smaller parts finish, the app combines the results, removes common duplicates, keeps many non-employment roles out of employment history, renumbers publication lists, and creates a new BioBib Word document.',
   },
   {
-    title: '5. You download the draft',
+    title: '6. You download the draft',
     body: 'When processing is complete, the app shows a download button for the generated BioBib .docx. If a section could not be completed, the app can still return a partial draft with the completed sections and notes about what needs review.',
   },
 ];
@@ -68,6 +72,7 @@ const SLICE_GROUPS = [
 
 const OUTPUT_RULES = [
   'Keeps citation text as close as possible to the way it appears in the CV.',
+  'Uses GPT 5.5 through UCSD TritonAI for the section review work.',
   'Breaks long journal, abstract, and presentation lists into smaller date ranges so large CVs are more likely to finish.',
   'Avoids adding extra publication details unless the CV clearly provides them.',
   'Removes many duplicate entries after the sections are combined.',
@@ -90,7 +95,11 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Why does conversion take a few minutes?',
-    a: 'The app breaks the CV into 20 smaller BioBib parts and works on several parts at the same time. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
+    a: 'The app breaks the CV into 20 smaller BioBib parts and reviews several parts at the same time with GPT 5.5 through UCSD TritonAI. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
+  },
+  {
+    q: 'What AI model does it use?',
+    a: 'The current version uses GPT 5.5 through UCSD TritonAI for the BioBib section review work.',
   },
   {
     q: 'What does the app fill in?',
@@ -115,16 +124,18 @@ export default function AboutPage() {
     <Container maxWidth={false} sx={{ maxWidth: PAGE_MAX_WIDTH, py: 6 }}>
       <Box sx={{ mb: 5 }}>
         <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
-          About the BioBib Formatter
+          Turn a faculty CV into a BioBib
         </Typography>
         <Typography variant="body1" color="text.secondary">
           The BioBib Formatter turns a faculty CV in Word format into a draft UCSD Academic
-          Biography and Bibliography document. It breaks the CV into smaller pieces, works on
-          those pieces, combines the results, and creates a downloadable Word file.
+          Biography and Bibliography document. It breaks the CV into smaller pieces, reviews
+          those pieces with GPT 5.5 through UCSD TritonAI, combines the results, and creates a
+          downloadable Word file.
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
           <Chip label="Word CV input" size="small" />
           <Chip label="20 review parts" size="small" color="primary" />
+          <Chip label="GPT 5.5" size="small" />
           <Chip label="Progress tracking" size="small" />
           <Chip label="Word BioBib output" size="small" color="success" />
         </Box>
