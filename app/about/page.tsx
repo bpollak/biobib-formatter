@@ -14,11 +14,11 @@ import ArticleIcon from '@mui/icons-material/Article';
 const PIPELINE_STEPS = [
   {
     title: '1. Upload and parse',
-    body: 'The browser uploads a .docx CV directly to Vercel Blob, then POSTs the Blob URL to /api/upload. The server validates the file, reads it through the authenticated Blob SDK, parses the Word document into text, writes cv.txt and manifest.json under jobs/<jobId>/, deletes the original uploaded source blob, and returns HTTP 202 with a jobId.',
+    body: 'The browser uploads a .docx CV directly to managed object storage, then POSTs the file URL to /api/upload. The server validates the file, reads it through the authenticated storage SDK, parses the Word document into text, writes cv.txt and manifest.json under jobs/<jobId>/, deletes the original uploaded source file, and returns HTTP 202 with a jobId.',
   },
   {
     title: '2. Parallel AI extraction',
-    body: 'The upload route dispatches 20 independent slice workers. Each worker reads the same parsed CV text and asks LiteLLM for only one bounded BioBib subset, returning strict JSON. This keeps large CVs inside Vercel function limits and avoids one giant model response.',
+    body: 'The upload route dispatches 20 independent slice workers. Each worker reads the same parsed CV text and asks LiteLLM for only one bounded BioBib subset, returning strict JSON. This keeps large CVs inside serverless function limits and avoids one giant model response.',
   },
   {
     title: '3. Blob-backed job state',
@@ -30,7 +30,7 @@ const PIPELINE_STEPS = [
   },
   {
     title: '5. Poll and download',
-    body: 'The client polls /api/status/<jobId> every few seconds. When the job completes, /api/download/<jobId> streams the generated BioBib .docx back from Vercel Blob.',
+    body: 'The client polls /api/status/<jobId> every few seconds. When the job completes, /api/download/<jobId> streams the generated BioBib .docx back from managed object storage.',
   },
 ];
 
@@ -77,7 +77,7 @@ const OUTPUT_RULES = [
 const CURRENT_LIMITATIONS = [
   'The system can only extract facts present in the uploaded CV text. It does not reliably reconstruct missing month-level dates, professor step history, or legacy BioBib-only entries when those details are absent from the CV.',
   'The generated BioBib is a draft. Faculty or department staff should review classifications, dates, new-since-last-review markers, and any gap warnings before submission.',
-  'The source upload blob is deleted after parsing, but job artifacts needed for polling and download are written to Vercel Blob under jobs/<jobId>/. The current codebase does not implement automatic job cleanup.',
+  'The source upload file is deleted after parsing, but job artifacts needed for polling and download are written to managed object storage under jobs/<jobId>/. The current codebase does not implement automatic job cleanup.',
   'If one or more workers fail or time out after other slices succeed, the app can finalize a failed_partial BioBib using the completed sections rather than losing all work.',
 ];
 
@@ -92,7 +92,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Why is the pipeline split into so many slices?',
-    a: 'Large faculty CVs can produce very large bibliography and presentation outputs. Smaller bounded workers reduce model truncation, fit Vercel function limits, and allow the app to keep useful completed sections if one worker fails.',
+    a: 'Large faculty CVs can produce very large bibliography and presentation outputs. Smaller bounded workers reduce model truncation, fit serverless function limits, and allow the app to keep useful completed sections if one worker fails.',
   },
   {
     q: 'What happens if a worker fails?',
@@ -118,13 +118,13 @@ export default function AboutPage() {
         <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
           The BioBib Formatter converts a faculty CV in Word format into a draft UCSD Academic
           Biography and Bibliography document. The current codebase uses an asynchronous,
-          Blob-backed, 20-worker AI pipeline so large CVs can complete within Vercel serverless
+          storage-backed, 20-worker AI pipeline so large CVs can complete within serverless
           limits and still produce a usable document if isolated sections need manual correction.
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
           <Chip label=".docx input only" size="small" />
           <Chip label="20 extraction slices" size="small" color="primary" />
-          <Chip label="Vercel Blob job state" size="small" />
+          <Chip label="Storage-backed job state" size="small" />
           <Chip label="DOCX output" size="small" color="success" />
         </Box>
       </Box>
