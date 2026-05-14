@@ -77,7 +77,7 @@ function employmentTable(entries: EmploymentEntry[]): Table {
 
   const dataRows = entries.map(e => new TableRow({
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${e.from} – ${e.to}`, size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: formatPeriod(e.from, e.to), size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.institution, size: 18 })] })], width: { size: 35, type: WidthType.PERCENTAGE } }),
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.location, size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.rank, size: 18 })] })], width: { size: 25, type: WidthType.PERCENTAGE } }),
@@ -93,22 +93,24 @@ function employmentTable(entries: EmploymentEntry[]): Table {
 function educationTable(entries: EducationEntry[]): Table {
   const headerRow = new TableRow({
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'School', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 30, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'School', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 28, type: WidthType.PERCENTAGE } }),
       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Dates', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 15, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Location', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Major', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Degree', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 15, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Location', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 18, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Major', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 17, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Degree', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 10, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: 'Date Received', bold: true, size: 18 })] })], shading: { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY }, width: { size: 12, type: WidthType.PERCENTAGE } }),
     ],
     tableHeader: true,
   });
 
   const dataRows = entries.map(e => new TableRow({
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.school, size: 18 })] })], width: { size: 30, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${e.datesFrom} – ${e.datesTo}`, size: 18 })] })], width: { size: 15, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.location, size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.major, size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: `${e.degree} (${e.dateReceived})`, size: 18 })] })], width: { size: 15, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.school, size: 18 })] })], width: { size: 28, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: formatPeriod(e.datesFrom, e.datesTo), size: 18 })] })], width: { size: 15, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.location, size: 18 })] })], width: { size: 18, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.major, size: 18 })] })], width: { size: 17, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cleanDegree(e.degree, e.dateReceived), size: 18 })] })], width: { size: 10, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.dateReceived, size: 18 })] })], width: { size: 12, type: WidthType.PERCENTAGE } }),
     ],
   }));
 
@@ -116,6 +118,31 @@ function educationTable(entries: EducationEntry[]): Table {
     rows: [headerRow, ...dataRows],
     width: { size: 100, type: WidthType.PERCENTAGE },
   });
+}
+
+function formatPeriod(from?: string, to?: string): string {
+  const cleanFrom = cleanDatePart(from);
+  const cleanTo = cleanDatePart(to);
+  if (cleanFrom && cleanTo) return `${cleanFrom} – ${cleanTo}`;
+  return cleanFrom || cleanTo || '';
+}
+
+function cleanDatePart(value?: string): string {
+  return (value ?? '')
+    .trim()
+    .replace(/^[-–—]\s*/, '')
+    .replace(/\s*[-–—]$/, '');
+}
+
+function cleanDegree(degree: string, dateReceived: string): string {
+  if (!dateReceived) return degree;
+  return degree
+    .replace(new RegExp(`\\s*\\(${escapeRegex(dateReceived)}\\)\\s*$`), '')
+    .trim();
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function tableCell(text: string, options?: { bold?: boolean; shaded?: boolean; width?: number }): TableCell {
@@ -178,7 +205,23 @@ function listOrNone(items: string[], noneText = 'None.'): Paragraph[] {
 }
 
 function serviceList(items: { description: string; dates: string }[]): Paragraph[] {
-  return stringList(items.map(s => `${s.description}${s.dates ? ` (${s.dates})` : ''}`));
+  return stringList(items.map(s => {
+    const dates = cleanWrappedDate(s.dates);
+    return `${s.description}${dates ? ` (${dates})` : ''}`;
+  }));
+}
+
+function cleanWrappedDate(value: string): string {
+  return value.trim().replace(/^\((.*)\)$/, '$1').trim();
+}
+
+function stripSourceNumber(value: string): string {
+  return value.trim().replace(/^\d+\s*[.)]\s*/, '');
+}
+
+function shouldRenderPresentation(value: string): boolean {
+  const lower = value.toLowerCase();
+  return !lower.includes('(poster)') && !lower.includes('poster presentation') && !lower.includes('contributed talk');
 }
 
 function grantTable(grants: GrantEntry[]): Table {
@@ -227,6 +270,14 @@ function subSection(heading: string, items: string[], noneText = 'None.'): Parag
   ];
 }
 
+function presentationSubSection(heading: string, items: string[], noneText = 'None.'): Paragraph[] {
+  const cleaned = items.map(stripSourceNumber).filter(shouldRenderPresentation);
+  return [
+    heading3(heading),
+    ...listOrNone(cleaned, noneText),
+  ];
+}
+
 function publicationSubSection(heading: string, entries: PublicationEntry[]): Paragraph[] {
   return [
     heading3(heading),
@@ -238,10 +289,12 @@ function additionalProductsSection(
   additionalProducts: PublicationEntry[],
   theses: PublicationEntry[],
   patents: PublicationEntry[],
+  facultyName: string,
 ): Paragraph[] {
+  const ownTheses = filterOwnTheses(theses, facultyName);
   const children = [
     heading3('IV. Additional Products of Major Research'),
-    ...publicationSubSection('a. Theses', theses),
+    ...publicationSubSection('a. Theses', ownTheses),
     ...publicationSubSection('b. Patent / Patent License', patents),
   ];
 
@@ -255,12 +308,21 @@ function additionalProductsSection(
   return children;
 }
 
+function filterOwnTheses(theses: PublicationEntry[], facultyName: string): PublicationEntry[] {
+  const lastName = facultyName.split(',')[0]?.trim().toLowerCase();
+  if (!lastName) return theses;
+  return theses.filter(t => {
+    const citationStart = t.citation.slice(0, 120).toLowerCase();
+    return citationStart.includes(lastName);
+  });
+}
+
 function workInProgressSection(entries: PublicationEntry[]): Paragraph[] {
   return [
     heading2('WORK IN PROGRESS'),
     ...(entries.length > 0
       ? publicationList(entries)
-      : [manualPlaceholder('Include only work-in-progress material being submitted for review, if applicable.')]),
+      : [body('None submitted with file.')]),
   ];
 }
 
@@ -270,7 +332,7 @@ export async function generateBioBibDocx(result: ConversionResult): Promise<Buff
   // ── Document title block ───────────────────────────────────────────────────
   const titleBlock = [
     new Paragraph({
-      children: [new TextRun({ text: 'UCSD ACADEMIC BIOGRAPHY / BIBLIOGRAPHY FORM', bold: true, size: 28, color: UCSD_BLUE })],
+      children: [new TextRun({ text: 'UCSD ACADEMIC BIOGRAPHY/BIBLIOGRAPHY FORM', bold: true, size: 28, color: UCSD_BLUE })],
       alignment: AlignmentType.CENTER,
       spacing: { after: 120 },
     }),
@@ -351,8 +413,8 @@ export async function generateBioBibDocx(result: ConversionResult): Promise<Buff
     ]),
     ...subSection('Consulting', sections.consulting),
     ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities),
-    ...subSection('Presentations at National and International Meetings', sections.presentations),
-    ...subSection('Other Invited Presentations', sections.invitedPresentations),
+    ...presentationSubSection('Presentations at National and International Meetings', sections.presentations),
+    ...presentationSubSection('Other Invited Presentations', sections.invitedPresentations),
 
     dividerLine(),
     heading2('(f) Most Significant Contributions to Promoting Diversity'),
@@ -398,7 +460,7 @@ export async function generateBioBibDocx(result: ConversionResult): Promise<Buff
     ...publicationSubSection('I. Other Conference Proceedings', sections.otherProceedings),
     ...publicationSubSection('II. Abstracts of Non-Refereed Conference Proceedings', sections.abstracts),
     ...publicationSubSection('III. Popular Works', sections.popularWorks),
-    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents),
+    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name),
     ...workInProgressSection(sections.workInProgress),
   ];
 

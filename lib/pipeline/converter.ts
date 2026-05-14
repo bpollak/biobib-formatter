@@ -134,10 +134,26 @@ export interface PartialResult {
   metadata?: ConversionResult['metadata'];
 }
 
-const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
+const PRESENTATION_RULES = `
+- Extract invited/keynote/plenary seminars, invited departmental seminars, named lectures, and selected national/international meeting presentations.
+- Prefer presentations explicitly marked new or dated 7/2018-present when the CV indicates a review-period subset.
+- Exclude posters, contributed talks, conference abstracts, co-author abstracts, and numbered abstract lists; those belong in Section III abstracts, not Section II.
+- Exclude grant review panels, editorial boards, conference organization, and professional committee service; those belong in externalProfessionalActivities or reviewerActivities.
+- Return concise presentation strings without leading source numbering such as "1." or "23.".
+`.trim();
+
+const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: string }> = {
   meta_and_I: {
     fields:
       'metadata (name in Last, First Middle format when inferable, department, title), Section I (employment, education, specialization)',
+    rules: `
+- Employment: use only true employment, academic appointments, and research/teaching assistantships from the CV's employment/appointments history.
+- Include Teaching Assistant and Research Assistant roles when listed in the CV, with their exact intermittent/month-level dates.
+- Preserve separate UCSD professor rank/step periods instead of collapsing them into one long Professor row.
+- Exclude honors/fellowships/scholar designations, sabbaticals, visiting lecture/fellow titles, committee/service roles, Academic Senate offices, grant roles, and future chair designations unless the CV explicitly lists them in employment history.
+- Do not put Professore Visitatore, Wilsmore Fellow, Aarhus University Faculty Fellow, Kurt Shuler Scholar, Academic Senate Chair, Department Chair, Senior Associate Vice Chancellor, or Distinguished Chair in employment unless the CV's employment section says they are employment appointments.
+- Education: preserve exact attendance ranges, locations, major fields, degree names, and date received exactly as shown; do not reduce "9/79 - 5/83" to just "1983".
+`.trim(),
     schema: `{
   "metadata": { "name": "", "department": "", "title": "" },
   "sections": {
@@ -151,6 +167,14 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_service: {
     fields:
       'Section II subset: universityService, publicService, memberships, awards',
+    rules: `
+- Memberships must include scholarly societies, professional boards, civic/professional organizations, elected fellow memberships, and honor societies when listed.
+- Do not omit general society memberships such as AGU, RSC, AAAS, APS, ACS, or Phi Beta Kappa when present.
+- Honors and awards should include fellowships, awards, named honors, and elected fellow distinctions with dates.
+- It is acceptable for an elected fellow distinction to appear both as a membership and as an honor/award when the CV supports both uses.
+- Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
+- Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
+`.trim(),
     schema: `{
   "sections": {
     "universityService": [{"description": "", "dates": "", "category": "departmental|college|campus|university|senate|systemwide|other"}],
@@ -164,6 +188,11 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_teaching: {
     fields:
       'Section II subset: teaching and studentInstructionalActivities only. Include courses, doctoral students, masters students, postdocs, undergraduates, visitors, staff scientists, and mentoring entries. Do not extract grants.',
+    rules: `
+- StudentInstructionalActivities should be grouped with category labels when possible: "Current Doctoral Research Students:", "Current Postdoctoral Associates:", "Former Ph.D. Students:", "Former Masters Students:", "Former Postdoctoral Associates:", "Current Staff Scientists:", "Visiting Faculty/Students:", and "Undergraduate Research Students:".
+- Include advisee theses and dissertation supervision here, not in Section III theses.
+- Do not extract contracts, grants, publications, abstracts, or presentation lists into teaching/studentInstructionalActivities.
+`.trim(),
     schema: `{
   "sections": {
     "teaching": [""],
@@ -175,6 +204,11 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_grants: {
     fields:
       'Section II subset: contracts/grants only. Extract current and past support with title, funder/agency, amount or totalAward including indirect costs when available, period, role, and co-PI/corresponding share when available.',
+    rules: `
+- Current grants are active or future-ending awards; past grants are completed awards.
+- Preserve the CV's title, agency, total-cost wording, dates, PI/co-PI role, and co-PI share when available.
+- Do not include fellowships or awards unless they are explicitly listed as research support/contracts/grants.
+`.trim(),
     schema: `{
   "sections": {
     "grants": [{"title": "", "funder": "", "amount": "", "totalAward": "", "period": "", "status": "current|past", "role": "", "coPIsShare": ""}]
@@ -185,6 +219,12 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_external: {
     fields:
       'Section II subset: professionalActivities, externalProfessionalActivities, consulting, reviewerActivities, and externalReviews only. Do not extract presentations or teaching.',
+    rules: `
+- professionalActivities/externalProfessionalActivities: committee service, conference organization, advisory boards, editorial roles, review panels, external program reviews, and society service.
+- reviewerActivities: journal/editorial reviewing, funding-agency panels, manuscript/proposal reviewing, and external academic file reviews.
+- externalReviews: significant independent reviews of the faculty member's own work only; do not include reviews performed by the faculty member.
+- Do not extract presentation lists, posters, abstracts, teaching, mentoring, or grants in this slice.
+`.trim(),
     schema: `{
   "sections": {
     "professionalActivities": [""],
@@ -199,6 +239,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_presentations_pre_2000: {
     fields:
       `Section II subset: presentations and invitedPresentations ONLY for items dated ${PRESENTATION_PRE_2000_END} or earlier. Skip presentations dated ${PRESENTATION_MID_START} or later. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    rules: PRESENTATION_RULES,
     schema: `{
   "sections": {
     "presentations": [""],
@@ -210,6 +251,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_presentations_2000_2010: {
     fields:
       `Section II subset: presentations and invitedPresentations ONLY for items dated from ${PRESENTATION_MID_START} through ${PRESENTATION_MID_END}, inclusive. Skip presentations outside that date range. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    rules: PRESENTATION_RULES,
     schema: `{
   "sections": {
     "presentations": [""],
@@ -221,6 +263,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_presentations_2011_2020: {
     fields:
       `Section II subset: presentations and invitedPresentations ONLY for items dated from ${PRESENTATION_LATE_START} through ${PRESENTATION_LATE_END}, inclusive. Skip presentations outside that date range. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    rules: PRESENTATION_RULES,
     schema: `{
   "sections": {
     "presentations": [""],
@@ -232,6 +275,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_presentations_post_2020: {
     fields:
       `Section II subset: presentations and invitedPresentations ONLY for items dated ${PRESENTATION_POST_2020_START} or later. Skip presentations dated before ${PRESENTATION_POST_2020_START}. Do not extract diversity, outreach, professional committee service, reviewing, teaching, or grants.`,
+    rules: PRESENTATION_RULES,
     schema: `{
   "sections": {
     "presentations": [""],
@@ -243,6 +287,11 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   II_diversity_other: {
     fields:
       'Section II subset: diversityContributions, outreach, clinicalActivities, and otherActivities only. Do not extract presentations, professional committee service, reviewing, teaching, or grants.',
+    rules: `
+- diversityContributions should contain substantive diversity-related leadership, programs, service, training grants, mentoring, and access/equity work.
+- otherActivities should contain sabbaticals, outreach, public engagement, and activities that do not fit Section II categories a-f.
+- Do not extract presentations, publications, grants, or professional committee service in this slice.
+`.trim(),
     schema: `{
   "sections": {
     "diversityContributions": [""],
@@ -342,6 +391,12 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
   III_popular_products: {
     fields:
       'Section III subset miscellaneous: popularWorks, additionalProducts, theses, patents, and workInProgress only. Number sequentially within each subsection starting at 1. Put dissertations/theses in theses and patent or patent-license material in patents.',
+    rules: `
+- "theses" means the faculty member's own thesis or dissertation only. Do not list advisee/student theses here; those belong in Section II Student Instructional Activities.
+- "patents" should include patents and patent licenses.
+- "additionalProducts" should include software, datasets, instruments, formal products, or other major research products, not ordinary publications already captured elsewhere.
+- workInProgress should be empty unless the CV explicitly lists work in progress material for review.
+`.trim(),
     schema: `{
   "sections": {
     "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
@@ -356,13 +411,16 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string }> = {
 };
 
 const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey): string => {
-  const { fields, schema } = SLICE_PROMPTS[slice];
+  const { fields, schema, rules } = SLICE_PROMPTS[slice];
   return `Extract from this faculty CV the following BioBib fields ONLY: ${fields}.
 
 CV TEXT:
 ${cv.rawText}
 
-Return ONE raw JSON object with this schema. Include every key shown; use empty arrays/strings for items you do not extract. You may add optional publication fields (articleKind, isNewSinceLastReview, previouslyListedAs, contributionNote, reviewMaterialUrl, bioBibSection, originalNumber) only when the CV explicitly provides that information:
+${rules ? `Slice-specific rules:
+${rules}
+
+` : ''}Return ONE raw JSON object with this schema. Include every key shown; use empty arrays/strings for items you do not extract. You may add optional publication fields (articleKind, isNewSinceLastReview, previouslyListedAs, contributionNote, reviewMaterialUrl, bioBibSection, originalNumber) only when the CV explicitly provides that information:
 ${schema}
 
 Output rules — IMPORTANT:
@@ -562,12 +620,56 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.theses = renumberPublications(sections.theses);
   sections.patents = renumberPublications(sections.patents);
   sections.workInProgress = renumberPublications(sections.workInProgress);
+  sections.universityService = dedupeBy(
+    sections.universityService,
+    s => `${s.category}|${normalizeForDedupe(s.description)}|${normalizeForDedupe(s.dates)}`,
+  );
+  sections.grants = dedupeBy(
+    sections.grants,
+    g => `${normalizeForDedupe(g.title)}|${normalizeForDedupe(g.funder)}|${normalizeForDedupe(g.period)}`,
+  );
+  sections.publicService = dedupeStrings(sections.publicService);
+  sections.professionalActivities = dedupeStrings(sections.professionalActivities);
+  sections.memberships = dedupeStrings(sections.memberships);
+  sections.awards = dedupeStrings(sections.awards);
+  sections.teaching = dedupeStrings(sections.teaching);
+  sections.studentInstructionalActivities = dedupeStrings(sections.studentInstructionalActivities);
+  sections.externalProfessionalActivities = dedupeStrings(sections.externalProfessionalActivities);
+  sections.consulting = dedupeStrings(sections.consulting);
+  sections.reviewerActivities = dedupeStrings(sections.reviewerActivities);
+  sections.presentations = dedupeStrings(sections.presentations);
+  sections.invitedPresentations = dedupeStrings(sections.invitedPresentations);
+  sections.diversityContributions = dedupeStrings(sections.diversityContributions);
+  sections.outreach = dedupeStrings(sections.outreach);
+  sections.clinicalActivities = dedupeStrings(sections.clinicalActivities);
+  sections.otherActivities = dedupeStrings(sections.otherActivities);
+  sections.externalReviews = dedupeStrings(sections.externalReviews);
 
   return { sections, gaps, metadata };
 }
 
 function renumberPublications<T extends { number: number }>(items: T[]): T[] {
   return items.map((c, i) => ({ ...c, number: i + 1 }));
+}
+
+function dedupeStrings(items: string[]): string[] {
+  return dedupeBy(items, normalizeForDedupe);
+}
+
+function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function normalizeForDedupe(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 // The orchestration (Promise.all over slices + merge) now lives in the
