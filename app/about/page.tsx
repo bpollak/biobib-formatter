@@ -11,245 +11,210 @@ import AccordionDetails from '@mui/material/AccordionDetails';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ArticleIcon from '@mui/icons-material/Article';
 
-const BIOBIB_SECTIONS = [
+const PIPELINE_STEPS = [
   {
-    label: 'Section I — Employment History and Education',
-    color: 'primary' as const,
-    rules: [
-      'List all employment chronologically from your first academic (or otherwise relevant) position to the present.',
-      'Include all University of California employment, even if listed elsewhere.',
-      'Account for all time periods, including part-time appointments and gaps in employment.',
-      'Education: list each institution, dates of attendance, location, major field, degree or certificate, and date received.',
-      'Indicate areas of sub-specialization, board certification, and any special licenses or permits.',
+    title: '1. Upload and parse',
+    body: 'The browser uploads a .docx CV directly to Vercel Blob, then POSTs the Blob URL to /api/upload. The server validates the file, reads it through the authenticated Blob SDK, parses the Word document into text, writes cv.txt and manifest.json under jobs/<jobId>/, deletes the original uploaded source blob, and returns HTTP 202 with a jobId.',
+  },
+  {
+    title: '2. Parallel AI extraction',
+    body: 'The upload route dispatches 20 independent slice workers. Each worker reads the same parsed CV text and asks LiteLLM for only one bounded BioBib subset, returning strict JSON. This keeps large CVs inside Vercel function limits and avoids one giant model response.',
+  },
+  {
+    title: '3. Blob-backed job state',
+    body: 'Each slice writes either slice-<key>.json or slice-<key>.error under the job prefix. The status route derives progress from those append-only artifacts instead of mutating a central record.',
+  },
+  {
+    title: '4. Finalize and generate DOCX',
+    body: 'When all slices are terminal, /api/finalize acquires a Blob-backed lock, merges successful slices, deduplicates common repeated arrays, filters known nonemployment appointment artifacts, renumbers publication categories, writes result.json and biobib.docx, then records complete, failed_partial, or failed status.',
+  },
+  {
+    title: '5. Poll and download',
+    body: 'The client polls /api/status/<jobId> every few seconds. When the job completes, /api/download/<jobId> streams the generated BioBib .docx back from Vercel Blob.',
+  },
+];
+
+const SLICE_GROUPS = [
+  {
+    label: 'Section I',
+    items: [
+      'meta_and_I: name, department, title, employment, education, specialization',
     ],
   },
   {
-    label: 'Section II — Professional Data',
-    color: 'secondary' as const,
-    rules: [
-      'All nine categories must be addressed. If a category does not apply, write "None" or "Not applicable."',
-      'List all activities with dates. Maintain chronological order.',
-      'If maintaining ongoing cumulative lists, insert a horizontal line to indicate what is new since your last review.',
-    ],
-    subcategories: [
-      { name: '1. University Service', detail: 'Include departmental, college, Academic Senate, campus-wide, and UC systemwide service.' },
-      { name: '2. Public Service', detail: 'Non-university service related to your academic role.' },
-      { name: '3. Professional Activities', detail: 'Society memberships, editorial board roles, conference organizing, peer review service.' },
-      { name: '4. Awards and Honors', detail: 'List all awards with dates received.' },
-      { name: '5. Teaching', detail: 'Courses taught, graduate students supervised (name, degree, graduation year), postdoctoral researchers mentored.' },
-      { name: '6. Research Support', detail: 'Current and past grants: title, funder, total amount, period, and your role (PI, co-PI, etc.).' },
-      { name: '7. Outreach / Public Engagement', detail: 'Media appearances, public lectures, K-12 programs, community engagement.' },
-      { name: '8. Clinical Activities', detail: 'If applicable to your appointment.' },
-      { name: '9. Other Activities', detail: 'Anything not covered above that is relevant to your academic work.' },
+    label: 'Section II',
+    items: [
+      'II_service: university service, public service, memberships, awards',
+      'II_teaching: teaching and student instructional activities',
+      'II_grants: current and past contracts/grants',
+      'II_external: professional activities, consulting, reviewer activity, external reviews',
+      'II_presentations_pre_2000 / 2000_2010 / 2011_2020 / post_2020: date-bounded invited presentations',
+      'II_diversity_other: diversity contributions, outreach, clinical activities, other activities',
     ],
   },
   {
-    label: 'Section III — Bibliography',
-    color: 'success' as const,
-    rules: [
-      'All citations must be numbered and listed in chronological order.',
-      'Use a citation format appropriate for your discipline and acceptable to your division or school.',
-      'Insert a horizontal line within each subsection to separate new material from previously credited material.',
-      'Mark citations with an asterisk (*) if the published work will be submitted with the review file.',
-      'Do not include items that have been submitted but not yet accepted for publication.',
-    ],
-    subcategories: [
-      {
-        name: 'A. Primary Published or Creative Work',
-        detail: 'Original peer-reviewed work in the open literature, or documented creative endeavors (performances, artistic works). May include items "in press" or formally "accepted" — indicate this clearly in the citation.',
-        children: [
-          'I-a. Refereed Journal Articles — Do not include conference abstracts here.',
-          'I-b. Review and Invited Articles',
-          'I-c. Books — List books and book chapters as separate subcategories. Do not include encyclopedia entries here.',
-          'I-d. Book Chapters',
-          'I-e. Refereed Conference Proceedings — Include acceptance rate if available.',
-        ],
-      },
-      {
-        name: 'B. Other Work',
-        detail: 'Published or creative works that demonstrate scholarly activity but are not primary peer-reviewed work. Materials need not be submitted with the file.',
-        children: [
-          'Other Conference Proceedings — Papers from conferences with program committee review.',
-          'Abstracts — Published in conference abstract books.',
-          'Popular Works — Op-eds, book reviews, encyclopedia entries, magazine articles.',
-          'Additional Products — Patents, software, databases, websites, hardware, research leading to policy or legislation.',
-        ],
-      },
-      {
-        name: 'C. Work in Progress',
-        detail: 'Optional. Include only items for which actual material will be submitted with the review file (e.g., draft chapters, documentation of progress on a major work). Primarily for assistant professor appraisals; discouraged for other actions.',
-        children: [],
-      },
+    label: 'Section III',
+    items: [
+      'III_journals_pre_2000 / 2000_2010 / late: date-bounded peer-reviewed journal articles',
+      'III_other_a: review/invited articles, books, book chapters',
+      'III_other_proc: refereed and other conference proceedings',
+      'III_abstracts_pre_2000 / 2000_2010 / 2011_2020 / post_2020: date-bounded abstracts',
+      'III_popular_products: popular works, additional products, the faculty member\'s own thesis, patents, work in progress',
     ],
   },
+];
+
+const OUTPUT_RULES = [
+  'Preserves citation text from the CV instead of reformatting citations.',
+  'Splits large journal, abstract, and presentation lists by year range to reduce model truncation.',
+  'Keeps optional publication metadata sparse unless the CV explicitly provides it.',
+  'Deduplicates merged Section II arrays and grants after all slices finish.',
+  'Filters obvious nonemployment appointment artifacts from Section I employment, such as fellowships, visiting titles, senate offices, and committee/chair service roles.',
+  'Renders a UCSD BioBib-style Word document with Section I tables, Section II subsection headings, contracts/grants tables, Section III bibliography subsections, theses, patents, and work-in-progress handling.',
+  'Produces a gap list for fields the workers identify as missing or needing confirmation.',
+];
+
+const CURRENT_LIMITATIONS = [
+  'The system can only extract facts present in the uploaded CV text. It does not reliably reconstruct missing month-level dates, professor step history, or legacy BioBib-only entries when those details are absent from the CV.',
+  'The generated BioBib is a draft. Faculty or department staff should review classifications, dates, new-since-last-review markers, and any gap warnings before submission.',
+  'The source upload blob is deleted after parsing, but job artifacts needed for polling and download are written to Vercel Blob under jobs/<jobId>/. The current codebase does not implement automatic job cleanup.',
+  'If one or more workers fail or time out after other slices succeed, the app can finalize a failed_partial BioBib using the completed sections rather than losing all work.',
 ];
 
 const FAQ_ITEMS = [
   {
     q: 'What file formats are accepted?',
-    a: 'Only .docx files (Microsoft Word). Your CV must be in Word format for the conversion to work correctly.',
+    a: 'Only .docx files are accepted. The parser reads the Word document and converts it to plain text before any AI extraction runs.',
   },
   {
-    q: 'Will this change my CV?',
-    a: 'No. Your original CV is not modified. The tool reads your CV and generates a new BioBib document. Your CV file is processed in memory and discarded immediately — nothing is stored.',
+    q: 'How many AI workers run?',
+    a: 'The current pipeline runs 20 slice workers. They cover Section I, six Section II extraction groups, and thirteen Section III bibliography/product groups.',
   },
   {
-    q: 'What gets filled in automatically?',
-    a: 'Employment history, education, awards, grants, university service, professional activities, and publications are all extracted and mapped automatically. The tool classifies publications into the correct BioBib subsections (peer-reviewed journals, books, proceedings, etc.) and preserves your citation format exactly.',
+    q: 'Why is the pipeline split into so many slices?',
+    a: 'Large faculty CVs can produce very large bibliography and presentation outputs. Smaller bounded workers reduce model truncation, fit Vercel function limits, and allow the app to keep useful completed sections if one worker fails.',
   },
   {
-    q: 'What will I still need to fill in manually?',
-    a: 'The gap report at the end of each conversion tells you exactly what is missing and what to add. Common gaps include: graduate students supervised (name, degree, year), outreach activities not mentioned in the CV, and Work in Progress (Section III-C), which is always manual.',
+    q: 'What happens if a worker fails?',
+    a: 'The failed worker writes a slice error. If at least one slice completed, finalize can still produce a partial BioBib and mark the job failed_partial. If all slices fail or finalize fails, the job is marked failed.',
   },
   {
-    q: 'Does it handle the "new since last review" horizontal line?',
-    a: 'Not automatically — you will need to add the horizontal dividing line in your Word document to separate new material from previously credited work. The gap report will remind you of this requirement.',
+    q: 'Does the app preserve the uploaded CV?',
+    a: 'The uploaded source blob is deleted after the server parses it into text. The parsed text, slice JSON, final result JSON, status JSON, and generated BioBib are stored under the job prefix so polling and download can work.',
   },
   {
-    q: 'Can this replace the Academic Personnel review?',
-    a: 'No. This tool generates a draft BioBib to save you time. Final review and submission follow your department\'s and division\'s normal academic review process.',
-  },
-  {
-    q: 'Is my document stored?',
-    a: 'No. Your CV is processed entirely in memory and discarded immediately after conversion. The generated BioBib is held temporarily in your browser session for download and is not stored on any server.',
-  },
-  {
-    q: 'What BioBib instructions does this follow?',
-    a: 'This tool follows the official UCSD Instructions for Completing the Academic Biography and Bibliography Form (April 2015), available from Academic Personnel Services.',
+    q: 'Does this replace academic personnel review?',
+    a: 'No. It generates a draft BioBib and gap list. Final review, correction, and submission still follow normal department, division, and Academic Personnel processes.',
   },
 ];
 
 export default function AboutPage() {
   return (
     <Container maxWidth="md" sx={{ py: 6 }}>
-      {/* Header */}
       <Box sx={{ mb: 5 }}>
         <Typography variant="h4" fontWeight={700} sx={{ color: '#182B49' }} gutterBottom>
           About the BioBib Formatter
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 700 }}>
-          The BioBib Formatter is a UCSD tool that reads your faculty CV (.docx) and converts it
-          to the UCSD Academic Biography and Bibliography (BioBib) format required for academic
-          review files. It maps your CV content to each BioBib section automatically and generates
-          a gap report for anything that requires manual completion.
+        <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 760 }}>
+          The BioBib Formatter converts a faculty CV in Word format into a draft UCSD Academic
+          Biography and Bibliography document. The current codebase uses an asynchronous,
+          Blob-backed, 20-worker AI pipeline so large CVs can complete within Vercel serverless
+          limits and still produce a usable document if isolated sections need manual correction.
         </Typography>
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
+          <Chip label=".docx input only" size="small" />
+          <Chip label="20 extraction slices" size="small" color="primary" />
+          <Chip label="Vercel Blob job state" size="small" />
+          <Chip label="DOCX output" size="small" color="success" />
+        </Box>
       </Box>
 
       <Divider sx={{ mb: 5 }} />
 
-      {/* BioBib Structure */}
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
-          BioBib Form Structure &amp; Rules
+          What Happens During Conversion
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          The UCSD Academic Biography and Bibliography form has three sections. Every academic
-          review file requires a current, complete BioBib. The rules below reflect the official
-          April 2015 instructions from Academic Personnel Services.
-        </Typography>
-
-        {BIOBIB_SECTIONS.map((section, si) => (
-          <Box key={si} sx={{ mb: 4 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-              <ArticleIcon sx={{ color: '#00629B' }} />
-              <Typography variant="h6" fontWeight={600} sx={{ color: '#182B49' }}>
-                {section.label}
-              </Typography>
-            </Box>
-
-            {/* Top-level rules */}
-            <Box component="ul" sx={{ pl: 3, mb: 2, mt: 0 }}>
-              {section.rules.map((rule, ri) => (
-                <Box component="li" key={ri} sx={{ mb: 0.75 }}>
-                  <Typography variant="body2">{rule}</Typography>
-                </Box>
-              ))}
-            </Box>
-
-            {/* Subcategories */}
-            {'subcategories' in section && section.subcategories && (
-              <Box sx={{ pl: 2 }}>
-                {(section.subcategories as Array<{ name: string; detail: string; children?: string[] }>).map((sub, subI) => (
-                  <Box key={subI} sx={{ mb: 2, pl: 2, borderLeft: '3px solid #C69214' }}>
-                    <Typography variant="body2" fontWeight={600} sx={{ mb: 0.5 }}>
-                      {sub.name}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: sub.children && sub.children.length > 0 ? 1 : 0 }}>
-                      {sub.detail}
-                    </Typography>
-                    {sub.children && sub.children.length > 0 && (
-                      <Box component="ul" sx={{ pl: 2.5, mt: 0.5, mb: 0 }}>
-                        {sub.children.map((child, ci) => (
-                          <Box component="li" key={ci} sx={{ mb: 0.5 }}>
-                            <Typography variant="body2" color="text.secondary">{child}</Typography>
-                          </Box>
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-                ))}
-              </Box>
-            )}
-
-            {si < BIOBIB_SECTIONS.length - 1 && <Divider sx={{ mt: 3 }} />}
+        {PIPELINE_STEPS.map((step) => (
+          <Box key={step.title} sx={{ mb: 2.5, pl: 2, borderLeft: '3px solid #00629B' }}>
+            <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5 }}>
+              {step.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {step.body}
+            </Typography>
           </Box>
         ))}
       </Box>
 
       <Divider sx={{ mb: 5 }} />
 
-      {/* What the tool does and doesn't do */}
+      <Box sx={{ mb: 5 }}>
+        <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
+          Extraction Slices
+        </Typography>
+        {SLICE_GROUPS.map((group) => (
+          <Box key={group.label} sx={{ mb: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }}>
+              <ArticleIcon sx={{ color: '#00629B' }} />
+              <Typography variant="h6" fontWeight={600} sx={{ color: '#182B49' }}>
+                {group.label}
+              </Typography>
+            </Box>
+            <Box component="ul" sx={{ pl: 3, mt: 0, mb: 0 }}>
+              {group.items.map((item) => (
+                <Box component="li" key={item} sx={{ mb: 0.75 }}>
+                  <Typography variant="body2">{item}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        ))}
+      </Box>
+
+      <Divider sx={{ mb: 5 }} />
+
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 2 }}>
-          What This Tool Does
+          Current Output Behavior
         </Typography>
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 3 }}>
-          <Box sx={{ flex: 1, p: 3, bgcolor: '#f0f7f0', borderRadius: 2, border: '1px solid #c8e6c9' }}>
-            <Typography variant="subtitle2" fontWeight={700} color="success.dark" gutterBottom>
-              ✓ Filled automatically
-            </Typography>
-            {[
-              'Section I — Employment history from CV Appointments',
-              'Section I — Education',
-              'Section II — University service entries',
-              'Section II — Awards and honors',
-              'Section II — Research grants (current + past)',
-              'Section II — Professional activities',
-              'Section III — All publication subsections (journals, books, proceedings, abstracts)',
-              'Publication classification by type',
-              'Citation text preserved exactly from your CV',
-            ].map((item, i) => (
-              <Typography key={i} variant="body2" sx={{ mb: 0.5 }}>• {item}</Typography>
-            ))}
-          </Box>
-          <Box sx={{ flex: 1, p: 3, bgcolor: '#fff8f0', borderRadius: 2, border: '1px solid #ffe0b2' }}>
-            <Typography variant="subtitle2" fontWeight={700} color="warning.dark" gutterBottom>
-              ⚠ May need manual completion
-            </Typography>
-            {[
-              'Graduate students supervised (name, degree, year)',
-              'Postdoctoral researchers mentored',
-              'Outreach / public engagement (often absent from CVs)',
-              'Clinical activities (if applicable)',
-              'Horizontal line separating new from prior work in bibliography',
-              'Work in Progress (Section III-C) — always manual',
-              'Personal Data section (submitted separately to hiring authority)',
-            ].map((item, i) => (
-              <Typography key={i} variant="body2" sx={{ mb: 0.5 }}>• {item}</Typography>
-            ))}
-          </Box>
+        <Box component="ul" sx={{ pl: 3, mt: 0 }}>
+          {OUTPUT_RULES.map((rule) => (
+            <Box component="li" key={rule} sx={{ mb: 0.75 }}>
+              <Typography variant="body2">{rule}</Typography>
+            </Box>
+          ))}
         </Box>
       </Box>
 
       <Divider sx={{ mb: 5 }} />
 
-      {/* FAQ */}
+      <Box sx={{ mb: 5 }}>
+        <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 2 }}>
+          Known Boundaries
+        </Typography>
+        <Box component="ul" sx={{ pl: 3, mt: 0 }}>
+          {CURRENT_LIMITATIONS.map((item) => (
+            <Box component="li" key={item} sx={{ mb: 0.75 }}>
+              <Typography variant="body2" color="text.secondary">{item}</Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      <Divider sx={{ mb: 5 }} />
+
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
           Frequently Asked Questions
         </Typography>
-        {FAQ_ITEMS.map((item, i) => (
-          <Accordion key={i} disableGutters elevation={0} sx={{ border: '1px solid #e0e0e0', mb: 1, '&:before': { display: 'none' } }}>
+        {FAQ_ITEMS.map((item) => (
+          <Accordion
+            key={item.q}
+            disableGutters
+            elevation={0}
+            sx={{ border: '1px solid #e0e0e0', mb: 1, '&:before': { display: 'none' } }}
+          >
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
               <Typography variant="body2" fontWeight={600}>{item.q}</Typography>
             </AccordionSummary>
@@ -262,7 +227,6 @@ export default function AboutPage() {
 
       <Divider sx={{ mb: 4 }} />
 
-      {/* Reference links */}
       <Box>
         <Typography variant="h6" fontWeight={600} sx={{ color: '#182B49', mb: 1.5 }}>
           Official References
@@ -276,10 +240,6 @@ export default function AboutPage() {
           <a href="https://aps.ucsd.edu/tools/forms.html#appointment-for" style={{ color: '#006A96' }}>
             Academic Personnel Services — Forms &amp; Templates
           </a>
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          Questions? Contact Academic Personnel Services at{' '}
-          <a href="mailto:aps@ucsd.edu" style={{ color: '#006A96' }}>aps@ucsd.edu</a>.
         </Typography>
       </Box>
     </Container>
