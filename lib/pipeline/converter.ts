@@ -620,6 +620,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.theses = renumberPublications(sections.theses);
   sections.patents = renumberPublications(sections.patents);
   sections.workInProgress = renumberPublications(sections.workInProgress);
+  sections.employment = filterLikelyApplicableEmployment(sections.employment);
   sections.universityService = dedupeBy(
     sections.universityService,
     s => `${s.category}|${normalizeForDedupe(s.description)}|${normalizeForDedupe(s.dates)}`,
@@ -670,6 +671,22 @@ function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
 
 function normalizeForDedupe(value: string): string {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function filterLikelyApplicableEmployment(
+  items: BioBibSections['employment'],
+): BioBibSections['employment'] {
+  const nonEmploymentRank =
+    /\b(visiting|visitatore|fellow|scholar|chair|vice chancellor|senate|council|committee)\b/i;
+  const academicRank =
+    /\b(assistant professor|associate professor|professor|postdoctoral|research assistant|chemist|lecturer|instructor|scientist)\b/i;
+
+  return items.filter(item => {
+    const rank = item.rank.trim();
+    if (!rank) return true;
+    if (nonEmploymentRank.test(rank)) return false;
+    return academicRank.test(rank) || !nonEmploymentRank.test(`${rank} ${item.institution}`);
+  });
 }
 
 // The orchestration (Promise.all over slices + merge) now lives in the
