@@ -332,7 +332,7 @@ export default function HomePage() {
               mb: 1.5,
             }}
           >
-            Turn a faculty CV into a BioBib draft.
+            Turn a faculty CV into a BioBib
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 720, mb: 2 }}>
             Upload a Word CV and receive a downloadable UCSD Academic Biography and
