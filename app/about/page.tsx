@@ -70,6 +70,29 @@ const SLICE_GROUPS = [
   },
 ];
 
+const RECENT_ENHANCEMENTS = [
+  {
+    title: 'More capable section review',
+    body: 'The conversion workflow now uses GPT 5.5 through UCSD TritonAI for the BioBib section review work, giving long CVs more room for structured extraction.',
+  },
+  {
+    title: 'Better handling for large CVs',
+    body: 'Long publication, abstract, and presentation lists are split across date ranges and processed as smaller saved tasks. The app can show progress by section and still return a partial draft if one part fails.',
+  },
+  {
+    title: 'Cleaner BioBib classification',
+    body: 'The merger now does more cleanup after the section tasks finish, including duplicate reduction, publication renumbering, and filtering many visiting titles, fellowships, senate offices, and service roles out of employment history.',
+  },
+  {
+    title: 'More accessible Word output',
+    body: 'Generated BioBib documents now include Word title and heading styles, document metadata, an English language setting, and repeatable table header rows so the draft is easier to navigate with Word and assistive technology.',
+  },
+  {
+    title: 'Production regression coverage',
+    body: 'The live workflow has been regression-tested with the Continetti CV on Vercel, including upload, section extraction, final status, download, DOCX validity, and the accessibility markers in the generated Word file.',
+  },
+];
+
 const OUTPUT_RULES = [
   'Keeps citation text as close as possible to the way it appears in the CV.',
   'Uses GPT 5.5 through UCSD TritonAI for the section review work.',
@@ -139,6 +162,24 @@ export default function AboutPage() {
           <Chip label="Progress tracking" size="small" />
           <Chip label="Word BioBib output" size="small" color="success" />
         </Box>
+      </Box>
+
+      <Divider sx={{ mb: 5 }} />
+
+      <Box sx={{ mb: 5 }}>
+        <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
+          Recent Enhancements
+        </Typography>
+        {RECENT_ENHANCEMENTS.map((item) => (
+          <Box key={item.title} sx={{ mb: 2.5, pl: 2, borderLeft: '3px solid #C69214' }}>
+            <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5 }}>
+              {item.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {item.body}
+            </Typography>
+          </Box>
+        ))}
       </Box>
 
       <Divider sx={{ mb: 5 }} />
