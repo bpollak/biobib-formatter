@@ -25,6 +25,7 @@ function heading1(text: string): Paragraph {
 function heading2(text: string): Paragraph {
   return new Paragraph({
     children: [new TextRun({ text, bold: true, size: 22 })],
+    heading: HeadingLevel.HEADING_2,
     spacing: { before: 200, after: 80 },
   });
 }
@@ -32,6 +33,7 @@ function heading2(text: string): Paragraph {
 function heading3(text: string): Paragraph {
   return new Paragraph({
     children: [new TextRun({ text, bold: true, italics: true, size: 20 })],
+    heading: HeadingLevel.HEADING_3,
     spacing: { before: 160, after: 60 },
   });
 }
@@ -333,6 +335,7 @@ export async function generateBioBibDocx(result: ConversionResult): Promise<Buff
   const titleBlock = [
     new Paragraph({
       children: [new TextRun({ text: 'UCSD ACADEMIC BIOGRAPHY/BIBLIOGRAPHY FORM', bold: true, size: 28, color: UCSD_BLUE })],
+      heading: HeadingLevel.TITLE,
       alignment: AlignmentType.CENTER,
       spacing: { after: 120 },
     }),
@@ -465,6 +468,22 @@ export async function generateBioBibDocx(result: ConversionResult): Promise<Buff
   ];
 
   const doc = new Document({
+    title: metadata.name
+      ? `UCSD Academic Biography/Bibliography Form - ${metadata.name}`
+      : 'UCSD Academic Biography/Bibliography Form',
+    subject: 'UC San Diego Academic Biography/Bibliography',
+    creator: 'BioBib Formatter',
+    description: 'Generated UCSD Academic Biography/Bibliography draft.',
+    keywords: 'UC San Diego, BioBib, academic biography, bibliography',
+    styles: {
+      default: {
+        document: {
+          run: {
+            language: { value: 'en-US' },
+          },
+        },
+      },
+    },
     sections: [{
       children: [
         ...titleBlock,
