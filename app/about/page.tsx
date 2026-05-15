@@ -70,26 +70,18 @@ const SLICE_GROUPS = [
   },
 ];
 
-const RECENT_ENHANCEMENTS = [
+const RELEASE_NOTES = [
   {
-    title: 'More capable section review',
-    body: 'The conversion workflow now uses GPT 5.5 through UCSD TritonAI for the BioBib section review work, giving long CVs more room for structured extraction.',
-  },
-  {
-    title: 'Better handling for large CVs',
-    body: 'Long publication, abstract, and presentation lists are split across date ranges and processed as smaller saved tasks. The app can show progress by section and still return a partial draft if one part fails.',
-  },
-  {
-    title: 'Cleaner BioBib classification',
-    body: 'The merger now does more cleanup after the section tasks finish, including duplicate reduction, publication renumbering, and filtering many visiting titles, fellowships, senate offices, and service roles out of employment history.',
-  },
-  {
-    title: 'More accessible Word output',
-    body: 'Generated BioBib documents now include Word title and heading styles, document metadata, an English language setting, and repeatable table header rows so the draft is easier to navigate with Word and assistive technology.',
-  },
-  {
-    title: 'Production regression coverage',
-    body: 'The live workflow has been regression-tested with the Continetti CV on Vercel, including upload, section extraction, final status, download, DOCX validity, and the accessibility markers in the generated Word file.',
+    releasedAt: 'May 15, 2026, 11:39 AM PDT',
+    title: 'Application Reliability and Accessible Output Update',
+    changes: [
+      'Moved BioBib section review to GPT 5.5 through UCSD TritonAI so long CVs have more room for structured extraction.',
+      'Improved large-CV handling by splitting long publication, abstract, and presentation lists into smaller saved tasks with visible section progress.',
+      'Added partial-result handling so completed sections can still be returned when an individual review task fails.',
+      'Expanded final merge cleanup for duplicate reduction, publication renumbering, and better separation of employment history from fellowships, visiting titles, senate offices, and service roles.',
+      'Enhanced generated Word documents with semantic title and heading styles, document metadata, an English language setting, and repeatable table header rows for better navigation and assistive technology support.',
+      'Validated the production workflow end to end, including upload, section extraction, final status, download, DOCX validity, and generated-document accessibility markers.',
+    ],
   },
 ];
 
@@ -168,16 +160,25 @@ export default function AboutPage() {
 
       <Box sx={{ mb: 5 }}>
         <Typography variant="h5" fontWeight={600} sx={{ color: '#182B49', mb: 3 }}>
-          Recent Enhancements
+          Release Notes
         </Typography>
-        {RECENT_ENHANCEMENTS.map((item) => (
-          <Box key={item.title} sx={{ mb: 2.5, pl: 2, borderLeft: '3px solid #C69214' }}>
+        {RELEASE_NOTES.map((release) => (
+          <Box key={release.releasedAt} sx={{ mb: 3, pl: 2, borderLeft: '3px solid #C69214' }}>
             <Typography variant="body1" fontWeight={700} sx={{ mb: 0.5 }}>
-              {item.title}
+              {release.title}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              {item.body}
+              Released {release.releasedAt}
             </Typography>
+            <Box component="ul" sx={{ pl: 3, mt: 1.25, mb: 0 }}>
+              {release.changes.map((change) => (
+                <Box component="li" key={change} sx={{ mb: 0.75 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {change}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
           </Box>
         ))}
       </Box>
