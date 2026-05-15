@@ -9,6 +9,7 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
+    "test:docx-quality": "tsx scripts/docx-quality-test.ts",
     "test:regression": "tsx scripts/regression-test.ts",
     "test:stress": "tsx scripts/stress-test.ts"
   },

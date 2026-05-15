@@ -136,6 +136,8 @@ export interface PartialResult {
 
 const PRESENTATION_RULES = `
 - Extract invited/keynote/plenary seminars, invited departmental seminars, named lectures, and selected national/international meeting presentations.
+- Put items under CV headings like "Invited Lectures at National and International Meetings", "National and International Meetings", conference presentations, symposium presentations, workshop presentations, and society meeting presentations in "presentations".
+- Put items under CV headings like "Invited Lectures at Institutions", "Invited Departmental Seminars", "Institutional Seminars", university seminars, departmental seminars, and named campus lectures in "invitedPresentations".
 - Prefer presentations explicitly marked new or dated 7/2018-present when the CV indicates a review-period subset.
 - Exclude posters, contributed talks, conference abstracts, co-author abstracts, and numbered abstract lists; those belong in Section III abstracts, not Section II.
 - Exclude grant review panels, editorial boards, conference organization, and professional committee service; those belong in externalProfessionalActivities or reviewerActivities.
@@ -645,11 +647,13 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.reviewerActivities = dedupeStrings(sections.reviewerActivities);
   sections.presentations = dedupeStrings(sections.presentations);
   sections.invitedPresentations = dedupeStrings(sections.invitedPresentations);
+  normalizePresentationBuckets(sections);
   sections.diversityContributions = dedupeStrings(sections.diversityContributions);
   sections.outreach = dedupeStrings(sections.outreach);
   sections.clinicalActivities = dedupeStrings(sections.clinicalActivities);
   sections.otherActivities = dedupeStrings(sections.otherActivities);
   sections.externalReviews = dedupeStrings(sections.externalReviews);
+  addStructuralReviewGaps(sections, gaps);
 
   return { sections, gaps, metadata };
 }
@@ -672,6 +676,75 @@ function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
     out.push(item);
   }
   return out;
+}
+
+function normalizePresentationBuckets(sections: BioBibSections): void {
+  const presentations = [...sections.presentations];
+  const invitedPresentations: string[] = [];
+
+  for (const item of sections.invitedPresentations) {
+    if (looksLikeNationalOrInternationalPresentation(item)) {
+      presentations.push(item);
+    } else {
+      invitedPresentations.push(item);
+    }
+  }
+
+  sections.presentations = dedupeStrings(presentations);
+  sections.invitedPresentations = dedupeStrings(invitedPresentations);
+}
+
+function looksLikeNationalOrInternationalPresentation(value: string): boolean {
+  return /\b(conference|congress|symposium|workshop|meeting|colloquium|gordon|faraday|acs|aps|aiche|international|national|world|society|division)\b/i
+    .test(value);
+}
+
+function addStructuralReviewGaps(sections: BioBibSections, gaps: BioBibGap[]): void {
+  if (sections.employment.some(e => !hasText(e.location))) {
+    addGapOnce(gaps, {
+      section: 'Section I: Employment History',
+      field: 'Employment location',
+      instruction: 'Review employment rows marked "Not listed" and add locations when available.',
+      severity: 'recommended',
+    });
+  }
+
+  if (sections.education.some(e => !hasText(e.datesFrom) && !hasText(e.datesTo))) {
+    addGapOnce(gaps, {
+      section: 'Section I: Education',
+      field: 'Attendance dates',
+      instruction: 'Review education rows marked "Not listed" and add attendance dates when available.',
+      severity: 'recommended',
+    });
+  }
+
+  if (sections.education.some(e => !hasText(e.location))) {
+    addGapOnce(gaps, {
+      section: 'Section I: Education',
+      field: 'School location',
+      instruction: 'Review education rows marked "Not listed" and add school locations when available.',
+      severity: 'recommended',
+    });
+  }
+
+  if (sections.grants.some(g => !hasText(g.role) || !hasText(g.coPIsShare))) {
+    addGapOnce(gaps, {
+      section: 'Section II: Contracts and Grants',
+      field: 'Role and co-PI/share',
+      instruction: 'Review grant rows marked "Not listed" and add role or co-PI/share details when available.',
+      severity: 'recommended',
+    });
+  }
+}
+
+function addGapOnce(gaps: BioBibGap[], gap: BioBibGap): void {
+  const key = `${gap.section}|${gap.field}|${gap.instruction}`.toLowerCase();
+  if (gaps.some(existing => `${existing.section}|${existing.field}|${existing.instruction}`.toLowerCase() === key)) return;
+  gaps.push(gap);
+}
+
+function hasText(value?: string): boolean {
+  return !!value?.trim();
 }
 
 function normalizeForDedupe(value: string): string {

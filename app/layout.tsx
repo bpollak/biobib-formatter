@@ -1,10 +1,9 @@
-import type { Metadata } from 'next';
 import ThemeRegistry from './ThemeRegistry';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import './globals.css';
 
-export const metadata: Metadata = {
+export const metadata = {
   title: 'BioBib Formatter — UC San Diego Academic Personnel',
   description: 'Convert your faculty CV to UCSD Academic Biography & Bibliography (BioBib) format automatically.',
 };

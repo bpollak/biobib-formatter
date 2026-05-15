@@ -66,6 +66,13 @@ function dividerLine(): Paragraph {
   });
 }
 
+const NOT_LISTED = 'Not listed';
+
+function displayCellValue(value?: string, fallback = NOT_LISTED): string {
+  const cleaned = (value ?? '').trim();
+  return cleaned || fallback;
+}
+
 function employmentTable(entries: EmploymentEntry[]): Table {
   const headerRow = new TableRow({
     children: [
@@ -79,10 +86,10 @@ function employmentTable(entries: EmploymentEntry[]): Table {
 
   const dataRows = entries.map(e => new TableRow({
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: formatPeriod(e.from, e.to), size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.institution, size: 18 })] })], width: { size: 35, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.location, size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.rank, size: 18 })] })], width: { size: 25, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(formatPeriod(e.from, e.to)), size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.institution), size: 18 })] })], width: { size: 35, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.location), size: 18 })] })], width: { size: 20, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.rank), size: 18 })] })], width: { size: 25, type: WidthType.PERCENTAGE } }),
     ],
   }));
 
@@ -107,12 +114,12 @@ function educationTable(entries: EducationEntry[]): Table {
 
   const dataRows = entries.map(e => new TableRow({
     children: [
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.school, size: 18 })] })], width: { size: 28, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: formatPeriod(e.datesFrom, e.datesTo), size: 18 })] })], width: { size: 15, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.location, size: 18 })] })], width: { size: 18, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.major, size: 18 })] })], width: { size: 17, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: cleanDegree(e.degree, e.dateReceived), size: 18 })] })], width: { size: 10, type: WidthType.PERCENTAGE } }),
-      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: e.dateReceived, size: 18 })] })], width: { size: 12, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.school), size: 18 })] })], width: { size: 28, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(formatPeriod(e.datesFrom, e.datesTo)), size: 18 })] })], width: { size: 15, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.location), size: 18 })] })], width: { size: 18, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.major), size: 18 })] })], width: { size: 17, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(cleanDegree(e.degree, e.dateReceived)), size: 18 })] })], width: { size: 10, type: WidthType.PERCENTAGE } }),
+      new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: displayCellValue(e.dateReceived), size: 18 })] })], width: { size: 12, type: WidthType.PERCENTAGE } }),
     ],
   }));
 
@@ -147,9 +154,9 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function tableCell(text: string, options?: { bold?: boolean; shaded?: boolean; width?: number }): TableCell {
+function tableCell(text: string, options?: { bold?: boolean; shaded?: boolean; width?: number; fallback?: string }): TableCell {
   return new TableCell({
-    children: [new Paragraph({ children: [new TextRun({ text, bold: options?.bold, size: 18 })] })],
+    children: [new Paragraph({ children: [new TextRun({ text: options?.bold ? text : displayCellValue(text, options?.fallback), bold: options?.bold, size: 18 })] })],
     shading: options?.shaded ? { type: ShadingType.SOLID, color: LIGHT_GRAY, fill: LIGHT_GRAY } : undefined,
     width: options?.width ? { size: options.width, type: WidthType.PERCENTAGE } : undefined,
   });
@@ -160,12 +167,10 @@ function publicationList(entries: PublicationEntry[]): Paragraph[] {
   return entries.flatMap(e => {
     const prefix = e.isNewSinceLastReview ? `*${e.number}. ` : `${e.number}. `;
     const notes = [
-      e.articleKind ? e.articleKind.toUpperCase() + ' ARTICLE' : '',
-      e.previouslyListedAs ? `previously ${e.previouslyListedAs}` : '',
-      e.bioBibSection ? `BioBib section: ${e.bioBibSection}` : '',
-      e.originalNumber ? `source no. ${e.originalNumber}` : '',
-      e.reviewMaterialUrl ? `review material: ${e.reviewMaterialUrl}` : '',
+      formatArticleKind(e.articleKind),
+      formatPreviouslyListedAs(e.previouslyListedAs),
     ].filter(Boolean).join('; ');
+    const contributionNote = formatContributionNote(e.contributionNote, e.citation);
 
     const paragraphs = [
       new Paragraph({
@@ -173,26 +178,70 @@ function publicationList(entries: PublicationEntry[]): Paragraph[] {
           new TextRun({ text: prefix, bold: true, size: 20 }),
           new TextRun({ text: e.citation, size: 20 }),
         ],
-        spacing: { after: e.contributionNote || notes ? 30 : 80 },
+        spacing: { after: contributionNote || notes ? 30 : 80 },
       }),
     ];
 
     if (notes) {
       paragraphs.push(new Paragraph({
         children: [new TextRun({ text: notes, italics: true, size: 18 })],
-        spacing: { after: e.contributionNote ? 30 : 80 },
+        spacing: { after: contributionNote ? 30 : 80 },
       }));
     }
 
-    if (e.contributionNote) {
+    if (contributionNote) {
       paragraphs.push(new Paragraph({
-        children: [new TextRun({ text: e.contributionNote, italics: true, size: 18 })],
+        children: [new TextRun({ text: contributionNote, italics: true, size: 18 })],
         spacing: { after: 80 },
       }));
     }
 
     return paragraphs;
   });
+}
+
+function formatArticleKind(value?: string): string {
+  const normalized = (value ?? '').trim().toLowerCase();
+  if (normalized === 'research') return 'Research article';
+  if (normalized === 'review') return 'Review article';
+  if (normalized === 'creative') return 'Creative work';
+  return '';
+}
+
+function formatPreviouslyListedAs(value?: string): string {
+  const cleaned = cleanPublicationNote(value);
+  return cleaned ? `Previously listed as ${cleaned}` : '';
+}
+
+function formatContributionNote(note: string | undefined, citation: string): string {
+  const cleaned = cleanPublicationNote(note);
+  if (!cleaned) return '';
+  if (normalizeForComparison(citation).includes(normalizeForComparison(cleaned))) return '';
+  return sentenceCaseAllCaps(cleaned);
+}
+
+function cleanPublicationNote(value?: string): string {
+  const cleaned = (value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[.;]\s*$/, '');
+  if (!cleaned) return '';
+  if (/\b(source\s+no\.?|biobib\s+section|review\s+material)\b/i.test(cleaned)) return '';
+  return cleaned;
+}
+
+function normalizeForComparison(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sentenceCaseAllCaps(value: string): string {
+  const letters = value.replace(/[^A-Za-z]/g, '');
+  if (letters.length < 4 || letters !== letters.toUpperCase()) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
 function stringList(items: string[]): Paragraph[] {

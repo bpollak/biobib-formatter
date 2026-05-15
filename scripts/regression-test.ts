@@ -19,6 +19,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { put } from '@vercel/blob';
+import JSZip from 'jszip';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
 
 interface Check {
@@ -225,6 +226,14 @@ async function main() {
     const buf = Buffer.from(await dl.arrayBuffer());
     const isDocx = buf.slice(0, 2).toString('hex') === '504b';
     record('Downloaded file is a valid .docx (zip signature)', isDocx, `${buf.length} bytes`);
+    if (isDocx) {
+      const outputText = await docxText(buf);
+      record('Generated DOCX does not expose source-number metadata', !/\bsource\s+no\.?\b/i.test(outputText));
+      record('Generated DOCX does not expose BioBib section metadata', !/\bBioBib section:/i.test(outputText));
+      record('Generated DOCX does not expose review-material metadata', !/\breview material:/i.test(outputText));
+      record('Generated DOCX does not render duplicate article labels', !/\bARTICLE\s+ARTICLE\b/i.test(outputText));
+      record('Generated DOCX uses explicit review text for unavailable table values', outputText.includes('Not listed'));
+    }
   }
 
   finish();
@@ -243,6 +252,23 @@ function finish() {
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function docxText(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentXml = await zip.file('word/document.xml')?.async('string');
+  if (!documentXml) throw new Error('word/document.xml missing from generated DOCX');
+
+  return documentXml
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/\s+\n/g, '\n')
+    .trim();
 }
 
 main().catch(err => {

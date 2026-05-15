@@ -72,6 +72,16 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'May 15, 2026, 12:09 PM PDT',
+    title: 'BioBib Output Quality and Regression Guard Update',
+    changes: [
+      'Improved final Word output so internal extraction metadata stays out of user-facing bibliography entries.',
+      'Added clearer review text in tables when source CV details are unavailable, reducing silent blank cells in generated documents.',
+      'Improved invited-presentation section placement so conference and society meeting presentations are separated from institutional invited talks.',
+      'Added regression checks for generated-document quality, including metadata leakage, duplicate publication labels, unavailable table values, and presentation section placement.',
+    ],
+  },
+  {
     releasedAt: 'May 15, 2026, 11:39 AM PDT',
     title: 'Application Reliability and Accessible Output Update',
     changes: [
