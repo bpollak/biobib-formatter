@@ -15,6 +15,7 @@ import { mergeSlices, PartialResult, SliceKey } from '@/lib/pipeline/converter';
 import { generateBioBibDocx } from '@/lib/docx/writer';
 import {
   readFinalResult,
+  readCvRichText,
   readManifest,
   readSliceError,
   readSliceResult,
@@ -75,7 +76,8 @@ export async function POST(
       }
 
       const merged = mergeSlices(parts);
-      const docxBuffer = await generateBioBibDocx(merged);
+      const richTextParagraphs = await readCvRichText(jobId);
+      const docxBuffer = await generateBioBibDocx(merged, richTextParagraphs);
 
       await writeFinalResult(jobId, merged);
       await writeFinalDocx(jobId, docxBuffer);

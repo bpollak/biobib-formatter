@@ -15,7 +15,7 @@ import { del, get } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { parseCV } from '@/lib/docx/reader';
 import { SLICE_KEYS } from '@/lib/pipeline/converter';
-import { writeManifest, writeCvText } from '@/lib/jobs/store';
+import { writeManifest, writeCvRichText, writeCvText } from '@/lib/jobs/store';
 import { getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
 import { LITELLM_MODEL, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
 
   // Persist the parsed text so workers don't re-parse a multi-MB docx.
   await writeCvText(jobId, cv.rawText);
+  await writeCvRichText(jobId, cv.richTextParagraphs ?? []);
   await writeManifest(jobId, {
     fileName,
     sliceKeys: [...SLICE_KEYS],

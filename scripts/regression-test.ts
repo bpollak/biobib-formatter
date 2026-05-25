@@ -197,6 +197,7 @@ async function main() {
     ((sec.books as unknown[] | undefined)?.length ?? 0) +
     ((sec.chapters as unknown[] | undefined)?.length ?? 0) +
     ((sec.refereedProceedings as unknown[] | undefined)?.length ?? 0) +
+    ((sec.otherArticles as unknown[] | undefined)?.length ?? 0) +
     ((sec.otherProceedings as unknown[] | undefined)?.length ?? 0) +
     ((sec.abstracts as unknown[] | undefined)?.length ?? 0) +
     ((sec.popularWorks as unknown[] | undefined)?.length ?? 0) +
@@ -210,6 +211,7 @@ async function main() {
     ((sec.grants as unknown[] | undefined)?.length ?? 0) +
     ((sec.teaching as unknown[] | undefined)?.length ?? 0) +
     ((sec.studentInstructionalActivities as unknown[] | undefined)?.length ?? 0) +
+    ((sec.studentInstructionalGroups as unknown[] | undefined)?.length ?? 0) +
     ((sec.externalProfessionalActivities as unknown[] | undefined)?.length ?? 0) +
     ((sec.presentations as unknown[] | undefined)?.length ?? 0);
 

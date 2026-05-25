@@ -8,7 +8,7 @@
  */
 
 import { put, head, list, get, del, BlobNotFoundError } from '@vercel/blob';
-import { ConversionResult } from '../types';
+import { ConversionResult, RichTextParagraph } from '../types';
 import { SLICE_KEYS, SliceKey, PartialResult } from '../pipeline/converter';
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
@@ -17,6 +17,7 @@ const root = (jobId: string) => `jobs/${jobId}`;
 const path = {
   manifest: (j: string) => `${root(j)}/manifest.json`,
   cv: (j: string) => `${root(j)}/cv.txt`,
+  cvRich: (j: string) => `${root(j)}/cv-rich.json`,
   sliceResult: (j: string, k: SliceKey) => `${root(j)}/slice-${k}.json`,
   sliceError: (j: string, k: SliceKey) => `${root(j)}/slice-${k}.error`,
   lock: (j: string) => `${root(j)}/finalize.lock`,
@@ -55,6 +56,22 @@ export async function readCvText(jobId: string): Promise<string> {
     throw new Error(`Could not read cv.txt for job ${jobId}`);
   }
   return new Response(result.stream).text();
+}
+
+export async function writeCvRichText(jobId: string, paragraphs: RichTextParagraph[]): Promise<void> {
+  await put(path.cvRich(jobId), JSON.stringify(paragraphs), {
+    ...PUT_OPTS,
+    contentType: 'application/json; charset=utf-8',
+  });
+}
+
+export async function readCvRichText(jobId: string): Promise<RichTextParagraph[]> {
+  try {
+    return (await readJson<RichTextParagraph[]>(path.cvRich(jobId))) ?? [];
+  } catch (e) {
+    if (e instanceof BlobNotFoundError || (e as Error).message.includes('status 404')) return [];
+    throw e;
+  }
 }
 
 // ── Per-slice results ────────────────────────────────────────────────────────

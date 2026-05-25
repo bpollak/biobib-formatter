@@ -72,6 +72,18 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'May 24, 2026, 5:18 PM PDT',
+    title: 'BioBib Formatting and Bibliography Fidelity Update',
+    changes: [
+      'Updated generated Word documents to use Arial typography throughout the BioBib draft.',
+      'Aligned major BioBib section labels, subsection labels, and Education columns more closely with UCSD BioBib formatting conventions while preserving semantic Word headings.',
+      'Improved student instructional activity formatting with grouped subheaders and restarted numbering within each group.',
+      'Improved presentation formatting so national/international presentations and other invited presentations number independently within their own subsections.',
+      'Enhanced bibliography organization with clearer Section III labels, always-present empty sections where expected, and better placement of likely submitted or in-progress work.',
+      'Improved preservation of chemical and scientific notation from Word CVs by carrying source subscript and superscript formatting into generated bibliography entries when available.',
+    ],
+  },
+  {
     releasedAt: 'May 15, 2026, 12:09 PM PDT',
     title: 'BioBib Output Quality and Regression Guard Update',
     changes: [

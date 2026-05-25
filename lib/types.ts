@@ -11,9 +11,20 @@ export interface ProcessingSession {
 
 export interface ParsedCV {
   rawText: string;
+  richTextParagraphs?: RichTextParagraph[];
   name?: string;
   department?: string;
   title?: string;
+}
+
+export interface RichTextRun {
+  text: string;
+  verticalAlign?: 'subscript' | 'superscript';
+}
+
+export interface RichTextParagraph {
+  text: string;
+  runs: RichTextRun[];
 }
 
 // ── AI Conversion Output ─────────────────────────────────────────────────────
@@ -62,6 +73,11 @@ export interface PublicationEntry {
   reviewMaterialUrl?: string;
 }
 
+export interface StudentInstructionalGroup {
+  heading: string;
+  entries: string[];
+}
+
 export interface GrantEntry {
   title: string;
   funder: string;
@@ -87,6 +103,7 @@ export interface BioBibSections {
   awards: string[];
   teaching: string[];
   studentInstructionalActivities: string[];
+  studentInstructionalGroups: StudentInstructionalGroup[];
   grants: GrantEntry[];
   externalProfessionalActivities: string[];
   consulting: string[];
@@ -105,6 +122,7 @@ export interface BioBibSections {
   books: PublicationEntry[];
   chapters: PublicationEntry[];
   refereedProceedings: PublicationEntry[];
+  otherArticles: PublicationEntry[];
   otherProceedings: PublicationEntry[];
   abstracts: PublicationEntry[];
   popularWorks: PublicationEntry[];

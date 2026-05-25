@@ -11,7 +11,7 @@
  * the Vercel function cap and total wall time near max(durations).
  */
 
-import { ParsedCV, ConversionResult, BioBibSections, BioBibGap } from '../types';
+import { ParsedCV, ConversionResult, BioBibSections, BioBibGap, PublicationEntry } from '../types';
 import { LITELLM_BASE_URL, LITELLM_MODEL } from '../constants';
 
 // ── BioBib reference text shared by all section prompts ──────────────────────
@@ -36,16 +36,16 @@ Section II: Professional Data (UCSD BioBib categories — preserve dates and lab
 9. Student Instructional Activities (doctoral students, postdocs, masters students, undergraduates, visitors, staff scientists)
 10. External Reviews of Primary Creative Work
 
-Section III: Bibliography
+Section III – Bibliography
 All citations must be numbered, chronological, discipline-appropriate format.
 
-A. Primary Published or Creative Work:
-  I. Original Peer-Reviewed Work:
-    a. Refereed Journal Articles
-    b. Review and Invited Articles
-    c. Books and Book Chapters (separate subcategories)
-    d. Refereed Conference Proceedings (include acceptance rate if available)
-B. Other Work:
+A. Primary Published Work or Creative Work:
+  I. Refereed Journal Articles
+  II. Review and Invited Articles
+  III. Books and Book Chapters (separate subcategories)
+  IV. Refereed Conference Proceedings (include acceptance rate if available)
+  V. Other Articles
+B. Other Work
   - Other Conference Proceedings
   - Abstracts of Non-Refereed Conference Proceedings
   - Popular Works
@@ -189,16 +189,21 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   II_teaching: {
     fields:
-      'Section II subset: teaching and studentInstructionalActivities only. Include courses, doctoral students, masters students, postdocs, undergraduates, visitors, staff scientists, and mentoring entries. Do not extract grants.',
+      'Section II subset: teaching, studentInstructionalActivities, and studentInstructionalGroups only. Include doctoral students, masters students, postdocs, undergraduates, visitors, staff scientists, thesis committee service, and mentoring entries. Do not extract grants.',
     rules: `
-- StudentInstructionalActivities should be grouped with category labels when possible: "Current Doctoral Research Students:", "Current Postdoctoral Associates:", "Former Ph.D. Students:", "Former Masters Students:", "Former Postdoctoral Associates:", "Current Staff Scientists:", "Visiting Faculty/Students:", and "Undergraduate Research Students:".
+- Prefer studentInstructionalGroups over a flat studentInstructionalActivities list. Use grouped headings when possible: "Current Doctoral Research Students", "Former Ph.D. Students", "Former Masters Students", "Current Postdoctoral Associates", "Former Postdoctoral Associates", "Current Staff Scientists", "Visiting Faculty/Students", and "Undergraduate Research Students".
+- If the CV lists thesis or dissertation committees, create appropriate studentInstructionalGroups such as "Ph.D. Thesis Committees - Chair", "Ph.D. Thesis Committees - Member", "M.F.A. Thesis Committees - Chair", "M.F.A. Thesis Committees - Member", "M.S. Thesis Committees - Chair", and "M.S. Thesis Committees - Member".
+- Entries within each studentInstructionalGroups group should be chronological when dates are available.
+- Do not prefix each entry with the group heading; put the category only in the group's "heading" field.
 - Include advisee theses and dissertation supervision here, not in Section III theses.
+- Do not extract regular course lists into the BioBib unless they document student direction or mentoring. Regular classes taught generally do not belong in the BioBib.
 - Do not extract contracts, grants, publications, abstracts, or presentation lists into teaching/studentInstructionalActivities.
 `.trim(),
     schema: `{
   "sections": {
     "teaching": [""],
-    "studentInstructionalActivities": [""]
+    "studentInstructionalActivities": [""],
+    "studentInstructionalGroups": [{"heading": "", "entries": [""]}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -305,51 +310,57 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 }`,
   },
   III_journals_pre_2000: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_PRE_2000_END} or earlier. Skip articles published in ${JOURNAL_MID_START} or later. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_PRE_2000_END} or earlier. Skip articles published in ${JOURNAL_MID_START} or later. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "journal"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_journals_2000_2010: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published from ${JOURNAL_MID_START} through ${JOURNAL_MID_END}, inclusive. Skip articles outside that date range. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published from ${JOURNAL_MID_START} through ${JOURNAL_MID_END}, inclusive. Skip articles outside that date range. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "journal"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_journals_late: {
-    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_MID_END}. Skip articles published in ${JOURNAL_MID_END} or earlier. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_MID_END}. Skip articles published in ${JOURNAL_MID_END} or earlier. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
     schema: `{
   "sections": {
-    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}]
+    "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "journal"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_other_a: {
     fields:
-      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters. Number sequentially within each subsection starting at 1. Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.',
+      'Section III subset A: reviewAndInvited (review and invited articles), books, chapters, and otherArticles. Put submitted, in-progress, under-review, in-review, or undated items in workInProgress instead of published categories. Number sequentially within each subsection starting at 1. Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.',
     schema: `{
   "sections": {
     "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
     "books": [{"number": 1, "citation": "", "type": "book"}],
-    "chapters": [{"number": 1, "citation": "", "type": "chapter"}]
+    "chapters": [{"number": 1, "citation": "", "type": "chapter"}],
+    "otherArticles": [{"number": 1, "citation": "", "type": "other"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "other"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
   III_other_proc: {
     fields:
-      'Section III subset proceedings: refereedProceedings and otherProceedings. Number sequentially within each subsection starting at 1. Refereed proceedings belong under Primary Published Work; non-refereed conference proceedings belong under Other Work.',
+      'Section III subset proceedings: refereedProceedings and otherProceedings. Put submitted, in-progress, under-review, in-review, or undated refereed proceedings in workInProgress instead of published categories. Number sequentially within each subsection starting at 1. Refereed proceedings belong under Primary Published Work; non-refereed conference proceedings belong under Other Work.',
     schema: `{
   "sections": {
     "refereedProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
-    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}]
+    "otherProceedings": [{"number": 1, "citation": "", "type": "proceedings"}],
+    "workInProgress": [{"number": 1, "citation": "", "type": "proceedings"}]
   },
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
@@ -554,6 +565,7 @@ function emptySections(): BioBibSections {
     awards: [],
     teaching: [],
     studentInstructionalActivities: [],
+    studentInstructionalGroups: [],
     grants: [],
     externalProfessionalActivities: [],
     consulting: [],
@@ -570,6 +582,7 @@ function emptySections(): BioBibSections {
     books: [],
     chapters: [],
     refereedProceedings: [],
+    otherArticles: [],
     otherProceedings: [],
     abstracts: [],
     popularWorks: [],
@@ -613,6 +626,8 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
     }
   }
 
+  moveWorkInProgressPublications(sections);
+
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
   sections.peerReviewedJournals = renumberPublications(sections.peerReviewedJournals);
@@ -621,6 +636,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.books = renumberPublications(sections.books);
   sections.chapters = renumberPublications(sections.chapters);
   sections.refereedProceedings = renumberPublications(sections.refereedProceedings);
+  sections.otherArticles = renumberPublications(sections.otherArticles);
   sections.otherProceedings = renumberPublications(sections.otherProceedings);
   sections.popularWorks = renumberPublications(sections.popularWorks);
   sections.additionalProducts = renumberPublications(sections.additionalProducts);
@@ -642,6 +658,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.awards = dedupeStrings(sections.awards);
   sections.teaching = dedupeStrings(sections.teaching);
   sections.studentInstructionalActivities = dedupeStrings(sections.studentInstructionalActivities);
+  sections.studentInstructionalGroups = mergeStudentInstructionalGroups(sections.studentInstructionalGroups);
   sections.externalProfessionalActivities = dedupeStrings(sections.externalProfessionalActivities);
   sections.consulting = dedupeStrings(sections.consulting);
   sections.reviewerActivities = dedupeStrings(sections.reviewerActivities);
@@ -656,6 +673,94 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   addStructuralReviewGaps(sections, gaps);
 
   return { sections, gaps, metadata };
+}
+
+function moveWorkInProgressPublications(sections: BioBibSections): void {
+  const targets: (keyof Pick<
+    BioBibSections,
+    | 'peerReviewedJournals'
+    | 'reviewAndInvited'
+    | 'books'
+    | 'chapters'
+    | 'refereedProceedings'
+    | 'otherArticles'
+  >)[] = [
+    'peerReviewedJournals',
+    'reviewAndInvited',
+    'books',
+    'chapters',
+    'refereedProceedings',
+    'otherArticles',
+  ];
+
+  for (const key of targets) {
+    const published: PublicationEntry[] = [];
+    for (const item of sections[key]) {
+      if (isWorkInProgressPublication(item)) {
+        sections.workInProgress.push(item);
+      } else {
+        published.push(item);
+      }
+    }
+    sections[key] = published as BioBibSections[typeof key];
+  }
+}
+
+function isWorkInProgressPublication(item: PublicationEntry): boolean {
+  const citation = item.citation.toLowerCase();
+  if (/\b(submitted|in progress|under review|in review|under revision|in preparation|forthcoming)\b/i.test(citation)) {
+    return true;
+  }
+  return !/\b(19|20)\d{2}\b/.test(item.citation);
+}
+
+function mergeStudentInstructionalGroups(
+  groups: BioBibSections['studentInstructionalGroups'],
+): BioBibSections['studentInstructionalGroups'] {
+  const byHeading = new Map<string, string[]>();
+  for (const group of groups) {
+    const heading = normalizeStudentGroupHeading(group.heading);
+    if (!heading) continue;
+    const entries = byHeading.get(heading) ?? [];
+    entries.push(...group.entries.map(entry => stripStudentGroupPrefix(entry, heading)));
+    byHeading.set(heading, dedupeStrings(entries.filter(Boolean)));
+  }
+
+  return [...byHeading.entries()].map(([heading, entries]) => ({
+    heading,
+    entries: sortChronologically(entries),
+  }));
+}
+
+function normalizeStudentGroupHeading(value: string): string {
+  const cleaned = value.replace(/:$/, '').trim();
+  if (!cleaned) return '';
+  const lower = cleaned.toLowerCase();
+  if (lower.includes('postdoctoral fellow') && lower.includes('current')) return 'Current Postdoctoral Associates';
+  if (lower.includes('undergraduate') && lower.includes('former')) return 'Former Undergraduate Research Students';
+  if (lower.includes('undergraduate')) return 'Undergraduate Research Students';
+  if (lower.includes('ph.d') && lower.includes('student')) return 'Former Ph.D. Students';
+  if (lower.includes('master') && lower.includes('student')) return 'Former Masters Students';
+  if (lower.includes('staff scientist')) return 'Current Staff Scientists';
+  if (lower.includes('visiting')) return 'Visiting Faculty/Students';
+  return cleaned;
+}
+
+function stripStudentGroupPrefix(entry: string, heading: string): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return entry
+    .replace(new RegExp(`^\\s*${escaped}\\s*:?\\s*`, 'i'), '')
+    .replace(/^\s*(Current|Former)\s+(Ph\.?D\.?|Masters?|Postdoctoral|Staff|Undergraduate|Visiting)[^:]{0,80}:\s*/i, '')
+    .trim();
+}
+
+function sortChronologically(items: string[]): string[] {
+  return [...items].sort((a, b) => firstYear(a) - firstYear(b));
+}
+
+function firstYear(value: string): number {
+  const match = value.match(/\b(19|20)\d{2}\b/);
+  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
 }
 
 function renumberPublications<T extends { number: number }>(items: T[]): T[] {
