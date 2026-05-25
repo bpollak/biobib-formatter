@@ -78,6 +78,7 @@ const RELEASE_NOTES = [
       'Updated generated Word documents to use Arial typography throughout the BioBib draft.',
       'Aligned major BioBib section labels, subsection labels, and Education columns more closely with UCSD BioBib formatting conventions while preserving semantic Word headings.',
       'Improved student instructional activity formatting with grouped subheaders and restarted numbering within each group.',
+      'Cleaned source numbering from student instructional entries so generated lists use BioBib numbering only.',
       'Improved presentation formatting so national/international presentations and other invited presentations number independently within their own subsections.',
       'Enhanced bibliography organization with clearer Section III labels, always-present empty sections where expected, and better placement of likely submitted or in-progress work.',
       'Refined bibliography subheading styling so publication category labels are not italicized.',

@@ -749,18 +749,19 @@ function normalizeStudentGroupHeading(value: string): string {
 function stripStudentGroupPrefix(entry: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return entry
+    .replace(/^\s*\d+\s*[.)]\s*/, '')
     .replace(new RegExp(`^\\s*${escaped}\\s*:?\\s*`, 'i'), '')
     .replace(/^\s*(Current|Former)\s+(Ph\.?D\.?|Masters?|Postdoctoral|Staff|Undergraduate|Visiting)[^:]{0,80}:\s*/i, '')
     .trim();
 }
 
 function sortChronologically(items: string[]): string[] {
-  return [...items].sort((a, b) => firstYear(a) - firstYear(b));
+  return [...items].sort((a, b) => chronologicalYear(a) - chronologicalYear(b));
 }
 
-function firstYear(value: string): number {
-  const match = value.match(/\b(19|20)\d{2}\b/);
-  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
+function chronologicalYear(value: string): number {
+  const years = [...value.matchAll(/\b(19|20)\d{2}\b/g)].map(match => Number(match[0]));
+  return years.length > 0 ? Math.max(...years) : Number.MAX_SAFE_INTEGER;
 }
 
 function renumberPublications<T extends { number: number }>(items: T[]): T[] {

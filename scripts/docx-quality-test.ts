@@ -76,7 +76,8 @@ async function main() {
   record(
     'Student instructional activities render grouped numbered lists without repeated group labels',
     /Former Ph\.D\. Students\s+1\.\s+Alice Example[\s\S]*2\.\s+Brian Example/.test(text) &&
-      countOccurrences(text, 'Former Ph.D. Students') === 1,
+      countOccurrences(text, 'Former Ph.D. Students') === 1 &&
+      !/\b1\.\s+1\.\s+Alice Example/.test(text),
   );
   record(
     'Section III headings match requested labels',
@@ -160,8 +161,8 @@ function buildPartialResult(): PartialResult {
         {
           heading: 'Former Ph.D. Students',
           entries: [
-            'Former Ph.D. Students: Alice Example, Ph.D. 2019.',
-            'Brian Example, Ph.D. 2021.',
+            '2. Former Ph.D. Students: Brian Example, B.S. 2016; Ph.D. 2021.',
+            '1. Alice Example, B.S. 2014; Ph.D. 2019.',
           ],
         },
       ],

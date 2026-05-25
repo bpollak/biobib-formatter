@@ -456,7 +456,7 @@ function normalizeStudentGroups(
     if (!heading) continue;
     const existing = byHeading.get(heading) ?? [];
     existing.push(...group.entries.map(entry => stripStudentPrefix(entry, heading)).filter(Boolean));
-    byHeading.set(heading, dedupeStrings(existing).sort((a, b) => firstYear(a) - firstYear(b)));
+    byHeading.set(heading, dedupeStrings(existing).sort((a, b) => chronologicalYear(a) - chronologicalYear(b)));
   }
 
   return [...byHeading.entries()]
@@ -482,14 +482,15 @@ function cleanStudentHeading(value: string): string {
 function stripStudentPrefix(value: string, heading: string): string {
   const escaped = escapeRegex(heading);
   return value
+    .replace(/^\s*\d+\s*[.)]\s*/, '')
     .replace(new RegExp(`^\\s*${escaped}\\s*:?\\s*`, 'i'), '')
     .replace(/^\s*(Current|Former)\s+(Ph\.?D\.?|Masters?|Postdoctoral|Staff|Undergraduate|Visiting)[^:]{0,80}:\s*/i, '')
     .trim();
 }
 
-function firstYear(value: string): number {
-  const match = value.match(/\b(19|20)\d{2}\b/);
-  return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
+function chronologicalYear(value: string): number {
+  const years = [...value.matchAll(/\b(19|20)\d{2}\b/g)].map(match => Number(match[0]));
+  return years.length > 0 ? Math.max(...years) : Number.MAX_SAFE_INTEGER;
 }
 
 function dedupeStrings(items: string[]): string[] {
