@@ -43,9 +43,15 @@ export async function POST(
     return NextResponse.json({ ok: true, status: 'already_handled' }, { status: 200 });
   }
 
-  const apiKey = process.env.LITELLM_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: 'LITELLM_API_KEY not configured' }, { status: 500 });
+  const modelCredentials = {
+    cloudApiKey: process.env.LITELLM_API_KEY,
+    onPremApiKey: process.env.LITELLM_ON_PREM_API_KEY,
+  };
+  if (!modelCredentials.cloudApiKey && !modelCredentials.onPremApiKey) {
+    return NextResponse.json(
+      { error: 'No LiteLLM model provider API key configured.' },
+      { status: 500 },
+    );
   }
 
   const origin = req.nextUrl.origin;
@@ -66,7 +72,7 @@ export async function POST(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), LITELLM_TIMEOUT_MS);
       try {
-        const partial = await callSliceWithSignal(cv, sliceKey, apiKey, controller.signal);
+        const partial = await callSliceWithSignal(cv, sliceKey, modelCredentials, controller.signal);
         await writeSliceResult(jobId, sliceKey, partial);
       } catch (e) {
         await writeSliceError(jobId, sliceKey, {

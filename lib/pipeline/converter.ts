@@ -12,7 +12,7 @@
  */
 
 import { ParsedCV, ConversionResult, BioBibSections, BioBibGap, PublicationEntry } from '../types';
-import { LITELLM_BASE_URL, LITELLM_MODEL } from '../constants';
+import { LITELLM_BASE_URL, LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../constants';
 
 // ── BioBib reference text shared by all section prompts ──────────────────────
 
@@ -132,6 +132,44 @@ export interface PartialResult {
   sections: Partial<BioBibSections>;
   gaps?: BioBibGap[];
   metadata?: ConversionResult['metadata'];
+}
+
+export type ModelProvider = 'cloud' | 'onPrem';
+
+export interface ModelCredentials {
+  cloudApiKey?: string;
+  onPremApiKey?: string;
+}
+
+export interface SliceModelCandidate {
+  provider: ModelProvider;
+  model: string;
+}
+
+const HIGH_FIDELITY_SLICES = new Set<SliceKey>([
+  'meta_and_I',
+  'II_teaching',
+  'III_journals_pre_2000',
+  'III_journals_2000_2010',
+  'III_journals_late',
+  'III_other_a',
+  'III_other_proc',
+]);
+
+export function modelCandidatesForSlice(
+  slice: SliceKey,
+  available: Partial<Record<ModelProvider, boolean>> = { cloud: true, onPrem: true },
+): SliceModelCandidate[] {
+  const highFidelityOrder: SliceModelCandidate[] = [
+    { provider: 'cloud', model: LITELLM_MODEL },
+    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL },
+  ];
+  const costControlledOrder: SliceModelCandidate[] = [
+    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL },
+    { provider: 'cloud', model: LITELLM_MODEL },
+  ];
+  const ordered = HIGH_FIDELITY_SLICES.has(slice) ? highFidelityOrder : costControlledOrder;
+  return ordered.filter(candidate => available[candidate.provider] !== false);
 }
 
 const PRESENTATION_RULES = `
@@ -471,11 +509,12 @@ function supportsCustomTemperature(model: string): boolean {
 async function callSliceOnce(
   cv: ParsedCV,
   slice: SliceKey,
+  candidate: SliceModelCandidate,
   apiKey: string,
   options: CallSliceOptions = {},
 ): Promise<PartialResult> {
   const requestBody = {
-    model: LITELLM_MODEL,
+    model: candidate.model,
     messages: [
       { role: 'system', content: BASE_SYSTEM },
       { role: 'user', content: buildSliceUserPrompt(cv, slice) },
@@ -485,7 +524,7 @@ async function callSliceOnce(
     // returning anything we can parse.
     max_tokens: 12000,
     response_format: { type: 'json_object' },
-    ...(supportsCustomTemperature(LITELLM_MODEL) ? { temperature: 0.1 } : {}),
+    ...(supportsCustomTemperature(candidate.model) ? { temperature: 0.1 } : {}),
   };
 
   const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
@@ -500,13 +539,17 @@ async function callSliceOnce(
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`LiteLLM API error ${response.status} on slice "${slice}": ${err}`);
+    throw new Error(
+      `LiteLLM API error ${response.status} on slice "${slice}" with model "${candidate.model}": ${err}`,
+    );
   }
 
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content;
   const finishReason = data.choices?.[0]?.finish_reason;
-  if (!content) throw new Error(`Empty response from AI on slice "${slice}"`);
+  if (!content) {
+    throw new Error(`Empty response from AI on slice "${slice}" with model "${candidate.model}"`);
+  }
 
   const cleaned = stripJsonFences(content);
   try {
@@ -516,35 +559,63 @@ async function callSliceOnce(
       finishReason === 'length'
         ? ` (response was truncated at max_tokens — slice "${slice}" is too large for the current output cap)`
         : '';
-    throw new Error(`AI returned invalid JSON on slice "${slice}"${hint}: ${(e as Error).message}`);
+    throw new Error(
+      `AI returned invalid JSON on slice "${slice}" with model "${candidate.model}"${hint}: ${(e as Error).message}`,
+    );
   }
 }
 
-export async function callSlice(cv: ParsedCV, slice: SliceKey, apiKey: string): Promise<PartialResult> {
-  // One retry on transient failures — slice calls are cheap and parse errors
-  // can come from rare formatting blips.
-  try {
-    return await callSliceOnce(cv, slice, apiKey);
-  } catch (e) {
-    if (isAbortError(e)) throw e;
-    console.warn(`[converter] slice "${slice}" failed, retrying once:`, (e as Error).message);
-    return await callSliceOnce(cv, slice, apiKey);
+function apiKeyForCandidate(candidate: SliceModelCandidate, credentials: ModelCredentials): string | undefined {
+  return candidate.provider === 'cloud' ? credentials.cloudApiKey : credentials.onPremApiKey;
+}
+
+async function callSliceWithModelFallbacks(
+  cv: ParsedCV,
+  slice: SliceKey,
+  credentials: ModelCredentials,
+  options: CallSliceOptions = {},
+): Promise<PartialResult> {
+  const available = {
+    cloud: Boolean(credentials.cloudApiKey),
+    onPrem: Boolean(credentials.onPremApiKey),
+  };
+  const candidates = modelCandidatesForSlice(slice, available);
+  if (candidates.length === 0) {
+    throw new Error('No LiteLLM API key configured for available model providers.');
   }
+
+  const failures: string[] = [];
+  for (const candidate of candidates) {
+    const apiKey = apiKeyForCandidate(candidate, credentials);
+    if (!apiKey) continue;
+    try {
+      return await callSliceOnce(cv, slice, candidate, apiKey, options);
+    } catch (e) {
+      if (isAbortError(e)) throw e;
+      const message = (e as Error).message;
+      failures.push(`${candidate.model}: ${message}`);
+      console.warn(`[converter] slice "${slice}" failed with "${candidate.model}", trying fallback if available:`, message);
+    }
+  }
+
+  throw new Error(`All model attempts failed for slice "${slice}": ${failures.join(' | ')}`);
+}
+
+export async function callSlice(
+  cv: ParsedCV,
+  slice: SliceKey,
+  credentials: ModelCredentials,
+): Promise<PartialResult> {
+  return callSliceWithModelFallbacks(cv, slice, credentials);
 }
 
 export async function callSliceWithSignal(
   cv: ParsedCV,
   slice: SliceKey,
-  apiKey: string,
+  credentials: ModelCredentials,
   signal: AbortSignal,
 ): Promise<PartialResult> {
-  try {
-    return await callSliceOnce(cv, slice, apiKey, { signal });
-  } catch (e) {
-    if (isAbortError(e)) throw e;
-    console.warn(`[converter] slice "${slice}" failed, retrying once:`, (e as Error).message);
-    return await callSliceOnce(cv, slice, apiKey, { signal });
-  }
+  return callSliceWithModelFallbacks(cv, slice, credentials, { signal });
 }
 
 function isAbortError(e: unknown): boolean {

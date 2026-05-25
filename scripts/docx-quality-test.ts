@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { generateBioBibDocx } from '../lib/docx/writer';
-import { mergeSlices, PartialResult } from '../lib/pipeline/converter';
+import { LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../lib/constants';
+import { mergeSlices, modelCandidatesForSlice, PartialResult } from '../lib/pipeline/converter';
 import { ConversionResult, PublicationEntry } from '../lib/types';
 
 interface Check {
@@ -17,6 +18,28 @@ function record(name: string, pass: boolean, detail?: string) {
 }
 
 async function main() {
+  const highFidelityRoute = modelCandidatesForSlice('III_journals_late', { cloud: true, onPrem: true });
+  const mechanicalRoute = modelCandidatesForSlice('II_presentations_post_2020', { cloud: true, onPrem: true });
+  const onPremOnlyRoute = modelCandidatesForSlice('meta_and_I', { cloud: false, onPrem: true });
+
+  record(
+    'High-fidelity bibliography slices prefer cloud with on-prem fallback',
+    highFidelityRoute[0]?.provider === 'cloud' &&
+      highFidelityRoute[0]?.model === LITELLM_MODEL &&
+      highFidelityRoute[1]?.provider === 'onPrem' &&
+      highFidelityRoute[1]?.model === LITELLM_ON_PREM_MODEL,
+  );
+  record(
+    'Mechanical extraction slices prefer on-prem with cloud fallback',
+    mechanicalRoute[0]?.provider === 'onPrem' &&
+      mechanicalRoute[0]?.model === LITELLM_ON_PREM_MODEL &&
+      mechanicalRoute[1]?.provider === 'cloud',
+  );
+  record(
+    'Model routing omits unavailable providers',
+    onPremOnlyRoute.length === 1 && onPremOnlyRoute[0]?.provider === 'onPrem',
+  );
+
   const merged = mergeSlices([buildPartialResult()]);
 
   record(

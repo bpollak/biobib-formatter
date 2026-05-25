@@ -17,7 +17,7 @@ import { parseCV } from '@/lib/docx/reader';
 import { SLICE_KEYS } from '@/lib/pipeline/converter';
 import { writeManifest, writeCvRichText, writeCvText } from '@/lib/jobs/store';
 import { getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
-import { LITELLM_MODEL, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
+import { LITELLM_ROUTING_LABEL, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
 export const maxDuration = 30;
 
@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
     sliceKeys: [...SLICE_KEYS],
     createdAt: Date.now(),
     sourceBlobUrl: blobUrl,
-    aiModel: LITELLM_MODEL,
+    aiModel: LITELLM_ROUTING_LABEL,
   });
 
   // Workers don't need the source .docx — they use cv.txt. Clean up now.

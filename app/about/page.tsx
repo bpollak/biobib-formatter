@@ -23,8 +23,8 @@ const PIPELINE_STEPS = [
     body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 20 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
   },
   {
-    title: '3. GPT 5.5 reviews each part',
-    body: 'The app sends each smaller part through UCSD TritonAI using GPT 5.5. This gives the app more room to read long CVs and return structured BioBib draft content.',
+    title: '3. UCSD TritonAI reviews each part',
+    body: 'The app sends each smaller part through UCSD TritonAI using model routing matched to the section type. Higher-fidelity sections use the cloud model first, while more mechanical sections can use an on-prem model with cloud fallback.',
   },
   {
     title: '4. Progress is tracked while the work runs',
@@ -72,6 +72,15 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'May 24, 2026, 8:18 PM PDT',
+    title: 'Model Routing and Resilience Update',
+    changes: [
+      'Added section-aware model routing so review tasks can use cloud or on-prem UCSD TritonAI models based on the type of BioBib content being extracted.',
+      'Added fallback handling across model providers so eligible sections can continue when a preferred model is temporarily unavailable or over budget.',
+      'Updated the application description to reflect routed UCSD TritonAI review rather than a single fixed review model.',
+    ],
+  },
+  {
     releasedAt: 'May 24, 2026, 5:18 PM PDT',
     title: 'BioBib Formatting and Bibliography Fidelity Update',
     changes: [
@@ -112,7 +121,7 @@ const RELEASE_NOTES = [
 
 const OUTPUT_RULES = [
   'Keeps citation text as close as possible to the way it appears in the CV.',
-  'Uses GPT 5.5 through UCSD TritonAI for the section review work.',
+  'Uses routed UCSD TritonAI models for the section review work.',
   'Breaks long journal, abstract, and presentation lists into smaller date ranges so large CVs are more likely to finish.',
   'Avoids adding extra publication details unless the CV clearly provides them.',
   'Removes many duplicate entries after the sections are combined.',
@@ -135,11 +144,11 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Why does conversion take a few minutes?',
-    a: 'The app breaks the CV into 20 smaller BioBib parts and reviews several parts at the same time with GPT 5.5 through UCSD TritonAI. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
+    a: 'The app breaks the CV into 20 smaller BioBib parts and reviews several parts at the same time through UCSD TritonAI. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
   },
   {
     q: 'What AI model does it use?',
-    a: 'The current version uses GPT 5.5 through UCSD TritonAI for the BioBib section review work.',
+    a: 'The current version uses routed UCSD TritonAI review. Higher-fidelity sections use the cloud model first, while eligible mechanical extraction sections can use an on-prem model with cloud fallback.',
   },
   {
     q: 'What does the app fill in?',
@@ -169,13 +178,13 @@ export default function AboutPage() {
         <Typography variant="body1" color="text.secondary">
           The BioBib Formatter turns a faculty CV in Word format into a draft UCSD Academic
           Biography and Bibliography document. It breaks the CV into smaller pieces, reviews
-          those pieces with GPT 5.5 through UCSD TritonAI, combines the results, and creates a
+          those pieces with UCSD TritonAI, combines the results, and creates a
           downloadable Word file.
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 2 }}>
           <Chip label="Word CV input" size="small" />
           <Chip label="20 review parts" size="small" color="primary" />
-          <Chip label="GPT 5.5" size="small" />
+          <Chip label="TritonAI review" size="small" />
           <Chip label="Progress tracking" size="small" />
           <Chip label="Word BioBib output" size="small" color="success" />
         </Box>
