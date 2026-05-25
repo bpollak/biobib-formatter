@@ -188,6 +188,7 @@ export interface JobStatus {
 
 const SLICE_TIMEOUT_MS = 620_000; // maxDuration of slice + 20s cushion
 const FINALIZE_TIMEOUT_MS = 90_000;
+const FINAL_RESULT_PROPAGATION_MS = 90_000;
 
 export async function computeStatus(jobId: string): Promise<JobStatus | null> {
   const manifest = await readManifest(jobId);
@@ -213,6 +214,23 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
   const finalStatus = await readFinalStatus(jobId);
   if (finalStatus) {
     const result = (await readFinalResult(jobId)) ?? undefined;
+    if ((finalStatus.state === 'complete' || finalStatus.state === 'failed_partial') && !result) {
+      if (Date.now() - finalStatus.completedAt < FINAL_RESULT_PROPAGATION_MS) {
+        return {
+          state: 'merging',
+          slices,
+          startedAt: manifest.createdAt,
+          aiModel: manifest.aiModel,
+        };
+      }
+      return {
+        state: 'failed',
+        slices,
+        error: 'Finalize completed but the generated result is not available. Please try again.',
+        startedAt: manifest.createdAt,
+        aiModel: manifest.aiModel,
+      };
+    }
     return {
       state: finalStatus.state,
       slices,

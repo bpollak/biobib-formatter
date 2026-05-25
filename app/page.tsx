@@ -200,8 +200,7 @@ export default function HomePage() {
 
       // complete or failed_partial — both have a usable result + download.
       if (!status.result) {
-        setError('Conversion finished but no result was produced.');
-        setState('error');
+        pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
         return;
       }
 

@@ -83,6 +83,7 @@ const RELEASE_NOTES = [
       'Enhanced bibliography organization with clearer Section III labels, always-present empty sections where expected, and better placement of likely submitted or in-progress work.',
       'Refined bibliography subheading styling so publication category labels are not italicized.',
       'Improved preservation of chemical and scientific notation from Word CVs by carrying source subscript and superscript formatting into generated bibliography entries when available.',
+      'Improved final status handling so the app keeps waiting briefly if the generated result is still becoming available.',
     ],
   },
   {
