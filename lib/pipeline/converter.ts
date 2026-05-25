@@ -148,7 +148,7 @@ export interface SliceModelCandidate {
 }
 
 const CLOUD_MAX_TOKENS = 12000;
-const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 24000);
+const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 16000);
 
 const HIGH_FIDELITY_SLICES = new Set<SliceKey>([
   'meta_and_I',
@@ -465,12 +465,13 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
 };
 
-const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey): string => {
+const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey, provider: ModelProvider = 'cloud'): string => {
   const { fields, schema, rules } = SLICE_PROMPTS[slice];
+  const cvText = provider === 'onPrem' ? compactCvTextForSlice(cv.rawText, slice) : cv.rawText;
   return `Extract from this faculty CV the following BioBib fields ONLY: ${fields}.
 
 CV TEXT:
-${cv.rawText}
+${cvText}
 
 ${rules ? `Slice-specific rules:
 ${rules}
@@ -491,6 +492,110 @@ Content rules:
 - For gaps, only flag fields that belong to the slice above. Be specific and actionable.
 - severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.`;
 };
+
+interface YearWindow {
+  start?: number;
+  end?: number;
+  includeUndatedProgress?: boolean;
+}
+
+function yearWindowForSlice(slice: SliceKey): YearWindow | null {
+  if (slice.endsWith('_pre_2000')) return { end: 1999 };
+  if (slice.endsWith('_2000_2010')) return { start: 2000, end: 2010 };
+  if (slice.endsWith('_2011_2020')) return { start: 2011, end: 2020 };
+  if (slice.endsWith('_post_2020')) return { start: 2021 };
+  if (slice === 'III_journals_late') return { start: 2011, includeUndatedProgress: true };
+  return null;
+}
+
+function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
+  const window = yearWindowForSlice(slice);
+  if (!window) return rawText;
+
+  const lines = rawText
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  const sourceLines = sourceLinesForSlice(lines, slice);
+  const keep = new Set<number>();
+
+  sourceLines.forEach((line, index) => {
+    if (lineHasYearInWindow(line, window) || (window.includeUndatedProgress && isWorkInProgressLine(line))) {
+      for (let i = Math.max(0, index - 2); i <= Math.min(sourceLines.length - 1, index + 1); i += 1) {
+        keep.add(i);
+      }
+    } else if (isLikelySourceHeading(line, slice)) {
+      keep.add(index);
+    }
+  });
+
+  if (keep.size === 0) return rawText;
+
+  const compacted = [...keep]
+    .sort((a, b) => a - b)
+    .map(index => sourceLines[index])
+    .join('\n');
+
+  return [
+    `Source CV excerpt prefiltered for slice "${slice}".`,
+    'Use this excerpt as source evidence; keep only items matching the requested date window and section rules.',
+    compacted,
+  ].join('\n\n');
+}
+
+function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
+  if (slice.startsWith('II_presentations')) {
+    return linesBetween(
+      lines,
+      /\b(invited lectures at national and international meetings|invited lectures at institutions)\b/i,
+      /\babstracts and contributed talks\b/i,
+    );
+  }
+  if (slice.startsWith('III_abstracts')) {
+    return linesBetween(lines, /\babstracts and contributed talks\b/i);
+  }
+  if (slice.startsWith('III_journals')) {
+    return linesBetween(lines, /\bpeer-reviewed publications\b/i, /\bother publications\b/i);
+  }
+  return lines;
+}
+
+function linesBetween(lines: string[], startPattern: RegExp, endPattern?: RegExp): string[] {
+  const start = lines.findIndex(line => startPattern.test(line));
+  if (start === -1) return lines;
+  const end = endPattern
+    ? lines.findIndex((line, index) => index > start && endPattern.test(line))
+    : -1;
+  return lines.slice(start, end === -1 ? undefined : end);
+}
+
+function lineHasYearInWindow(line: string, window: YearWindow): boolean {
+  const years = line.match(/\b(?:19|20)\d{2}\b/g)?.map(Number) ?? [];
+  return years.some(year => {
+    if (window.start !== undefined && year < window.start) return false;
+    if (window.end !== undefined && year > window.end) return false;
+    return true;
+  });
+}
+
+function isWorkInProgressLine(line: string): boolean {
+  return /\b(submitted|in progress|under review|in review)\b/i.test(line);
+}
+
+function isLikelySourceHeading(line: string, slice: SliceKey): boolean {
+  if (line.length > 140) return false;
+  if (/^section\s/i.test(line)) return true;
+  if (slice.startsWith('II_presentations')) {
+    return /\b(presentations?|lectures?|seminars?|meetings?)\b/i.test(line);
+  }
+  if (slice.startsWith('III_abstracts')) {
+    return /\babstracts?\b/i.test(line);
+  }
+  if (slice.startsWith('III_journals')) {
+    return /\b(refereed|journal|articles?|publications?)\b/i.test(line);
+  }
+  return false;
+}
 
 // ── Single-slice fetch ───────────────────────────────────────────────────────
 
@@ -521,7 +626,7 @@ async function callSliceOnce(
     model: candidate.model,
     messages: [
       { role: 'system', content: BASE_SYSTEM },
-      { role: 'user', content: buildSliceUserPrompt(cv, slice) },
+      { role: 'user', content: buildSliceUserPrompt(cv, slice, candidate.provider) },
     ],
     // Keep the cloud cap conservative, but give on-prem fallback models more
     // room because their reasoning can otherwise consume the completion budget.
