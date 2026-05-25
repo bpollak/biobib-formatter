@@ -36,6 +36,10 @@ async function main() {
       mechanicalRoute[1]?.provider === 'cloud',
   );
   record(
+    'On-prem fallback route has larger completion budget than cloud route',
+    (mechanicalRoute[0]?.maxTokens ?? 0) > (mechanicalRoute[1]?.maxTokens ?? 0),
+  );
+  record(
     'Model routing omits unavailable providers',
     onPremOnlyRoute.length === 1 && onPremOnlyRoute[0]?.provider === 'onPrem',
   );

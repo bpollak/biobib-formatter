@@ -144,7 +144,11 @@ export interface ModelCredentials {
 export interface SliceModelCandidate {
   provider: ModelProvider;
   model: string;
+  maxTokens: number;
 }
+
+const CLOUD_MAX_TOKENS = 12000;
+const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 24000);
 
 const HIGH_FIDELITY_SLICES = new Set<SliceKey>([
   'meta_and_I',
@@ -161,12 +165,12 @@ export function modelCandidatesForSlice(
   available: Partial<Record<ModelProvider, boolean>> = { cloud: true, onPrem: true },
 ): SliceModelCandidate[] {
   const highFidelityOrder: SliceModelCandidate[] = [
-    { provider: 'cloud', model: LITELLM_MODEL },
-    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL },
+    { provider: 'cloud', model: LITELLM_MODEL, maxTokens: CLOUD_MAX_TOKENS },
+    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL, maxTokens: ON_PREM_MAX_TOKENS },
   ];
   const costControlledOrder: SliceModelCandidate[] = [
-    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL },
-    { provider: 'cloud', model: LITELLM_MODEL },
+    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL, maxTokens: ON_PREM_MAX_TOKENS },
+    { provider: 'cloud', model: LITELLM_MODEL, maxTokens: CLOUD_MAX_TOKENS },
   ];
   const ordered = HIGH_FIDELITY_SLICES.has(slice) ? highFidelityOrder : costControlledOrder;
   return ordered.filter(candidate => available[candidate.provider] !== false);
@@ -519,10 +523,9 @@ async function callSliceOnce(
       { role: 'system', content: BASE_SYSTEM },
       { role: 'user', content: buildSliceUserPrompt(cv, slice) },
     ],
-    // 12K caps each slice's output while preserving large bibliography slices.
-    // Going larger causes the model to keep generating and time out before
-    // returning anything we can parse.
-    max_tokens: 12000,
+    // Keep the cloud cap conservative, but give on-prem fallback models more
+    // room because their reasoning can otherwise consume the completion budget.
+    max_tokens: candidate.maxTokens,
     response_format: { type: 'json_object' },
     ...(supportsCustomTemperature(candidate.model) ? { temperature: 0.1 } : {}),
   };
