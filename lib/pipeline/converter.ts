@@ -509,14 +509,20 @@ function yearWindowForSlice(slice: SliceKey): YearWindow | null {
 }
 
 function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
-  const window = yearWindowForSlice(slice);
-  if (!window) return rawText;
-
   const lines = rawText
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean);
   const sourceLines = sourceLinesForSlice(lines, slice);
+  const window = yearWindowForSlice(slice);
+  if (!window) {
+    if (sourceLines.length === lines.length) return rawText;
+    return [
+      `Source CV excerpt prefiltered for slice "${slice}".`,
+      'Use this excerpt as source evidence; keep only items matching the requested section rules.',
+      sourceLines.join('\n'),
+    ].join('\n\n');
+  }
   const keep = new Set<number>();
 
   sourceLines.forEach((line, index) => {
@@ -550,6 +556,9 @@ function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
       /\b(invited lectures at national and international meetings|invited lectures at institutions)\b/i,
       /\babstracts and contributed talks\b/i,
     );
+  }
+  if (slice === 'II_external') {
+    return linesBetween(lines, /\bprofessional service activities\b/i, /\beducational activities\b/i);
   }
   if (slice.startsWith('III_abstracts')) {
     return linesBetween(lines, /\babstracts and contributed talks\b/i);
@@ -696,13 +705,19 @@ async function callSliceWithModelFallbacks(
   for (const candidate of candidates) {
     const apiKey = apiKeyForCandidate(candidate, credentials);
     if (!apiKey) continue;
-    try {
-      return await callSliceOnce(cv, slice, candidate, apiKey, options);
-    } catch (e) {
-      if (isAbortError(e)) throw e;
-      const message = (e as Error).message;
-      failures.push(`${candidate.model}: ${message}`);
-      console.warn(`[converter] slice "${slice}" failed with "${candidate.model}", trying fallback if available:`, message);
+    const attempts = candidate.provider === 'onPrem' ? 2 : 1;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await callSliceOnce(cv, slice, candidate, apiKey, options);
+      } catch (e) {
+        if (isAbortError(e)) throw e;
+        const message = (e as Error).message;
+        failures.push(`${candidate.model}${attempts > 1 ? ` attempt ${attempt}` : ''}: ${message}`);
+        console.warn(
+          `[converter] slice "${slice}" failed with "${candidate.model}" attempt ${attempt}, trying fallback if available:`,
+          message,
+        );
+      }
     }
   }
 

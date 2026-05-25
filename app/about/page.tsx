@@ -78,6 +78,7 @@ const RELEASE_NOTES = [
       'Added section-aware model routing so review tasks can use cloud or on-prem UCSD TritonAI models based on the type of BioBib content being extracted.',
       'Added fallback handling across model providers so eligible sections can continue when a preferred model is temporarily unavailable or over budget.',
       'Improved on-prem fallback handling for longer BioBib sections by narrowing review context to the requested date window when appropriate.',
+      'Improved resilience for on-prem review attempts with a retry path for transient empty or truncated responses.',
       'Updated the application description to reflect routed UCSD TritonAI review rather than a single fixed review model.',
     ],
   },
