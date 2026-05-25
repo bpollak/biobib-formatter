@@ -44,9 +44,9 @@ function heading2(text: string, options?: { underline?: boolean }): Paragraph {
   });
 }
 
-function heading3(text: string): Paragraph {
+function heading3(text: string, options?: { italic?: boolean }): Paragraph {
   return new Paragraph({
-    children: [run({ text, bold: true, italics: true, size: 20 })],
+    children: [run({ text, bold: true, italics: options?.italic ?? true, size: 20 })],
     heading: HeadingLevel.HEADING_3,
     spacing: { before: 160, after: 60 },
   });
@@ -502,7 +502,7 @@ function publicationSubSection(
   richTextParagraphs: RichTextParagraph[] = [],
 ): Paragraph[] {
   return [
-    heading3(heading),
+    heading3(heading, { italic: false }),
     ...(entries.length > 0 ? publicationList(entries, richTextParagraphs) : [body('None.')]),
   ];
 }
@@ -516,14 +516,14 @@ function additionalProductsSection(
 ): Paragraph[] {
   const ownTheses = filterOwnTheses(theses, facultyName);
   const children = [
-    heading3('IV. Additional Products of Major Research'),
+    heading3('IV. Additional Products of Major Research', { italic: false }),
     ...publicationSubSection('a. Theses', ownTheses, richTextParagraphs),
     ...publicationSubSection('b. Patent/Patent License', patents, richTextParagraphs),
   ];
 
   if (additionalProducts.length > 0) {
     children.push(
-      heading3('c. Other Products'),
+      heading3('c. Other Products', { italic: false }),
       ...publicationList(additionalProducts, richTextParagraphs),
     );
   }
@@ -689,7 +689,7 @@ export async function generateBioBibDocx(
     ...publicationSubSection('I. Refereed Journal Articles', sections.peerReviewedJournals, richTextParagraphs),
     ...publicationSubSection('II. Review and Invited Articles', sections.reviewAndInvited, richTextParagraphs),
 
-    heading3('III. Books and Book Chapters'),
+    heading3('III. Books and Book Chapters', { italic: false }),
     ...publicationSubSection('a. Books', sections.books, richTextParagraphs),
     ...publicationSubSection('b. Book Chapters', sections.chapters, richTextParagraphs),
     ...publicationSubSection('IV. Refereed Conference Proceedings', sections.refereedProceedings, richTextParagraphs),

@@ -92,6 +92,11 @@ async function main() {
       !text.includes('II. Abstracts of Non-Refereed Conference Proceedings'),
   );
   record(
+    'Section III bibliography subheaders are not italicized',
+    paragraphHasStyleWithoutItalics(xml, 'I. Refereed Journal Articles', 'Heading3') &&
+      paragraphHasStyleWithoutItalics(xml, 'II. Review and Invited Articles', 'Heading3'),
+  );
+  record(
     'Other Articles and Work in Progress sections are present when empty or sparse',
     text.includes('V. Other Articles') && text.includes('C. Work in Progress'),
   );
@@ -240,6 +245,11 @@ function docxXmlToText(documentXml: string): string {
 function paragraphHasStyleAndUnderline(xml: string, text: string, style: string): boolean {
   const paragraph = paragraphXmlContaining(xml, text);
   return !!paragraph && paragraph.includes(`w:pStyle w:val="${style}"`) && paragraph.includes('w:u w:val="single"');
+}
+
+function paragraphHasStyleWithoutItalics(xml: string, text: string, style: string): boolean {
+  const paragraph = paragraphXmlContaining(xml, text);
+  return !!paragraph && paragraph.includes(`w:pStyle w:val="${style}"`) && !paragraph.includes('<w:i/>');
 }
 
 function paragraphXmlContaining(xml: string, text: string): string | undefined {

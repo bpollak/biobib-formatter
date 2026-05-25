@@ -80,6 +80,7 @@ const RELEASE_NOTES = [
       'Improved student instructional activity formatting with grouped subheaders and restarted numbering within each group.',
       'Improved presentation formatting so national/international presentations and other invited presentations number independently within their own subsections.',
       'Enhanced bibliography organization with clearer Section III labels, always-present empty sections where expected, and better placement of likely submitted or in-progress work.',
+      'Refined bibliography subheading styling so publication category labels are not italicized.',
       'Improved preservation of chemical and scientific notation from Word CVs by carrying source subscript and superscript formatting into generated bibliography entries when available.',
     ],
   },
