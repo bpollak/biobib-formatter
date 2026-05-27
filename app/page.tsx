@@ -17,6 +17,7 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import ArticleIcon from '@mui/icons-material/Article';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { upload } from '@vercel/blob/client';
 import { ConversionResult } from '@/lib/types';
 import { ACCEPTED_MIME_TYPES } from '@/lib/constants';
@@ -59,6 +60,12 @@ interface ResultState {
   result: ConversionResult;
   fileName: string;
   partial: boolean;
+}
+
+interface ActiveJobRecord {
+  jobId: string;
+  fileName: string;
+  startedAt: number;
 }
 
 const SLICE_LABELS: Record<SliceKey, string> = {
@@ -105,8 +112,9 @@ const SEVERITY_ICON = {
 };
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 12 * 60 * 1000; // Pro slice budget + finalize headroom
 const PAGE_MAX_WIDTH = 1170;
+const ACTIVE_JOB_STORAGE_KEY = 'biobib.activeJob.v1';
+const JOB_ID_QUERY_PARAM = 'jobId';
 
 const HOME_FEATURES = [
   {
@@ -126,10 +134,48 @@ const HOME_FEATURES = [
   },
 ];
 
+function readActiveJob(): ActiveJobRecord | null {
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ActiveJobRecord>;
+    if (!parsed.jobId || !parsed.fileName || !parsed.startedAt) return null;
+    return {
+      jobId: parsed.jobId,
+      fileName: parsed.fileName,
+      startedAt: parsed.startedAt,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveJob(record: ActiveJobRecord): void {
+  window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify(record));
+}
+
+function clearActiveJob(): void {
+  window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+}
+
+function setJobIdInUrl(jobId: string | null): void {
+  const url = new URL(window.location.href);
+  if (jobId) url.searchParams.set(JOB_ID_QUERY_PARAM, jobId);
+  else url.searchParams.delete(JOB_ID_QUERY_PARAM);
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function jobIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get(JOB_ID_QUERY_PARAM);
+}
+
 export default function HomePage() {
   const [state, setState] = useState<AppState>('idle');
   const [error, setError] = useState<string>('');
   const [resultState, setResultState] = useState<ResultState | null>(null);
+  const [activeJob, setActiveJob] = useState<ActiveJobRecord | null>(null);
+  const [resumedJob, setResumedJob] = useState(false);
+  const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [slices, setSlices] = useState<Record<SliceKey, SliceState>>(initialSlices);
   const pollTimerRef = useRef<number | null>(null);
@@ -144,27 +190,23 @@ export default function HomePage() {
     };
   }, []);
 
-  const stopPolling = () => {
+  const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
       window.clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const startPolling = useCallback((jobId: string, fileName: string) => {
-    const startedAt = Date.now();
+  const startPolling = useCallback((job: ActiveJobRecord) => {
+    stopPolling();
+    setActiveJob(job);
+    writeActiveJob(job);
+    setJobIdInUrl(job.jobId);
 
     const tick = async () => {
-      const elapsedMs = Date.now() - startedAt;
-      if (elapsedMs > POLL_TIMEOUT_MS) {
-        setError('Conversion timed out after 12 minutes. Please try again.');
-        setState('error');
-        return;
-      }
-
       let res: Response;
       try {
-        res = await fetch(`/api/status/${jobId}`, { cache: 'no-store' });
+        res = await fetch(`/api/status/${job.jobId}`, { cache: 'no-store' });
       } catch {
         // Network blip — retry on next tick.
         pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
@@ -174,11 +216,17 @@ export default function HomePage() {
       if (!res.ok) {
         // 404 right after upload can happen briefly while the manifest write
         // propagates. Retry within the first 10s, error out after that.
+        const elapsedMs = Date.now() - job.startedAt;
         if (res.status === 404 && elapsedMs < 10_000) {
           pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
           return;
         }
         const detail = await res.json().then(b => (b as { detail?: string; error?: string }).detail ?? (b as { error?: string }).error).catch(() => null);
+        if (res.status === 404) {
+          clearActiveJob();
+          setActiveJob(null);
+          setJobIdInUrl(null);
+        }
         setError(`Status check failed (${res.status})${detail ? `: ${detail}` : ''}`);
         setState('error');
         return;
@@ -186,6 +234,12 @@ export default function HomePage() {
 
       const status = (await res.json()) as JobStatusResponse;
       setSlices(status.slices);
+      const serverStartedAt = status.startedAt || job.startedAt;
+      const updatedJob = { ...job, startedAt: serverStartedAt };
+      if (serverStartedAt !== job.startedAt) {
+        writeActiveJob(updatedJob);
+        setActiveJob(updatedJob);
+      }
 
       if (status.state === 'pending' || status.state === 'merging') {
         pollTimerRef.current = window.setTimeout(tick, POLL_INTERVAL_MS);
@@ -194,6 +248,9 @@ export default function HomePage() {
 
       if (status.state === 'failed') {
         setError(status.error || 'Conversion failed. Please try again.');
+        clearActiveJob();
+        setActiveJob(null);
+        setJobIdInUrl(null);
         setState('error');
         return;
       }
@@ -205,16 +262,41 @@ export default function HomePage() {
       }
 
       setResultState({
-        jobId,
+        jobId: job.jobId,
         result: status.result,
-        fileName,
+        fileName: job.fileName,
         partial: status.state === 'failed_partial',
       });
       setState('complete');
     };
 
     pollTimerRef.current = window.setTimeout(tick, 500); // first tick fast
-  }, []);
+  }, [stopPolling]);
+
+  useEffect(() => {
+    const urlJobId = jobIdFromUrl();
+    const savedJob = readActiveJob();
+    const jobToResume = urlJobId
+      ? {
+          jobId: urlJobId,
+          fileName: savedJob?.jobId === urlJobId ? savedJob.fileName : 'BioBib conversion',
+          startedAt: savedJob?.jobId === urlJobId ? savedJob.startedAt : Date.now(),
+        }
+      : savedJob;
+
+    if (!jobToResume) return;
+
+    const resumeTimer = window.setTimeout(() => {
+      setState('processing');
+      setError('');
+      setResumedJob(true);
+      setRecoveryCopied(false);
+      setSlices(initialSlices());
+      startPolling(jobToResume);
+    }, 0);
+
+    return () => window.clearTimeout(resumeTimer);
+  }, [startPolling]);
 
   const processFile = useCallback(async (file: File) => {
     if (!file.name.endsWith('.docx')) {
@@ -225,6 +307,10 @@ export default function HomePage() {
 
     setState('uploading');
     setError('');
+    setResultState(null);
+    setActiveJob(null);
+    setResumedJob(false);
+    setRecoveryCopied(false);
     setSlices(initialSlices());
 
     let blob;
@@ -277,7 +363,11 @@ export default function HomePage() {
       return;
     }
 
-    startPolling(data.jobId, file.name);
+    startPolling({
+      jobId: data.jobId,
+      fileName: file.name,
+      startedAt: Date.now(),
+    });
   }, [startPolling]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -297,9 +387,26 @@ export default function HomePage() {
     window.open(`/api/download/${resultState.jobId}`, '_blank');
   };
 
+  const onCopyRecoveryLink = async () => {
+    if (!activeJob) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set(JOB_ID_QUERY_PARAM, activeJob.jobId);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setRecoveryCopied(true);
+    } catch {
+      window.prompt('Copy recovery link', url.toString());
+    }
+  };
+
   const onReset = () => {
     stopPolling();
+    clearActiveJob();
+    setJobIdInUrl(null);
     setState('idle');
+    setActiveJob(null);
+    setResumedJob(false);
+    setRecoveryCopied(false);
     setResultState(null);
     setError('');
     setSlices(initialSlices());
@@ -464,6 +571,26 @@ export default function HomePage() {
               </Stack>
             )}
           </Box>
+          {state === 'processing' && activeJob && (
+            <Alert
+              severity={resumedJob ? 'info' : 'success'}
+              sx={{ mb: 3 }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  startIcon={<ContentCopyIcon />}
+                  onClick={onCopyRecoveryLink}
+                >
+                  {recoveryCopied ? 'Copied' : 'Copy Link'}
+                </Button>
+              }
+            >
+              {resumedJob
+                ? `Resumed ${activeJob.fileName}. The recovery link in the address bar can reopen this job.`
+                : `Saved ${activeJob.fileName}. The recovery link in the address bar can reopen this job if the page is refreshed or closed.`}
+            </Alert>
+          )}
           <LinearProgress
             variant={state === 'processing' ? 'determinate' : 'indeterminate'}
             value={state === 'processing' ? progressValue : undefined}
@@ -518,6 +645,9 @@ export default function HomePage() {
                 <Typography variant="h5" fontWeight={700}>BioBib draft is ready</Typography>
                 <Typography variant="body2" sx={{ opacity: 0.85 }}>
                   {sectionSummary.autoFilled} sections completed automatically · {sectionSummary.gaps.required} required gaps
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>
+                  This result remains recoverable from this browser until you start over.
                 </Typography>
               </Box>
               <Button

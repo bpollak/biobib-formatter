@@ -28,7 +28,7 @@ const PIPELINE_STEPS = [
   },
   {
     title: '4. Progress is tracked while the work runs',
-    body: 'Each task saves its result as it finishes. The progress screen checks those saved results and shows which parts are still running, complete, or failed.',
+    body: 'Each task saves its result as it finishes. The progress screen checks those saved results, shows which parts are still running, complete, or failed, and can resume a saved job after a refresh or accidental tab close.',
   },
   {
     title: '5. The app assembles the BioBib',
@@ -71,6 +71,15 @@ const SLICE_GROUPS = [
 ];
 
 const RELEASE_NOTES = [
+  {
+    releasedAt: 'May 26, 2026, 9:34 PM PDT',
+    title: 'Conversion Recovery Update',
+    changes: [
+      'Added saved conversion recovery so an active BioBib job can resume after a page refresh, accidental tab close, or copied recovery link.',
+      'Added recovery links to the progress screen so users can return to a running conversion without losing access to the generated draft.',
+      'Improved completed-result recovery so a finished BioBib remains reachable from the browser until the user starts over.',
+    ],
+  },
   {
     releasedAt: 'May 24, 2026, 8:18 PM PDT',
     title: 'Model Routing and Resilience Update',
@@ -159,6 +168,10 @@ const FAQ_ITEMS = [
   {
     q: 'What happens if one section fails?',
     a: 'If most of the work completes but one section fails, the app can still create a partial draft. The result will show that some content needs review instead of discarding all completed work.',
+  },
+  {
+    q: 'What happens if I refresh or close the page?',
+    a: 'After a conversion job starts, the app saves a recovery link in the browser and address bar. Reopening that link resumes progress or returns to the finished draft when the job is complete.',
   },
   {
     q: 'Does the app preserve the uploaded CV?',
