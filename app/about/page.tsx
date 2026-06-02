@@ -72,6 +72,15 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 2, 2026, 12:48 PM PDT',
+    title: 'Recovery Navigation Update',
+    changes: [
+      'Changed saved conversion recovery so returning to the home page no longer automatically forces a previous job to resume.',
+      'Added a visible recovery prompt with resume and dismiss actions for saved in-progress conversions.',
+      'Kept explicit recovery links available for users who want to reopen a running conversion directly.',
+    ],
+  },
+  {
     releasedAt: 'May 26, 2026, 9:34 PM PDT',
     title: 'Conversion Recovery Update',
     changes: [
@@ -171,7 +180,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What happens if I refresh or close the page?',
-    a: 'After a conversion job starts, the app saves a recovery link in the browser and address bar. Reopening that link resumes progress or returns to the finished draft when the job is complete.',
+    a: 'After a conversion job starts, the app saves a recovery link in the browser and address bar. Reopening that link resumes progress or returns to the finished draft when the job is complete. Returning to the home page without the recovery link shows a resume-or-dismiss prompt instead of forcing the old job to reopen.',
   },
   {
     q: 'Does the app preserve the uploaded CV?',

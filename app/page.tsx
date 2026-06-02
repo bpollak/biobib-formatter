@@ -169,11 +169,18 @@ function jobIdFromUrl(): string | null {
   return new URLSearchParams(window.location.search).get(JOB_ID_QUERY_PARAM);
 }
 
+function recoveryUrlForJob(jobId: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set(JOB_ID_QUERY_PARAM, jobId);
+  return url.toString();
+}
+
 export default function HomePage() {
   const [state, setState] = useState<AppState>('idle');
   const [error, setError] = useState<string>('');
   const [resultState, setResultState] = useState<ResultState | null>(null);
   const [activeJob, setActiveJob] = useState<ActiveJobRecord | null>(null);
+  const [savedJob, setSavedJob] = useState<ActiveJobRecord | null>(null);
   const [resumedJob, setResumedJob] = useState(false);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -225,6 +232,7 @@ export default function HomePage() {
         if (res.status === 404) {
           clearActiveJob();
           setActiveJob(null);
+          setSavedJob(null);
           setJobIdInUrl(null);
         }
         setError(`Status check failed (${res.status})${detail ? `: ${detail}` : ''}`);
@@ -250,6 +258,7 @@ export default function HomePage() {
         setError(status.error || 'Conversion failed. Please try again.');
         clearActiveJob();
         setActiveJob(null);
+        setSavedJob(null);
         setJobIdInUrl(null);
         setState('error');
         return;
@@ -274,21 +283,24 @@ export default function HomePage() {
   }, [stopPolling]);
 
   useEffect(() => {
-    const urlJobId = jobIdFromUrl();
-    const savedJob = readActiveJob();
-    const jobToResume = urlJobId
-      ? {
-          jobId: urlJobId,
-          fileName: savedJob?.jobId === urlJobId ? savedJob.fileName : 'BioBib conversion',
-          startedAt: savedJob?.jobId === urlJobId ? savedJob.startedAt : Date.now(),
-        }
-      : savedJob;
-
-    if (!jobToResume) return;
-
     const resumeTimer = window.setTimeout(() => {
+      const urlJobId = jobIdFromUrl();
+      const storedJob = readActiveJob();
+
+      if (!urlJobId) {
+        setSavedJob(storedJob);
+        return;
+      }
+
+      const jobToResume = {
+        jobId: urlJobId,
+        fileName: storedJob?.jobId === urlJobId ? storedJob.fileName : 'BioBib conversion',
+        startedAt: storedJob?.jobId === urlJobId ? storedJob.startedAt : Date.now(),
+      };
+
       setState('processing');
       setError('');
+      setSavedJob(null);
       setResumedJob(true);
       setRecoveryCopied(false);
       setSlices(initialSlices());
@@ -309,6 +321,8 @@ export default function HomePage() {
     setError('');
     setResultState(null);
     setActiveJob(null);
+    setSavedJob(null);
+    clearActiveJob();
     setResumedJob(false);
     setRecoveryCopied(false);
     setSlices(initialSlices());
@@ -387,15 +401,33 @@ export default function HomePage() {
     window.open(`/api/download/${resultState.jobId}`, '_blank');
   };
 
+  const onResumeSavedJob = () => {
+    if (!savedJob) return;
+    setState('processing');
+    setError('');
+    setSavedJob(null);
+    setResumedJob(true);
+    setRecoveryCopied(false);
+    setSlices(initialSlices());
+    startPolling(savedJob);
+  };
+
+  const onClearSavedJob = () => {
+    clearActiveJob();
+    setJobIdInUrl(null);
+    setSavedJob(null);
+    setResumedJob(false);
+    setRecoveryCopied(false);
+  };
+
   const onCopyRecoveryLink = async () => {
     if (!activeJob) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set(JOB_ID_QUERY_PARAM, activeJob.jobId);
+    const url = recoveryUrlForJob(activeJob.jobId);
     try {
-      await navigator.clipboard.writeText(url.toString());
+      await navigator.clipboard.writeText(url);
       setRecoveryCopied(true);
     } catch {
-      window.prompt('Copy recovery link', url.toString());
+      window.prompt('Copy recovery link', url);
     }
   };
 
@@ -405,6 +437,7 @@ export default function HomePage() {
     setJobIdInUrl(null);
     setState('idle');
     setActiveJob(null);
+    setSavedJob(null);
     setResumedJob(false);
     setRecoveryCopied(false);
     setResultState(null);
@@ -492,6 +525,25 @@ export default function HomePage() {
           </Stack>
         </Paper>
       </Box>
+
+      {state === 'idle' && savedJob && (
+        <Alert
+          severity="info"
+          sx={{ mb: 2 }}
+          action={
+            <Stack direction="row" spacing={1}>
+              <Button color="inherit" size="small" onClick={onResumeSavedJob}>
+                Resume
+              </Button>
+              <Button color="inherit" size="small" onClick={onClearSavedJob}>
+                Dismiss
+              </Button>
+            </Stack>
+          }
+        >
+          Saved conversion for {savedJob.fileName}. Resume it from the recovery link or dismiss it to start over.
+        </Alert>
+      )}
 
       {(state === 'idle' || state === 'error') && (
         <Paper
