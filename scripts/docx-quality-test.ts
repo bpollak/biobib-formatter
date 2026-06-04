@@ -68,9 +68,30 @@ async function main() {
       !merged.sections.peerReviewedJournals.some(item => /under review/i.test(item.citation)),
   );
 
+  record(
+    'Honorific appointment-like entries are retained as honors and awards',
+    merged.sections.awards.some(item => item.includes('Visiting Scientist') && item.includes('Sandia')),
+  );
+  record(
+    'Potential duplicate Section II placements are flagged for review',
+    (merged.reviewNotes ?? []).some(note =>
+      note.topic === 'Potential duplicate placement' &&
+      note.instruction.includes('Opponent for Ph.D. Defense'),
+    ),
+  );
+  record(
+    'Other Publications are reclassified into proceedings and popular works when patterns are clear',
+    merged.sections.refereedProceedings.some(item => item.citation.includes('Proceedings, Example Conference')) &&
+      merged.sections.popularWorks.some(item => item.citation.includes('Review of Advances in Chemical Physics')) &&
+      !merged.sections.otherArticles.some(item => item.citation.includes('Proceedings, Example Conference')) &&
+      !merged.sections.otherProceedings.some(item => item.citation.includes('Proceedings, Example Conference')),
+  );
+
   const buffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs());
-  const xml = await docxXml(buffer);
+  const parts = await docxParts(buffer);
+  const xml = parts.documentXml;
   const text = docxXmlToText(xml);
+  const allXml = [parts.documentXml, ...parts.footerXml].join('\n');
 
   record('DOCX does not expose source-number metadata', !/\bsource\s+no\.?\b/i.test(text));
   record('DOCX does not expose BioBib section metadata', !/\bBioBib section:/i.test(text));
@@ -98,7 +119,7 @@ async function main() {
   );
   record(
     'Presentation subsections restart numbering at 1',
-    /Presentations at National and International Meetings\s+1\.\s+Gordon Research Conference[\s\S]*Other Invited Presentations\s+1\.\s+Department of Chemistry Seminar/.test(text),
+    /Presentations at National and International Meetings\s+1\.\s+Gordon Research Conference[\s\S]*Other Invited Presentations\s+1\.\s+Example H2O\+ presentation[\s\S]*2\.\s+Department of Chemistry Seminar/.test(text),
   );
   record(
     'Student instructional activities render grouped numbered lists without repeated group labels',
@@ -132,6 +153,19 @@ async function main() {
     'Bibliography preserves representative subscript and superscript runs',
     /w:vertAlign w:val="subscript"/.test(xml) && /w:vertAlign w:val="superscript"/.test(xml),
   );
+  record(
+    'Section II presentations preserve representative subscript and superscript runs',
+    paragraphXmlContaining(xml, 'Example H2O+ presentation')?.includes('w:vertAlign w:val="subscript"') === true &&
+      paragraphXmlContaining(xml, 'Example H2O+ presentation')?.includes('w:vertAlign w:val="superscript"') === true,
+  );
+  record(
+    'DOCX includes centered footer page number field',
+    parts.footerXml.length > 0 && /<w:instrText[^>]*>PAGE<\/w:instrText>|<w:fldChar/.test(allXml),
+  );
+  record(
+    'DOCX includes final document link and signature placeholders',
+    text.includes('Document link:') && text.includes('Signature:') && text.includes('Date:'),
+  );
 
   const failed = checks.filter(check => !check.pass);
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed.`);
@@ -154,6 +188,13 @@ function buildPartialResult(): PartialResult {
           institution: 'University of California San Diego',
           location: '',
           rank: 'Professor',
+        },
+        {
+          from: '2000',
+          to: '2000',
+          institution: 'Combustion Research Facility, Sandia Natl Laboratory',
+          location: 'Livermore, CA',
+          rank: 'Visiting Scientist',
         },
       ],
       education: [
@@ -182,7 +223,11 @@ function buildPartialResult(): PartialResult {
       presentations: [],
       invitedPresentations: [
         'Gordon Research Conference on Molecular Beams, 2024.',
+        'Example H2O+ presentation, Department of Chemistry Seminar, 2025.',
         'Department of Chemistry Seminar, Example University, 2025.',
+      ],
+      professionalActivities: [
+        'Opponent for Ph.D. Defense of Karoline Wiesner, Department of Physics, University of Uppsala, Uppsala, Sweden January 24, 2004',
       ],
       studentInstructionalGroups: [
         {
@@ -190,6 +235,12 @@ function buildPartialResult(): PartialResult {
           entries: [
             '2. Former Ph.D. Students: Brian Example, B.S. 2016; Ph.D. 2021.',
             '1. Alice Example, B.S. 2014; Ph.D. 2019.',
+          ],
+        },
+        {
+          heading: 'Ph.D. Thesis Committees - Member',
+          entries: [
+            'Opponent for Ph.D. Defense of Karoline Wiesner, Department of Physics, University of Uppsala, Uppsala, Sweden January 24, 2004',
           ],
         },
       ],
@@ -209,6 +260,22 @@ function buildPartialResult(): PartialResult {
         publication({
           citation: 'C. Research, "Submitted discovery," Journal of Chemical Physics, under review.',
           type: 'journal',
+        }),
+      ],
+      otherArticles: [
+        publication({
+          citation: 'R.E. Continetti, Example article, Proceedings, Example Conference, pp. 1-2 (2002).',
+          type: 'other',
+        }),
+        publication({
+          citation: 'R.E. Continetti, Review of Advances in Chemical Physics, Vol. 128, Ed. S.A. Rice, John Wiley, in J. Am. Chem. Soc. 126, 7728-7729 (2004).',
+          type: 'other',
+        }),
+      ],
+      otherProceedings: [
+        publication({
+          citation: 'R.E. Continetti, Example article, Proceedings, Example Conference, pp. 1-2 (2002).',
+          type: 'proceedings',
         }),
       ],
     },
@@ -247,14 +314,29 @@ function buildRichTextParagraphs() {
         { text: ' dynamics," Journal of Chemical Physics 10, 11-12 (2026).' },
       ],
     },
+    {
+      text: 'Example H2O+ presentation, Department of Chemistry Seminar, 2025.',
+      runs: [
+        { text: 'Example H' },
+        { text: '2', verticalAlign: 'subscript' as const },
+        { text: 'O' },
+        { text: '+', verticalAlign: 'superscript' as const },
+        { text: ' presentation, Department of Chemistry Seminar, 2025.' },
+      ],
+    },
   ];
 }
 
-async function docxXml(buffer: Buffer): Promise<string> {
+async function docxParts(buffer: Buffer): Promise<{ documentXml: string; footerXml: string[] }> {
   const zip = await JSZip.loadAsync(buffer);
   const documentXml = await zip.file('word/document.xml')?.async('string');
   if (!documentXml) throw new Error('word/document.xml missing from generated DOCX');
-  return documentXml;
+  const footerXml = await Promise.all(
+    Object.keys(zip.files)
+      .filter(name => /^word\/footer\d+\.xml$/.test(name))
+      .map(async name => zip.file(name)?.async('string') ?? ''),
+  );
+  return { documentXml, footerXml };
 }
 
 function docxXmlToText(documentXml: string): string {

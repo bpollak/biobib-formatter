@@ -143,11 +143,18 @@ export interface BioBibGap {
   severity: GapSeverity;
 }
 
+export interface BioBibReviewNote {
+  section: string;
+  topic: string;
+  instruction: string;
+}
+
 // ── Full Conversion Result ───────────────────────────────────────────────────
 
 export interface ConversionResult {
   sections: BioBibSections;
   gaps: BioBibGap[];
+  reviewNotes?: BioBibReviewNote[];
   metadata: {
     name: string;
     department: string;

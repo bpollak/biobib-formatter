@@ -5,7 +5,7 @@
 
 import {
   Document, Paragraph, TextRun, Table, TableRow, TableCell,
-  WidthType, HeadingLevel, AlignmentType,
+  WidthType, HeadingLevel, AlignmentType, Footer, PageNumber,
   Packer, ShadingType, UnderlineType, IRunOptions,
 } from 'docx';
 import {
@@ -78,6 +78,45 @@ function dividerLine(): Paragraph {
     thematicBreak: true,
     spacing: { before: 60, after: 60 },
   });
+}
+
+function pageNumberFooter(): Footer {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          run({ children: [PageNumber.CURRENT], size: 18 }),
+        ],
+      }),
+    ],
+  });
+}
+
+function finalCertificationBlock(): Paragraph[] {
+  return [
+    new Paragraph({
+      children: [run({ text: '. . . - . . . - . . . - . . .', size: 18 })],
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 240, after: 120 },
+    }),
+    new Paragraph({
+      children: [
+        run({ text: 'Document link: ', bold: true, size: 20 }),
+        run({ text: '____________________________________________', size: 20 }),
+      ],
+      spacing: { after: 120 },
+    }),
+    new Paragraph({
+      children: [
+        run({ text: 'Signature: ', bold: true, size: 20 }),
+        run({ text: '________________________________', size: 20 }),
+        run({ text: '     Date: ', bold: true, size: 20 }),
+        run({ text: '________________', size: 20 }),
+      ],
+      spacing: { after: 120 },
+    }),
+  ];
 }
 
 const NOT_LISTED = 'Not listed';
@@ -253,8 +292,12 @@ function normalizeForComparison(value: string): string {
 }
 
 function citationRuns(citation: string, richTextParagraphs: RichTextParagraph[]): TextRun[] {
-  const matched = findRichCitation(citation, richTextParagraphs);
-  if (!matched) return [run({ text: citation, size: 20 })];
+  return richTextRunsForText(citation, richTextParagraphs);
+}
+
+function richTextRunsForText(text: string, richTextParagraphs: RichTextParagraph[]): TextRun[] {
+  const matched = findRichCitation(text, richTextParagraphs);
+  if (!matched) return [run({ text, size: 20 })];
   return stripRichSourceNumber(matched.runs).map(sourceRun =>
     run({
       text: sourceRun.text,
@@ -322,32 +365,32 @@ function sentenceCaseAllCaps(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
-function stringList(items: string[]): Paragraph[] {
+function stringList(items: string[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
   return items.map(item => new Paragraph({
-    children: [run({ text: item, size: 20 })],
+    children: richTextRunsForText(item, richTextParagraphs),
     spacing: { after: 60 },
   }));
 }
 
-function numberedStringList(items: string[]): Paragraph[] {
+function numberedStringList(items: string[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
   return items.map((item, index) => new Paragraph({
     children: [
       run({ text: `${index + 1}. `, bold: true, size: 20 }),
-      run({ text: item, size: 20 }),
+      ...richTextRunsForText(item, richTextParagraphs),
     ],
     spacing: { after: 60 },
   }));
 }
 
-function listOrNone(items: string[], noneText = 'None.'): Paragraph[] {
-  return items.length > 0 ? stringList(items) : [body(noneText)];
+function listOrNone(items: string[], noneText = 'None.', richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
+  return items.length > 0 ? stringList(items, richTextParagraphs) : [body(noneText)];
 }
 
-function serviceList(items: { description: string; dates: string }[]): Paragraph[] {
+function serviceList(items: { description: string; dates: string }[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
   return stringList(items.map(s => {
     const dates = cleanWrappedDate(s.dates);
     return `${s.description}${dates ? ` (${dates})` : ''}`;
-  }));
+  }), richTextParagraphs);
 }
 
 function cleanWrappedDate(value: string): string {
@@ -402,18 +445,28 @@ function grantsOrNone(grants: GrantEntry[]): (Paragraph | Table)[] {
   ];
 }
 
-function subSection(heading: string, items: string[], noneText = 'None.'): Paragraph[] {
+function subSection(
+  heading: string,
+  items: string[],
+  noneText = 'None.',
+  richTextParagraphs: RichTextParagraph[] = [],
+): Paragraph[] {
   return [
     heading3(heading),
-    ...listOrNone(items, noneText),
+    ...listOrNone(items, noneText, richTextParagraphs),
   ];
 }
 
-function presentationSubSection(heading: string, items: string[], noneText = 'None.'): Paragraph[] {
+function presentationSubSection(
+  heading: string,
+  items: string[],
+  noneText = 'None.',
+  richTextParagraphs: RichTextParagraph[] = [],
+): Paragraph[] {
   const cleaned = items.map(stripSourceNumber).filter(shouldRenderPresentation);
   return [
     heading3(heading),
-    ...(cleaned.length > 0 ? numberedStringList(cleaned) : [body(noneText)]),
+    ...(cleaned.length > 0 ? numberedStringList(cleaned, richTextParagraphs) : [body(noneText)]),
   ];
 }
 
@@ -421,17 +474,18 @@ function studentInstructionalSection(
   groups: StudentInstructionalGroup[],
   flatItems: string[],
   fallbackTeaching: string[],
+  richTextParagraphs: RichTextParagraph[] = [],
 ): Paragraph[] {
   const normalizedGroups = normalizeStudentGroups(groups, flatItems);
   if (normalizedGroups.length > 0) {
     return normalizedGroups.flatMap(group => [
       heading3(group.heading),
-      ...numberedStringList(group.entries),
+      ...numberedStringList(group.entries, richTextParagraphs),
     ]);
   }
 
   const mentoringOnly = fallbackTeaching.filter(looksLikeStudentMentoring);
-  if (mentoringOnly.length > 0) return stringList(mentoringOnly);
+  if (mentoringOnly.length > 0) return stringList(mentoringOnly, richTextParagraphs);
   return [manualPlaceholder('List students supervised, postdoctoral researchers mentored, undergraduate research students, visiting scholars/students, and thesis committee service.')];
 }
 
@@ -626,18 +680,18 @@ export async function generateBioBibDocx(
 
     heading2('(a) University Service', { underline: true }),
     heading3('Departmental Service'),
-    ...(departmentalService.length > 0 ? serviceList(departmentalService) : [body('None.')]),
+    ...(departmentalService.length > 0 ? serviceList(departmentalService, richTextParagraphs) : [body('None.')]),
     heading3('University, Campus, Academic Senate, and Systemwide Service'),
-    ...(nonDepartmentalService.length > 0 ? serviceList(nonDepartmentalService) : [body('None.')]),
-    ...(sections.publicService.length > 0 ? [heading3('Public Service'), ...stringList(sections.publicService)] : []),
+    ...(nonDepartmentalService.length > 0 ? serviceList(nonDepartmentalService, richTextParagraphs) : [body('None.')]),
+    ...(sections.publicService.length > 0 ? [heading3('Public Service'), ...stringList(sections.publicService, richTextParagraphs)] : []),
 
     dividerLine(),
     heading2('(b) Memberships', { underline: true }),
-    ...listOrNone(sections.memberships),
+    ...listOrNone(sections.memberships, 'None.', richTextParagraphs),
 
     dividerLine(),
     heading2('(c) Honors and Awards', { underline: true }),
-    ...(sections.awards.length > 0 ? stringList(sections.awards) : [manualPlaceholder('List awards and honors with dates received.')]),
+    ...(sections.awards.length > 0 ? stringList(sections.awards, richTextParagraphs) : [manualPlaceholder('List awards and honors with dates received.')]),
 
     dividerLine(),
     heading2('(d) Contracts and Grants', { underline: true }),
@@ -651,15 +705,15 @@ export async function generateBioBibDocx(
     ...subSection('Professional Committee Service and Conference Organization', [
       ...sections.professionalActivities,
       ...sections.externalProfessionalActivities,
-    ]),
-    ...subSection('Consulting', sections.consulting),
-    ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities),
-    ...presentationSubSection('Presentations at National and International Meetings', sections.presentations),
-    ...presentationSubSection('Other Invited Presentations', sections.invitedPresentations),
+    ], 'None.', richTextParagraphs),
+    ...subSection('Consulting', sections.consulting, 'None.', richTextParagraphs),
+    ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities, 'None.', richTextParagraphs),
+    ...presentationSubSection('Presentations at National and International Meetings', sections.presentations, 'None.', richTextParagraphs),
+    ...presentationSubSection('Other Invited Presentations', sections.invitedPresentations, 'None.', richTextParagraphs),
 
     dividerLine(),
     heading2('(f) Most Significant Contributions to Promoting Diversity', { underline: true }),
-    ...listOrNone(sections.diversityContributions),
+    ...listOrNone(sections.diversityContributions, 'None.', richTextParagraphs),
 
     dividerLine(),
     heading2('(g) Other Activities', { underline: true }),
@@ -667,7 +721,7 @@ export async function generateBioBibDocx(
       ...sections.outreach,
       ...sections.clinicalActivities,
       ...sections.otherActivities,
-    ]),
+    ], 'None.', richTextParagraphs),
 
     dividerLine(),
     heading2('(h) Student Instructional Activities', { underline: true }),
@@ -675,11 +729,12 @@ export async function generateBioBibDocx(
       sections.studentInstructionalGroups,
       sections.studentInstructionalActivities,
       sections.teaching,
+      richTextParagraphs,
     ),
 
     dividerLine(),
     heading2('(i) External Reviews of Primary Creative Work', { underline: true }),
-    ...listOrNone(sections.externalReviews, 'None submitted with file.'),
+    ...listOrNone(sections.externalReviews, 'None submitted with file.', richTextParagraphs),
   ];
 
   // ── Section III ────────────────────────────────────────────────────────────
@@ -702,6 +757,7 @@ export async function generateBioBibDocx(
     ...publicationSubSection('III. Popular Works', sections.popularWorks, richTextParagraphs),
     ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name, richTextParagraphs),
     ...workInProgressSection(sections.workInProgress, richTextParagraphs),
+    ...finalCertificationBlock(),
   ];
 
   const doc = new Document({
@@ -723,6 +779,9 @@ export async function generateBioBibDocx(
       },
     },
     sections: [{
+      footers: {
+        default: pageNumberFooter(),
+      },
       children: [
         ...titleBlock,
         ...sectionI,

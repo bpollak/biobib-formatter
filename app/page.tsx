@@ -759,6 +759,10 @@ export default function HomePage() {
                   <Typography variant="body2" color="text.secondary">Optional</Typography>
                   <Typography variant="h5" fontWeight={700}>{sectionSummary.gaps.optional}</Typography>
                 </Box>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">Review notes</Typography>
+                  <Typography variant="h5" fontWeight={700}>{sectionSummary.reviewNotes}</Typography>
+                </Box>
               </Stack>
             </Paper>
           </Box>
@@ -797,6 +801,32 @@ export default function HomePage() {
             </Paper>
           )}
 
+          {resultState.result.reviewNotes && resultState.result.reviewNotes.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom fontWeight={700} sx={{ color: '#182B49' }}>
+                Review Notes
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                These items may be valid as drafted, but should be checked for section placement or duplication.
+              </Typography>
+              <List dense>
+                {resultState.result.reviewNotes.map((note, i) => (
+                  <ListItem key={`${note.section}-${note.topic}-${i}`} alignItems="flex-start">
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                      <WarningIcon color="warning" fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={`${note.section} — ${note.topic}`}
+                      secondary={note.instruction}
+                      primaryTypographyProps={{ variant: 'body2', fontWeight: 600 }}
+                      secondaryTypographyProps={{ variant: 'body2' }}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </Paper>
+          )}
+
           <Button variant="outlined" onClick={onReset}>Upload Another CV</Button>
         </Box>
       )}
@@ -813,7 +843,11 @@ function buildSectionSummary(result: ConversionResult) {
     { label: 'Section II — Memberships', filled: s.memberships.length > 0, count: s.memberships.length },
     { label: 'Section II — Awards and Honors', filled: s.awards.length > 0, count: s.awards.length },
     { label: 'Section II — Research Support', filled: s.grants.length > 0, count: s.grants.length },
-    { label: 'Section II — Student Instructional Activities', filled: (s.studentInstructionalActivities.length + s.teaching.length) > 0 },
+    {
+      label: 'Section II — Student Instructional Activities',
+      filled: (s.studentInstructionalGroups.length + s.studentInstructionalActivities.length + s.teaching.length) > 0,
+      count: s.studentInstructionalGroups.reduce((total, group) => total + group.entries.length, 0) + s.studentInstructionalActivities.length,
+    },
     { label: 'Section II — External Professional Activities', filled: (s.professionalActivities.length + s.externalProfessionalActivities.length + s.presentations.length + s.invitedPresentations.length) > 0 },
     { label: 'Section III — Peer-Reviewed Publications', filled: s.peerReviewedJournals.length > 0, count: s.peerReviewedJournals.length },
     { label: 'Section III — Other Publications', filled: (s.reviewAndInvited.length + s.books.length + s.chapters.length) > 0 },
@@ -826,5 +860,5 @@ function buildSectionSummary(result: ConversionResult) {
     optional: result.gaps.filter(g => g.severity === 'optional').length,
   };
 
-  return { sections, autoFilled, gaps };
+  return { sections, autoFilled, gaps, reviewNotes: result.reviewNotes?.length ?? 0 };
 }

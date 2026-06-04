@@ -11,7 +11,14 @@
  * the Vercel function cap and total wall time near max(durations).
  */
 
-import { ParsedCV, ConversionResult, BioBibSections, BioBibGap, PublicationEntry } from '../types';
+import {
+  ParsedCV,
+  ConversionResult,
+  BioBibSections,
+  BioBibGap,
+  BioBibReviewNote,
+  PublicationEntry,
+} from '../types';
 import { LITELLM_BASE_URL, LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../constants';
 
 // ── BioBib reference text shared by all section prompts ──────────────────────
@@ -131,6 +138,7 @@ const PRESENTATION_POST_2020_START = 2021;
 export interface PartialResult {
   sections: Partial<BioBibSections>;
   gaps?: BioBibGap[];
+  reviewNotes?: BioBibReviewNote[];
   metadata?: ConversionResult['metadata'];
 }
 
@@ -214,7 +222,8 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
     rules: `
 - Memberships must include scholarly societies, professional boards, civic/professional organizations, elected fellow memberships, and honor societies when listed.
 - Do not omit general society memberships such as AGU, RSC, AAAS, APS, ACS, or Phi Beta Kappa when present.
-- Honors and awards should include fellowships, awards, named honors, and elected fellow distinctions with dates.
+- Honors and awards should include fellowships, awards, named honors, elected fellow distinctions, and honorific or short-term visiting appointments with dates.
+- When the CV lists appointment-like honors under an "Appointments" heading, classify Visiting Scientist, Professore Visitatore, named Scholar, named Fellow, visiting faculty fellow, and sabbatical/short-term honorific appointments as Honors and Awards unless the CV clearly presents them as ordinary employment.
 - It is acceptable for an elected fellow distinction to appear both as a membership and as an honor/award when the CV supports both uses.
 - Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
 - Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
@@ -790,6 +799,7 @@ function emptySections(): BioBibSections {
 export function mergeSlices(parts: PartialResult[]): ConversionResult {
   const sections = emptySections();
   const gaps: BioBibGap[] = [];
+  const reviewNotes: BioBibReviewNote[] = [];
   let metadata: ConversionResult['metadata'] = {
     name: '',
     department: '',
@@ -802,6 +812,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
       metadata = { ...metadata, ...part.metadata, processedAt: metadata.processedAt };
     }
     if (part.gaps) gaps.push(...part.gaps);
+    if (part.reviewNotes) reviewNotes.push(...part.reviewNotes);
     if (!part.sections) continue;
     // Merge: array fields concat, scalar fields take first non-empty value.
     for (const key of Object.keys(part.sections) as (keyof BioBibSections)[]) {
@@ -821,6 +832,8 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   }
 
   moveWorkInProgressPublications(sections);
+  moveHonorificAppointmentsToAwards(sections);
+  reclassifyOtherPublications(sections);
 
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
@@ -864,9 +877,80 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.clinicalActivities = dedupeStrings(sections.clinicalActivities);
   sections.otherActivities = dedupeStrings(sections.otherActivities);
   sections.externalReviews = dedupeStrings(sections.externalReviews);
+  addDuplicatePlacementReviewNotes(sections, reviewNotes);
   addStructuralReviewGaps(sections, gaps);
 
-  return { sections, gaps, metadata };
+  return { sections, gaps, reviewNotes: dedupeReviewNotes(reviewNotes), metadata };
+}
+
+function moveHonorificAppointmentsToAwards(sections: BioBibSections): void {
+  const awardCandidates = sections.employment
+    .filter(entry => isHonorificAppointment(entry))
+    .map(formatHonorificAppointmentAward)
+    .filter(Boolean);
+  sections.awards = dedupeStrings([...sections.awards, ...awardCandidates]);
+}
+
+function isHonorificAppointment(entry: BioBibSections['employment'][number]): boolean {
+  const text = `${entry.rank} ${entry.institution}`.toLowerCase();
+  if (!/\b(visiting scientist|professore visitatore|visiting professor|visiting scholar|scholar|fellow)\b/i.test(text)) {
+    return false;
+  }
+  return !/\b(postdoctoral|research assistant|assistant professor|associate professor|professor, department|chemist|scientist, gas|staff scientist)\b/i
+    .test(text);
+}
+
+function formatHonorificAppointmentAward(entry: BioBibSections['employment'][number]): string {
+  const title = [entry.rank, entry.institution].filter(hasText).join(', ');
+  const period = formatAwardPeriod(entry.from, entry.to);
+  return [title, period].filter(Boolean).join(' ');
+}
+
+function formatAwardPeriod(from?: string, to?: string): string {
+  const cleanFrom = from?.trim() ?? '';
+  const cleanTo = to?.trim() ?? '';
+  if (cleanFrom && cleanTo && cleanFrom !== cleanTo) return `${cleanFrom} – ${cleanTo}`;
+  return cleanFrom || cleanTo;
+}
+
+function reclassifyOtherPublications(sections: BioBibSections): void {
+  const remainingOtherArticles: PublicationEntry[] = [];
+
+  for (const item of sections.otherArticles) {
+    if (isBookReviewCitation(item.citation)) {
+      sections.popularWorks.push({ ...item, type: 'popular' });
+    } else if (looksLikeRefereedProceeding(item.citation)) {
+      sections.refereedProceedings.push({ ...item, type: 'proceedings' });
+    } else if (looksLikeConferenceProceeding(item.citation)) {
+      sections.otherProceedings.push({ ...item, type: 'proceedings' });
+    } else {
+      remainingOtherArticles.push(item);
+    }
+  }
+
+  sections.otherArticles = remainingOtherArticles;
+  const primaryProceedingKeys = new Set(sections.refereedProceedings.map(item => normalizePublicationCitation(item.citation)));
+  sections.otherProceedings = sections.otherProceedings.filter(item => !primaryProceedingKeys.has(normalizePublicationCitation(item.citation)));
+}
+
+function isBookReviewCitation(citation: string): boolean {
+  return /\breview of\b/i.test(citation) && /\b(book|ed\.|eds\.|john wiley|press|volume|vol\.)\b/i.test(citation);
+}
+
+function looksLikeRefereedProceeding(citation: string): boolean {
+  return /\b(proceedings|proc\.|conference proceedings|conf\. proc\.|spie conference|rarefied gas dynamics|international symposium|intl\. conf\.|j\. phys\. b conf\.)\b/i
+    .test(citation);
+}
+
+function looksLikeConferenceProceeding(citation: string): boolean {
+  return /\b(conference|symposium|meeting|workshop|proceedings|proc\.)\b/i.test(citation);
+}
+
+function normalizePublicationCitation(citation: string): string {
+  return normalizeForDedupe(citation)
+    .replace(/^\d+\s*[.)]\s*/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 function moveWorkInProgressPublications(sections: BioBibSections): void {
@@ -997,6 +1081,96 @@ function normalizePresentationBuckets(sections: BioBibSections): void {
 function looksLikeNationalOrInternationalPresentation(value: string): boolean {
   return /\b(conference|congress|symposium|workshop|meeting|colloquium|gordon|faraday|acs|aps|aiche|international|national|world|society|division)\b/i
     .test(value);
+}
+
+function addDuplicatePlacementReviewNotes(sections: BioBibSections, reviewNotes: BioBibReviewNote[]): void {
+  const sectionIIBuckets = [
+    { section: 'Section II: Professional Activities', items: sections.professionalActivities },
+    { section: 'Section II: External Professional Activities', items: sections.externalProfessionalActivities },
+    { section: 'Section II: Reviewer Activities', items: sections.reviewerActivities },
+    { section: 'Section II: Presentations at National and International Meetings', items: sections.presentations },
+    { section: 'Section II: Other Invited Presentations', items: sections.invitedPresentations },
+    {
+      section: 'Section II: Student Instructional Activities',
+      items: sections.studentInstructionalGroups.flatMap(group => group.entries).concat(sections.studentInstructionalActivities),
+    },
+  ];
+
+  addDuplicateStringNotes(sectionIIBuckets, reviewNotes);
+
+  const publicationBuckets = [
+    { section: 'Section III.A.I Refereed Journal Articles', items: sections.peerReviewedJournals },
+    { section: 'Section III.A.II Review and Invited Articles', items: sections.reviewAndInvited },
+    { section: 'Section III.A.III Books', items: sections.books },
+    { section: 'Section III.A.III Book Chapters', items: sections.chapters },
+    { section: 'Section III.A.IV Refereed Conference Proceedings', items: sections.refereedProceedings },
+    { section: 'Section III.A.V Other Articles', items: sections.otherArticles },
+    { section: 'Section III.B.I Other Conference Proceedings', items: sections.otherProceedings },
+    { section: 'Section III.B.II Abstracts', items: sections.abstracts },
+    { section: 'Section III.B.III Popular Works', items: sections.popularWorks },
+  ];
+  addDuplicatePublicationNotes(publicationBuckets, reviewNotes);
+}
+
+function addDuplicateStringNotes(
+  buckets: { section: string; items: string[] }[],
+  reviewNotes: BioBibReviewNote[],
+): void {
+  const seen = new Map<string, { section: string; item: string }>();
+  for (const bucket of buckets) {
+    for (const item of bucket.items) {
+      const key = normalizeReviewItem(item);
+      if (!key) continue;
+      const previous = seen.get(key);
+      if (previous && previous.section !== bucket.section) {
+        reviewNotes.push({
+          section: `${previous.section}; ${bucket.section}`,
+          topic: 'Potential duplicate placement',
+          instruction: `Review whether this item should appear in both sections or only one: ${stripLeadingSourceNumber(item)}`,
+        });
+      } else if (!previous) {
+        seen.set(key, { section: bucket.section, item });
+      }
+    }
+  }
+}
+
+function addDuplicatePublicationNotes(
+  buckets: { section: string; items: PublicationEntry[] }[],
+  reviewNotes: BioBibReviewNote[],
+): void {
+  const seen = new Map<string, { section: string; item: PublicationEntry }>();
+  for (const bucket of buckets) {
+    for (const item of bucket.items) {
+      const key = normalizePublicationCitation(item.citation);
+      if (!key) continue;
+      const previous = seen.get(key);
+      if (previous && previous.section !== bucket.section) {
+        reviewNotes.push({
+          section: `${previous.section}; ${bucket.section}`,
+          topic: 'Potential duplicate bibliography placement',
+          instruction: `Review whether this citation should appear in both sections or only one: ${stripLeadingSourceNumber(item.citation)}`,
+        });
+      } else if (!previous) {
+        seen.set(key, { section: bucket.section, item });
+      }
+    }
+  }
+}
+
+function normalizeReviewItem(value: string): string {
+  const normalized = normalizeForDedupe(stripLeadingSourceNumber(value))
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return normalized.length >= 24 ? normalized : '';
+}
+
+function stripLeadingSourceNumber(value: string): string {
+  return value.trim().replace(/^\d+\s*[.)]\s*/, '');
+}
+
+function dedupeReviewNotes(notes: BioBibReviewNote[]): BioBibReviewNote[] {
+  return dedupeBy(notes, note => `${normalizeForDedupe(note.section)}|${normalizeForDedupe(note.topic)}|${normalizeForDedupe(note.instruction)}`);
 }
 
 function addStructuralReviewGaps(sections: BioBibSections, gaps: BioBibGap[]): void {

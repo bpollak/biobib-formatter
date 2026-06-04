@@ -72,6 +72,17 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 4, 2026, 11:08 AM PDT',
+    title: 'Review Notes and Output Fidelity Update',
+    changes: [
+      'Added generated Word document page numbering and final document-link/signature placeholders for review workflows.',
+      'Improved preservation of subscript and superscript formatting in extracted professional activity and presentation entries, not only bibliography entries.',
+      'Improved classification of honorific appointments, conference proceedings, and popular works during BioBib assembly.',
+      'Added review notes for likely duplicate or judgment-call section placements so reviewers can confirm the final organization.',
+      'Improved section completion reporting for grouped student instructional activity entries.',
+    ],
+  },
+  {
     releasedAt: 'June 2, 2026, 12:48 PM PDT',
     title: 'Recovery Navigation Update',
     changes: [
