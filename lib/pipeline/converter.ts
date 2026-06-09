@@ -20,6 +20,17 @@ import {
   PublicationEntry,
 } from '../types';
 import { LITELLM_BASE_URL, LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../constants';
+import { SliceKey } from './slices';
+import { sanitizePartialResult } from './sanitize';
+import {
+  dedupeBy,
+  dedupeStrings,
+  hasText,
+  normalizeForDedupe,
+  normalizeStudentGroupHeading,
+  sortChronologically,
+  stripStudentGroupPrefix,
+} from '../text-utils';
 
 // ── BioBib reference text shared by all section prompts ──────────────────────
 
@@ -72,51 +83,7 @@ UCSD BioBib reference:
 ${BIOBIB_INSTRUCTIONS_INLINE}`;
 
 // ── Section slice definitions ────────────────────────────────────────────────
-
-export type SliceKey =
-  | 'meta_and_I'
-  | 'II_service'
-  | 'II_teaching'
-  | 'II_grants'
-  | 'II_external'
-  | 'II_presentations_pre_2000'
-  | 'II_presentations_2000_2010'
-  | 'II_presentations_2011_2020'
-  | 'II_presentations_post_2020'
-  | 'II_diversity_other'
-  | 'III_journals_pre_2000'
-  | 'III_journals_2000_2010'
-  | 'III_journals_late'
-  | 'III_other_a'
-  | 'III_other_proc'
-  | 'III_abstracts_pre_2000'
-  | 'III_abstracts_2000_2010'
-  | 'III_abstracts_2011_2020'
-  | 'III_abstracts_post_2020'
-  | 'III_popular_products';
-
-export const SLICE_KEYS: readonly SliceKey[] = [
-  'meta_and_I',
-  'II_service',
-  'II_teaching',
-  'II_grants',
-  'II_external',
-  'II_presentations_pre_2000',
-  'II_presentations_2000_2010',
-  'II_presentations_2011_2020',
-  'II_presentations_post_2020',
-  'II_diversity_other',
-  'III_journals_pre_2000',
-  'III_journals_2000_2010',
-  'III_journals_late',
-  'III_other_a',
-  'III_other_proc',
-  'III_abstracts_pre_2000',
-  'III_abstracts_2000_2010',
-  'III_abstracts_2011_2020',
-  'III_abstracts_post_2020',
-  'III_popular_products',
-];
+// SliceKey / SLICE_KEYS live in ./slices so the client UI can share them.
 
 // Year boundaries keep prolific CVs from producing >12K-token JSON slices.
 const JOURNAL_PRE_2000_END = 1999;
@@ -679,7 +646,9 @@ async function callSliceOnce(
 
   const cleaned = stripJsonFences(content);
   try {
-    return JSON.parse(cleaned) as PartialResult;
+    // Sanitize so a single malformed entry degrades to a dropped item
+    // instead of crashing finalize after every slice has finished.
+    return sanitizePartialResult(JSON.parse(cleaned));
   } catch (e) {
     const hint =
       finishReason === 'length'
@@ -731,14 +700,6 @@ async function callSliceWithModelFallbacks(
   }
 
   throw new Error(`All model attempts failed for slice "${slice}": ${failures.join(' | ')}`);
-}
-
-export async function callSlice(
-  cv: ParsedCV,
-  slice: SliceKey,
-  credentials: ModelCredentials,
-): Promise<PartialResult> {
-  return callSliceWithModelFallbacks(cv, slice, credentials);
 }
 
 export async function callSliceWithSignal(
@@ -837,19 +798,14 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
 
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
-  sections.peerReviewedJournals = renumberPublications(sections.peerReviewedJournals);
-  sections.abstracts = renumberPublications(sections.abstracts);
-  sections.reviewAndInvited = renumberPublications(sections.reviewAndInvited);
-  sections.books = renumberPublications(sections.books);
-  sections.chapters = renumberPublications(sections.chapters);
-  sections.refereedProceedings = renumberPublications(sections.refereedProceedings);
-  sections.otherArticles = renumberPublications(sections.otherArticles);
-  sections.otherProceedings = renumberPublications(sections.otherProceedings);
-  sections.popularWorks = renumberPublications(sections.popularWorks);
-  sections.additionalProducts = renumberPublications(sections.additionalProducts);
-  sections.theses = renumberPublications(sections.theses);
-  sections.patents = renumberPublications(sections.patents);
-  sections.workInProgress = renumberPublications(sections.workInProgress);
+  const numberedKeys = [
+    'peerReviewedJournals', 'abstracts', 'reviewAndInvited', 'books', 'chapters',
+    'refereedProceedings', 'otherArticles', 'otherProceedings', 'popularWorks',
+    'additionalProducts', 'theses', 'patents', 'workInProgress',
+  ] as const;
+  for (const key of numberedKeys) {
+    sections[key] = renumberPublications(sections[key]);
+  }
   sections.employment = filterLikelyApplicableEmployment(sections.employment);
   sections.universityService = dedupeBy(
     sections.universityService,
@@ -1010,56 +966,8 @@ function mergeStudentInstructionalGroups(
   }));
 }
 
-function normalizeStudentGroupHeading(value: string): string {
-  const cleaned = value.replace(/:$/, '').trim();
-  if (!cleaned) return '';
-  const lower = cleaned.toLowerCase();
-  if (lower.includes('postdoctoral fellow') && lower.includes('current')) return 'Current Postdoctoral Associates';
-  if (lower.includes('undergraduate') && lower.includes('former')) return 'Former Undergraduate Research Students';
-  if (lower.includes('undergraduate')) return 'Undergraduate Research Students';
-  if (lower.includes('ph.d') && lower.includes('student')) return 'Former Ph.D. Students';
-  if (lower.includes('master') && lower.includes('student')) return 'Former Masters Students';
-  if (lower.includes('staff scientist')) return 'Current Staff Scientists';
-  if (lower.includes('visiting')) return 'Visiting Faculty/Students';
-  return cleaned;
-}
-
-function stripStudentGroupPrefix(entry: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return entry
-    .replace(/^\s*\d+\s*[.)]\s*/, '')
-    .replace(new RegExp(`^\\s*${escaped}\\s*:?\\s*`, 'i'), '')
-    .replace(/^\s*(Current|Former)\s+(Ph\.?D\.?|Masters?|Postdoctoral|Staff|Undergraduate|Visiting)[^:]{0,80}:\s*/i, '')
-    .trim();
-}
-
-function sortChronologically(items: string[]): string[] {
-  return [...items].sort((a, b) => chronologicalYear(a) - chronologicalYear(b));
-}
-
-function chronologicalYear(value: string): number {
-  const years = [...value.matchAll(/\b(19|20)\d{2}\b/g)].map(match => Number(match[0]));
-  return years.length > 0 ? Math.max(...years) : Number.MAX_SAFE_INTEGER;
-}
-
 function renumberPublications<T extends { number: number }>(items: T[]): T[] {
   return items.map((c, i) => ({ ...c, number: i + 1 }));
-}
-
-function dedupeStrings(items: string[]): string[] {
-  return dedupeBy(items, normalizeForDedupe);
-}
-
-function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  const out: T[] = [];
-  for (const item of items) {
-    const key = keyFn(item);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(item);
-  }
-  return out;
 }
 
 function normalizePresentationBuckets(sections: BioBibSections): void {
@@ -1215,14 +1123,6 @@ function addGapOnce(gaps: BioBibGap[], gap: BioBibGap): void {
   const key = `${gap.section}|${gap.field}|${gap.instruction}`.toLowerCase();
   if (gaps.some(existing => `${existing.section}|${existing.field}|${existing.instruction}`.toLowerCase() === key)) return;
   gaps.push(gap);
-}
-
-function hasText(value?: string): boolean {
-  return !!value?.trim();
-}
-
-function normalizeForDedupe(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
 function filterLikelyApplicableEmployment(

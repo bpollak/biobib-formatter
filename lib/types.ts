@@ -1,12 +1,5 @@
 // BioBib Formatter — Core Types
 
-export interface ProcessingSession {
-  id: string;
-  fileName: string;
-  status: 'parsing' | 'converting' | 'generating' | 'complete' | 'error';
-  error?: string;
-}
-
 // ── CV Parsing ──────────────────────────────────────────────────────────────
 
 export interface ParsedCV {
@@ -161,18 +154,4 @@ export interface ConversionResult {
     title: string;
     processedAt: string;
   };
-}
-
-// ── API Response Shapes ──────────────────────────────────────────────────────
-
-export interface UploadResponse {
-  sessionId: string;
-  result: ConversionResult;
-}
-
-export interface DownloadTokenPayload {
-  sessionId: string;
-  kind: 'document' | 'report';
-  iat: number;
-  exp: number;
 }

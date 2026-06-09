@@ -11,11 +11,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
 import { checkInternalSecret } from '@/lib/jobs/auth';
-import { mergeSlices, PartialResult, SliceKey } from '@/lib/pipeline/converter';
+import { mergeSlices, PartialResult } from '@/lib/pipeline/converter';
+import { SliceKey } from '@/lib/pipeline/slices';
 import { generateBioBibDocx } from '@/lib/docx/writer';
 import {
-  readFinalResult,
+  deleteCvSourceData,
   readCvRichText,
+  readFinalStatus,
   readManifest,
   readSliceError,
   readSliceResult,
@@ -36,8 +38,10 @@ export async function POST(
 
   const { jobId } = await ctx.params;
 
-  // If already finalized, absorb.
-  const existing = await readFinalResult(jobId);
+  // If already finalized, absorb. status.json is written last, so it (not
+  // result.json) is the reliable terminal marker — a finalize that crashed
+  // between the two must be re-runnable via the stale-lock retry.
+  const existing = await readFinalStatus(jobId);
   if (existing) {
     return NextResponse.json({ ok: true, status: 'already_finalized' }, { status: 200 });
   }
@@ -87,13 +91,17 @@ export async function POST(
         error: failedSlices.length > 0 ? `Slices failed: ${failedSlices.join('; ')}` : undefined,
         completedAt: Date.now(),
       });
+
+      // The job is terminal; drop the parsed CV text (most sensitive data).
+      await deleteCvSourceData(jobId).catch(() => {});
     } catch (e) {
       console.error(`[finalize ${jobId}] unexpected error:`, e);
+      // A stale-lock retry may already have written status.json — tolerate that.
       await writeFinalStatus(jobId, {
         state: 'failed',
         error: (e as Error).message || 'Unknown finalize error',
         completedAt: Date.now(),
-      });
+      }).catch(err => console.error(`[finalize ${jobId}] could not write failed status:`, err));
     }
   });
 

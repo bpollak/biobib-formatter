@@ -14,12 +14,30 @@ import { after } from 'next/server';
 import { del, get } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { parseCV } from '@/lib/docx/reader';
-import { SLICE_KEYS } from '@/lib/pipeline/converter';
+import { SLICE_KEYS } from '@/lib/pipeline/slices';
 import { writeManifest, writeCvRichText, writeCvText } from '@/lib/jobs/store';
 import { getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
 import { LITELLM_ROUTING_LABEL, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
 export const maxDuration = 30;
+
+/**
+ * The route fetches and later deletes the posted blobUrl, so restrict it to
+ * client-upload blobs in our own store: Vercel Blob public hosts only, and
+ * never anything under the jobs/ prefix where job state lives.
+ */
+function isAllowedUploadUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  if (!url.hostname.endsWith('.public.blob.vercel-storage.com')) return false;
+  if (url.pathname.startsWith('/jobs/')) return false;
+  return true;
+}
 
 export async function POST(req: NextRequest) {
   const { blobUrl, fileName } = (await req.json().catch(() => ({}))) as {
@@ -30,8 +48,11 @@ export async function POST(req: NextRequest) {
   if (!blobUrl || !fileName) {
     return NextResponse.json({ error: 'blobUrl and fileName are required.' }, { status: 400 });
   }
-  if (!fileName.endsWith('.docx')) {
+  if (!fileName.toLowerCase().endsWith('.docx')) {
     return NextResponse.json({ error: 'Only .docx files are accepted.' }, { status: 400 });
+  }
+  if (!isAllowedUploadUrl(blobUrl)) {
+    return NextResponse.json({ error: 'Invalid upload URL.' }, { status: 400 });
   }
 
   // Fail fast at the boundary if the internal secret is missing.

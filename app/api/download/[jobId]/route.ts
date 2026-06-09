@@ -20,7 +20,12 @@ export async function GET(
   }
 
   const manifest = await readManifest(jobId);
-  const stem = manifest?.fileName?.replace(/\.docx$/i, '');
+  // The stem comes from the user-supplied upload filename; keep it to
+  // header-safe characters so it can't break out of Content-Disposition.
+  const stem = manifest?.fileName
+    ?.replace(/\.docx$/i, '')
+    .replace(/[^\w.\- ()]+/g, '')
+    .trim();
   const downloadName = stem ? `${stem}-biobib.docx` : 'biobib.docx';
 
   return new NextResponse(stream, {

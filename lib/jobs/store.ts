@@ -9,7 +9,8 @@
 
 import { put, head, list, get, del, BlobNotFoundError } from '@vercel/blob';
 import { ConversionResult, RichTextParagraph } from '../types';
-import { SLICE_KEYS, SliceKey, PartialResult } from '../pipeline/converter';
+import { SLICE_KEYS, SliceKey } from '../pipeline/slices';
+import { PartialResult } from '../pipeline/converter';
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
@@ -107,24 +108,55 @@ export async function sliceAlreadyHandled(jobId: string, key: SliceKey): Promise
 
 // ── Finalize lock + final outputs ────────────────────────────────────────────
 
-/** Returns true if this caller acquired the lock; false if another caller already has it. */
+/**
+ * Returns true if this caller acquired the lock; false if another caller already has it.
+ * A lock left behind by a crashed/timed-out finalize (older than FINALIZE_TIMEOUT_MS)
+ * is treated as stale and stolen, so the status route's fallback kick can retry the
+ * merge instead of the job being permanently stuck.
+ */
 export async function tryAcquireFinalizeLock(jobId: string): Promise<boolean> {
   try {
     await put(path.lock(jobId), String(Date.now()), PUT_OPTS);
     return true;
   } catch {
     // allowOverwrite:false throws if the blob already exists — that's our "lock held".
+    const ageMs = await readFinalizeLockAgeMs(jobId);
+    if (ageMs !== null && ageMs > FINALIZE_TIMEOUT_MS) {
+      try {
+        await put(path.lock(jobId), String(Date.now()), { ...PUT_OPTS, allowOverwrite: true });
+        return true;
+      } catch {
+        return false;
+      }
+    }
     return false;
   }
 }
 
+/** Age of the finalize lock in ms, or null if absent/unreadable. */
+async function readFinalizeLockAgeMs(jobId: string): Promise<number | null> {
+  try {
+    // The lock body is a bare epoch-ms number, which readJson parses fine.
+    const acquiredAt = await readJson<number>(path.lock(jobId));
+    if (typeof acquiredAt !== 'number' || !Number.isFinite(acquiredAt)) return null;
+    return Date.now() - acquiredAt;
+  } catch {
+    return null;
+  }
+}
+
+// Final outputs allow overwrite: they are single-writer under the finalize
+// lock, and a stale-lock retry must be able to redo a partially-crashed
+// finalize (status.json is written last and is the terminal marker).
+const FINAL_PUT_OPTS = { ...PUT_OPTS, allowOverwrite: true };
+
 export async function writeFinalResult(jobId: string, result: ConversionResult): Promise<void> {
-  await put(path.result(jobId), JSON.stringify(result), PUT_OPTS);
+  await put(path.result(jobId), JSON.stringify(result), FINAL_PUT_OPTS);
 }
 
 export async function writeFinalDocx(jobId: string, buffer: Buffer): Promise<void> {
   await put(path.docx(jobId), buffer, {
-    ...PUT_OPTS,
+    ...FINAL_PUT_OPTS,
     contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
 }
@@ -136,7 +168,7 @@ export interface FinalStatus {
 }
 
 export async function writeFinalStatus(jobId: string, status: FinalStatus): Promise<void> {
-  await put(path.status(jobId), JSON.stringify(status), PUT_OPTS);
+  await put(path.status(jobId), JSON.stringify(status), FINAL_PUT_OPTS);
 }
 
 /**
@@ -162,6 +194,18 @@ export async function readFinalStatus(jobId: string): Promise<FinalStatus | null
 
 export async function deleteJob(jobId: string): Promise<void> {
   const { blobs } = await list({ prefix: `${root(jobId)}/` });
+  if (blobs.length === 0) return;
+  await del(blobs.map(b => b.url)).catch(() => {});
+}
+
+/**
+ * Deletes the parsed CV source data (cv.txt, cv-rich.json) once the job has a
+ * terminal status. Nothing reads these after finalize writes status.json
+ * (duplicate finalize triggers are absorbed by the existing-result check),
+ * and they hold the most sensitive personal data in the job folder.
+ */
+export async function deleteCvSourceData(jobId: string): Promise<void> {
+  const { blobs } = await list({ prefix: `${root(jobId)}/cv` });
   if (blobs.length === 0) return;
   await del(blobs.map(b => b.url)).catch(() => {});
 }
@@ -255,7 +299,17 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
         aiModel: manifest.aiModel,
       };
     }
-    return { state: 'merging', slices, startedAt: manifest.createdAt, aiModel: manifest.aiModel };
+    // If the lock is stale the finalize holding it crashed without writing
+    // status.json. Flag a kick — tryAcquireFinalizeLock steals stale locks.
+    const lockAgeMs = await readFinalizeLockAgeMs(jobId);
+    const lockIsStale = lockAgeMs !== null && lockAgeMs > FINALIZE_TIMEOUT_MS;
+    return {
+      state: 'merging',
+      slices,
+      startedAt: manifest.createdAt,
+      aiModel: manifest.aiModel,
+      needsFinalizeKick: lockIsStale || undefined,
+    };
   }
 
   // All slices terminal but finalize never started — the last slice's

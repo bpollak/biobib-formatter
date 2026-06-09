@@ -72,6 +72,16 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 9, 2026, 10:30 AM PDT',
+    title: 'Reliability and Privacy Update',
+    changes: [
+      'Accepted uppercase .DOCX file extensions when uploading a CV.',
+      'Added automatic recovery when the final assembly step of a conversion is interrupted, so completed section work is merged instead of lost.',
+      'Hardened conversion against occasional malformed AI section output so a single bad entry no longer fails the whole conversion.',
+      'Removed the parsed CV text from temporary storage once a conversion finishes.',
+    ],
+  },
+  {
     releasedAt: 'June 4, 2026, 11:08 AM PDT',
     title: 'Review Notes and Output Fidelity Update',
     changes: [
