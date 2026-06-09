@@ -72,6 +72,13 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 9, 2026, 3:30 PM PDT',
+    title: 'Activity History Selector Fix',
+    changes: [
+      'Fixed the activity history selector so the All years choice displays in the field after selection and as the starting value, instead of an empty box.',
+    ],
+  },
+  {
     releasedAt: 'June 9, 2026, 2:45 PM PDT',
     title: 'Review Period and Summary Page Update',
     changes: [
