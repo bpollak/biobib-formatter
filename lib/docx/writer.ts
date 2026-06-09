@@ -18,6 +18,14 @@ import {
   RichTextRun,
   StudentInstructionalGroup,
 } from '../types';
+import {
+  chronologicalYear,
+  dedupeStrings,
+  escapeRegex,
+  normalizeForComparison,
+  normalizeStudentGroupHeading,
+  stripStudentGroupPrefix,
+} from '../text-utils';
 
 const UCSD_BLUE = '003B5C';
 const LIGHT_GRAY = 'F2F2F2';
@@ -203,10 +211,6 @@ function cleanDegree(degree: string, dateReceived: string): string {
     .trim();
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function tableCell(text: string, options?: { bold?: boolean; shaded?: boolean; width?: number; fallback?: string }): TableCell {
   return new TableCell({
     children: [new Paragraph({ children: [run({ text: options?.bold ? text : displayCellValue(text, options?.fallback), bold: options?.bold, size: 18 })] })],
@@ -281,14 +285,6 @@ function cleanPublicationNote(value?: string): string {
   if (!cleaned) return '';
   if (/\b(source\s+no\.?|biobib\s+section|review\s+material)\b/i.test(cleaned)) return '';
   return cleaned;
-}
-
-function normalizeForComparison(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
 function citationRuns(citation: string, richTextParagraphs: RichTextParagraph[]): TextRun[] {
@@ -506,10 +502,10 @@ function normalizeStudentGroups(
 
   const byHeading = new Map<string, string[]>();
   for (const group of allGroups) {
-    const heading = cleanStudentHeading(group.heading);
+    const heading = normalizeStudentGroupHeading(group.heading);
     if (!heading) continue;
     const existing = byHeading.get(heading) ?? [];
-    existing.push(...group.entries.map(entry => stripStudentPrefix(entry, heading)).filter(Boolean));
+    existing.push(...group.entries.map(entry => stripStudentGroupPrefix(entry, heading)).filter(Boolean));
     byHeading.set(heading, dedupeStrings(existing).sort((a, b) => chronologicalYear(a) - chronologicalYear(b)));
   }
 
@@ -522,33 +518,6 @@ function parseFlatStudentItem(item: string): StudentInstructionalGroup | undefin
   const match = item.match(/^\s*([^:]{4,90}):\s*(.+)$/);
   if (!match) return undefined;
   return { heading: match[1], entries: [match[2]] };
-}
-
-function cleanStudentHeading(value: string): string {
-  const cleaned = value.replace(/:$/, '').trim();
-  const lower = cleaned.toLowerCase();
-  if (lower.includes('postdoctoral fellow') && lower.includes('current')) return 'Current Postdoctoral Associates';
-  if (lower.includes('undergraduate') && lower.includes('former')) return 'Former Undergraduate Research Students';
-  if (lower.includes('undergraduate')) return 'Undergraduate Research Students';
-  return cleaned;
-}
-
-function stripStudentPrefix(value: string, heading: string): string {
-  const escaped = escapeRegex(heading);
-  return value
-    .replace(/^\s*\d+\s*[.)]\s*/, '')
-    .replace(new RegExp(`^\\s*${escaped}\\s*:?\\s*`, 'i'), '')
-    .replace(/^\s*(Current|Former)\s+(Ph\.?D\.?|Masters?|Postdoctoral|Staff|Undergraduate|Visiting)[^:]{0,80}:\s*/i, '')
-    .trim();
-}
-
-function chronologicalYear(value: string): number {
-  const years = [...value.matchAll(/\b(19|20)\d{2}\b/g)].map(match => Number(match[0]));
-  return years.length > 0 ? Math.max(...years) : Number.MAX_SAFE_INTEGER;
-}
-
-function dedupeStrings(items: string[]): string[] {
-  return [...new Map(items.map(item => [normalizeForComparison(item), item])).values()];
 }
 
 function publicationSubSection(

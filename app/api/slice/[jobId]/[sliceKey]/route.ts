@@ -10,7 +10,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
 import { checkInternalSecret, getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
-import { callSliceWithSignal, SLICE_KEYS, SliceKey } from '@/lib/pipeline/converter';
+import { callSliceWithSignal } from '@/lib/pipeline/converter';
+import { isSliceKey, SliceKey } from '@/lib/pipeline/slices';
 import {
   readCvText,
   readManifest,
@@ -23,8 +24,6 @@ import { head, BlobNotFoundError } from '@vercel/blob';
 export const maxDuration = 600;
 
 const LITELLM_TIMEOUT_MS = 570_000;
-
-const isSliceKey = (s: string): s is SliceKey => (SLICE_KEYS as readonly string[]).includes(s);
 
 export async function POST(
   req: NextRequest,

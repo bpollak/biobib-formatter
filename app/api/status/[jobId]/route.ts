@@ -44,10 +44,8 @@ export async function GET(
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
   } catch (e) {
+    // Log the cause server-side; don't echo internals to the public client.
     console.error(`[/api/status ${jobId}] computeStatus failed:`, e);
-    return NextResponse.json(
-      { error: 'Status check failed', detail: (e as Error).message ?? String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Status check failed. Please retry.' }, { status: 500 });
   }
 }
