@@ -10,6 +10,7 @@
     "lint:fix": "eslint --fix",
     "typecheck": "tsc --noEmit",
     "test:docx-quality": "tsx scripts/docx-quality-test.ts",
+    "test:e2e-prod": "tsx scripts/e2e-prod-test.ts",
     "test:regression": "tsx scripts/regression-test.ts"
   },
   "dependencies": {
