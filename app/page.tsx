@@ -150,7 +150,9 @@ export default function HomePage() {
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [slices, setSlices] = useState<Record<SliceKey, SliceState>>(initialSlices);
-  const [sinceYear, setSinceYear] = useState<number | ''>('');
+  // 0 = all years. A real sentinel (not '') so the Select renders the
+  // "All years" choice instead of showing an empty box.
+  const [sinceYear, setSinceYear] = useState<number>(0);
   const pollTimerRef = useRef<number | null>(null);
 
   // Clean up the polling timer on unmount or state reset.
@@ -316,7 +318,7 @@ export default function HomePage() {
         body: JSON.stringify({
           blobUrl: blob.url,
           fileName: file.name,
-          sinceYear: sinceYear === '' ? undefined : sinceYear,
+          sinceYear: sinceYear > 0 ? sinceYear : undefined,
         }),
       });
     } catch (e) {
@@ -520,13 +522,13 @@ export default function HomePage() {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
           <FormControl size="small" sx={{ minWidth: 280 }}>
             <InputLabel id="review-period-label">Activity history to include</InputLabel>
-            <Select<number | ''>
+            <Select<number>
               labelId="review-period-label"
               label="Activity history to include"
               value={sinceYear}
-              onChange={(e) => setSinceYear(e.target.value === '' ? '' : Number(e.target.value))}
+              onChange={(e) => setSinceYear(Number(e.target.value))}
             >
-              <MenuItem value="">All years</MenuItem>
+              <MenuItem value={0}>All years</MenuItem>
               {REVIEW_PERIOD_YEARS.map((year) => (
                 <MenuItem key={year} value={year}>{`Since ${year}`}</MenuItem>
               ))}
