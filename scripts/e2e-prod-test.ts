@@ -8,8 +8,8 @@
  * regression test. Artifacts are written to /tmp.
  *
  * Usage:
- *   npm run test:e2e-prod -- <cv-text-file> <output-name>
- *   BIOBIB_URL=https://my-preview.vercel.app npm run test:e2e-prod -- cv.txt smith-cv
+ *   npm run test:e2e-prod -- <cv-text-file> <output-name> [sinceYear]
+ *   BIOBIB_URL=https://my-preview.vercel.app npm run test:e2e-prod -- cv.txt smith-cv 2020
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
@@ -63,13 +63,18 @@ async function docxText(buffer: Buffer): Promise<string> {
 }
 
 async function main() {
-  const [textPath, outName] = process.argv.slice(2);
+  const [textPath, outName, sinceYearArg] = process.argv.slice(2);
   if (!textPath || !outName) {
-    console.error('Usage: npm run test:e2e-prod -- <cv-text-file> <output-name>');
+    console.error('Usage: npm run test:e2e-prod -- <cv-text-file> <output-name> [sinceYear]');
+    process.exit(2);
+  }
+  const sinceYear = sinceYearArg ? Number(sinceYearArg) : undefined;
+  if (sinceYear !== undefined && !Number.isInteger(sinceYear)) {
+    console.error(`Invalid sinceYear: ${sinceYearArg}`);
     process.exit(2);
   }
 
-  console.log(`Target: ${BASE}`);
+  console.log(`Target: ${BASE}${sinceYear ? ` (review period: since ${sinceYear})` : ''}`);
   const rawText = await readFile(textPath, 'utf8');
   const paragraphs = segmentCvText(rawText);
   record('CV text segmented', paragraphs.length > 50, `${paragraphs.length} paragraphs, ${rawText.length} chars`);
@@ -99,7 +104,7 @@ async function main() {
   const upRes = await fetch(`${BASE}/api/upload`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ blobUrl, fileName }),
+    body: JSON.stringify({ blobUrl, fileName, sinceYear }),
   });
   const uploadElapsed = (Date.now() - tUpload) / 1000;
   const upBody = (await upRes.json()) as { jobId?: string; error?: string };

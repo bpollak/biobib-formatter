@@ -441,7 +441,38 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
 };
 
-const buildSliceUserPrompt = (cv: ParsedCV, slice: SliceKey, provider: ModelProvider = 'cloud'): string => {
+// Slices that honor the user-selected review period (Section II activity
+// history). Section I and the Section III bibliography stay cumulative —
+// the BioBib requires the full record there.
+const REVIEW_PERIOD_SLICES = new Set<SliceKey>([
+  'II_service',
+  'II_grants',
+  'II_external',
+  'II_diversity_other',
+  'II_presentations_pre_2000',
+  'II_presentations_2000_2010',
+  'II_presentations_2011_2020',
+  'II_presentations_post_2020',
+]);
+
+function reviewPeriodRule(slice: SliceKey, sinceYear?: number): string {
+  if (!sinceYear || !REVIEW_PERIOD_SLICES.has(slice)) return '';
+  return `
+
+Review period restriction — IMPORTANT:
+- The faculty member requested this BioBib cover ${sinceYear} to the present for Section II activities.
+- Include ONLY items dated ${sinceYear} or later.
+- Include ongoing or spanning items whose date range extends into ${sinceYear} or later (e.g., "2018 - present", "${sinceYear - 2} - ${sinceYear + 1}").
+- Include undated items only when context indicates they are current or ongoing.
+- Exclude items that ended before ${sinceYear}.`;
+}
+
+const buildSliceUserPrompt = (
+  cv: ParsedCV,
+  slice: SliceKey,
+  provider: ModelProvider = 'cloud',
+  sinceYear?: number,
+): string => {
   const { fields, schema, rules } = SLICE_PROMPTS[slice];
   const cvText = provider === 'onPrem' ? compactCvTextForSlice(cv.rawText, slice) : cv.rawText;
   return `Extract from this faculty CV the following BioBib fields ONLY: ${fields}.
@@ -466,7 +497,7 @@ Content rules:
 - Publications must be chronological and numbered sequentially within each subsection. Keep labels such as "New", asterisks, "RESEARCH ARTICLE", "REVIEW ARTICLE", "previously B.1", contribution notes, and URLs if present.
 - For Section II categories with no evidence in the CV, return an empty array. Do not add a gap unless the missing item is truly required for BioBib submission.
 - For gaps, only flag fields that belong to the slice above. Be specific and actionable.
-- severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.`;
+- severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.${reviewPeriodRule(slice, sinceYear)}`;
 };
 
 interface YearWindow {
@@ -594,6 +625,8 @@ function stripJsonFences(s: string): string {
 
 interface CallSliceOptions {
   signal?: AbortSignal;
+  /** Earliest year to include for Section II activity slices (inclusive). */
+  sinceYear?: number;
 }
 
 function supportsCustomTemperature(model: string): boolean {
@@ -611,7 +644,7 @@ async function callSliceOnce(
     model: candidate.model,
     messages: [
       { role: 'system', content: BASE_SYSTEM },
-      { role: 'user', content: buildSliceUserPrompt(cv, slice, candidate.provider) },
+      { role: 'user', content: buildSliceUserPrompt(cv, slice, candidate.provider, options.sinceYear) },
     ],
     // Keep the cloud cap conservative, but give on-prem fallback models more
     // room because their reasoning can otherwise consume the completion budget.
@@ -707,8 +740,9 @@ export async function callSliceWithSignal(
   slice: SliceKey,
   credentials: ModelCredentials,
   signal: AbortSignal,
+  sinceYear?: number,
 ): Promise<PartialResult> {
-  return callSliceWithModelFallbacks(cv, slice, credentials, { signal });
+  return callSliceWithModelFallbacks(cv, slice, credentials, { signal, sinceYear });
 }
 
 function isAbortError(e: unknown): boolean {

@@ -5,6 +5,7 @@ import {
   Box, Container, Typography, Button, Paper, LinearProgress,
   Alert, Chip, List, ListItem, ListItemIcon, ListItemText,
   Accordion, AccordionSummary, AccordionDetails, Stack, Divider,
+  FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
@@ -65,6 +66,15 @@ const SEVERITY_ICON = {
   recommended: <WarningIcon color="warning" />,
   optional: <CheckCircleIcon color="info" />,
 };
+
+// Earliest selectable cutoff for the Section II review period.
+const REVIEW_PERIOD_FIRST_YEAR = 2000;
+const REVIEW_PERIOD_YEARS = (() => {
+  const current = new Date().getFullYear();
+  const years: number[] = [];
+  for (let year = current; year >= REVIEW_PERIOD_FIRST_YEAR; year -= 1) years.push(year);
+  return years;
+})();
 
 const POLL_INTERVAL_MS = 3000;
 const PAGE_MAX_WIDTH = 1170;
@@ -140,6 +150,7 @@ export default function HomePage() {
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [slices, setSlices] = useState<Record<SliceKey, SliceState>>(initialSlices);
+  const [sinceYear, setSinceYear] = useState<number | ''>('');
   const pollTimerRef = useRef<number | null>(null);
 
   // Clean up the polling timer on unmount or state reset.
@@ -302,7 +313,11 @@ export default function HomePage() {
       res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blobUrl: blob.url, fileName: file.name }),
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          fileName: file.name,
+          sinceYear: sinceYear === '' ? undefined : sinceYear,
+        }),
       });
     } catch (e) {
       setError(`Network error: ${(e as Error).message || 'please try again.'}`);
@@ -337,7 +352,7 @@ export default function HomePage() {
       fileName: file.name,
       startedAt: Date.now(),
     });
-  }, [startPolling]);
+  }, [startPolling, sinceYear]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -501,6 +516,27 @@ export default function HomePage() {
       )}
 
       {(state === 'idle' || state === 'error') && (
+        <>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+          <FormControl size="small" sx={{ minWidth: 280 }}>
+            <InputLabel id="review-period-label">Activity history to include</InputLabel>
+            <Select<number | ''>
+              labelId="review-period-label"
+              label="Activity history to include"
+              value={sinceYear}
+              onChange={(e) => setSinceYear(e.target.value === '' ? '' : Number(e.target.value))}
+            >
+              <MenuItem value="">All years</MenuItem>
+              {REVIEW_PERIOD_YEARS.map((year) => (
+                <MenuItem key={year} value={year}>{`Since ${year}`}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 560 }}>
+            Limits Section II content (service, grants, presentations, and other activities) to the
+            selected period. Employment, education, and the bibliography always include all years.
+          </Typography>
+        </Box>
         <Paper
           variant="outlined"
           onDrop={onDrop}
@@ -552,6 +588,7 @@ export default function HomePage() {
             </Button>
           </Box>
         </Paper>
+        </>
       )}
 
       {state === 'error' && (
