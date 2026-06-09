@@ -71,7 +71,7 @@ export async function POST(
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), LITELLM_TIMEOUT_MS);
       try {
-        const partial = await callSliceWithSignal(cv, sliceKey, modelCredentials, controller.signal);
+        const partial = await callSliceWithSignal(cv, sliceKey, modelCredentials, controller.signal, manifest.sinceYear);
         await writeSliceResult(jobId, sliceKey, partial);
       } catch (e) {
         await writeSliceError(jobId, sliceKey, {

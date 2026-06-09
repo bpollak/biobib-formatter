@@ -72,6 +72,15 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 9, 2026, 2:45 PM PDT',
+    title: 'Review Period and Summary Page Update',
+    changes: [
+      'Added a review period option on the upload screen so Section II service, grants, presentations, and other activities can be limited to a chosen start year (for example, 2020 to present), with all years remaining the default. Employment, education, and the bibliography always include the full record.',
+      'Added the selected review period to the generated document heading for reviewer reference.',
+      'Added a Conversion Review Summary page at the end of the generated document listing manual completion items and placement review notes, with instructions to resolve and remove the page before submission.',
+    ],
+  },
+  {
     releasedAt: 'June 9, 2026, 10:30 AM PDT',
     title: 'Reliability and Privacy Update',
     changes: [

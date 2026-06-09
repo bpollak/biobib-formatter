@@ -37,6 +37,8 @@ export interface JobManifest {
   createdAt: number;
   sourceBlobUrl: string;
   aiModel?: string;
+  /** Earliest year to include for Section II activities; absent = all years. */
+  sinceYear?: number;
 }
 
 export async function writeManifest(jobId: string, manifest: JobManifest): Promise<void> {

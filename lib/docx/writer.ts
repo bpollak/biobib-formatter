@@ -586,9 +586,83 @@ function renumberForDisplay(entries: PublicationEntry[]): PublicationEntry[] {
   return entries.map((entry, index) => ({ ...entry, number: index + 1 }));
 }
 
+const GAP_SEVERITY_LABELS: { severity: 'required' | 'recommended' | 'optional'; label: string }[] = [
+  { severity: 'required', label: 'Required before submission' },
+  { severity: 'recommended', label: 'Recommended' },
+  { severity: 'optional', label: 'Optional' },
+];
+
+/**
+ * Appendix summarizing items the conversion could not complete or was unsure
+ * how to place — the gaps and review notes also shown on screen — so the
+ * faculty member has a paper record alongside the BioBib draft.
+ */
+function reviewSummarySection(result: ConversionResult): Paragraph[] {
+  const gaps = result.gaps ?? [];
+  const reviewNotes = result.reviewNotes ?? [];
+  if (gaps.length === 0 && reviewNotes.length === 0) return [];
+
+  const children: Paragraph[] = [
+    new Paragraph({
+      children: [run({ text: 'Conversion Review Summary', bold: true, size: 24, color: UCSD_BLUE })],
+      heading: HeadingLevel.HEADING_1,
+      pageBreakBefore: true,
+      spacing: { after: 80 },
+    }),
+    new Paragraph({
+      children: [
+        run({
+          text: 'This page lists items the automated conversion could not complete or was unsure how to place. Resolve each item, then delete this page before submitting the BioBib.',
+          italics: true,
+          color: 'CC0000',
+          size: 20,
+        }),
+      ],
+      spacing: { after: 160 },
+    }),
+  ];
+
+  if (gaps.length > 0) {
+    children.push(heading2('Manual Completion Items'));
+    for (const { severity, label } of GAP_SEVERITY_LABELS) {
+      const items = gaps.filter(gap => gap.severity === severity);
+      if (items.length === 0) continue;
+      children.push(heading3(label));
+      children.push(...items.map((gap, index) => new Paragraph({
+        children: [
+          run({ text: `${index + 1}. `, bold: true, size: 20 }),
+          run({ text: `${gap.section} — ${gap.field}: `, bold: true, size: 20 }),
+          run({ text: gap.instruction, size: 20 }),
+        ],
+        spacing: { after: 60 },
+      })));
+    }
+  }
+
+  if (reviewNotes.length > 0) {
+    children.push(heading2('Placement and Duplication Review Notes'));
+    children.push(...reviewNotes.map((note, index) => new Paragraph({
+      children: [
+        run({ text: `${index + 1}. `, bold: true, size: 20 }),
+        run({ text: `${note.section} — ${note.topic}: `, bold: true, size: 20 }),
+        run({ text: note.instruction, size: 20 }),
+      ],
+      spacing: { after: 60 },
+    })));
+  }
+
+  return children;
+}
+
+export interface GenerateDocxOptions {
+  /** Earliest year covered for Section II activities; absent = all years. */
+  sinceYear?: number;
+}
+
 export async function generateBioBibDocx(
   result: ConversionResult,
   richTextParagraphs: RichTextParagraph[] = [],
+  options: GenerateDocxOptions = {},
 ): Promise<Buffer> {
   const { sections, metadata } = result;
 
@@ -614,8 +688,17 @@ export async function generateBioBibDocx(
         run({ text: 'Title: ', bold: true, size: 22 }),
         run({ text: metadata.title || '________________', size: 22 }),
       ],
-      spacing: { after: 200 },
+      spacing: { after: options.sinceYear ? 80 : 200 },
     }),
+    ...(options.sinceYear
+      ? [new Paragraph({
+          children: [
+            run({ text: 'Review period (Section II activities): ', bold: true, size: 22 }),
+            run({ text: `${options.sinceYear} – present`, size: 22 }),
+          ],
+          spacing: { after: 200 },
+        })]
+      : []),
   ];
 
   // ── Section I ──────────────────────────────────────────────────────────────
@@ -727,6 +810,7 @@ export async function generateBioBibDocx(
     ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name, richTextParagraphs),
     ...workInProgressSection(sections.workInProgress, richTextParagraphs),
     ...finalCertificationBlock(),
+    ...reviewSummarySection(result),
   ];
 
   const doc = new Document({

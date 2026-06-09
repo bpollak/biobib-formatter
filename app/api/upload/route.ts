@@ -40,10 +40,18 @@ function isAllowedUploadUrl(value: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const { blobUrl, fileName } = (await req.json().catch(() => ({}))) as {
+  const { blobUrl, fileName, sinceYear: rawSinceYear } = (await req.json().catch(() => ({}))) as {
     blobUrl?: string;
     fileName?: string;
+    sinceYear?: unknown;
   };
+  const sinceYear =
+    typeof rawSinceYear === 'number' &&
+    Number.isInteger(rawSinceYear) &&
+    rawSinceYear >= 1950 &&
+    rawSinceYear <= new Date().getFullYear() + 1
+      ? rawSinceYear
+      : undefined;
 
   if (!blobUrl || !fileName) {
     return NextResponse.json({ error: 'blobUrl and fileName are required.' }, { status: 400 });
@@ -94,6 +102,7 @@ export async function POST(req: NextRequest) {
     createdAt: Date.now(),
     sourceBlobUrl: blobUrl,
     aiModel: LITELLM_ROUTING_LABEL,
+    sinceYear,
   });
 
   // Workers don't need the source .docx — they use cv.txt. Clean up now.

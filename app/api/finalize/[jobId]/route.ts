@@ -81,7 +81,9 @@ export async function POST(
 
       const merged = mergeSlices(parts);
       const richTextParagraphs = await readCvRichText(jobId);
-      const docxBuffer = await generateBioBibDocx(merged, richTextParagraphs);
+      const docxBuffer = await generateBioBibDocx(merged, richTextParagraphs, {
+        sinceYear: manifest.sinceYear,
+      });
 
       await writeFinalResult(jobId, merged);
       await writeFinalDocx(jobId, docxBuffer);

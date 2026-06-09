@@ -166,6 +166,21 @@ async function main() {
     'DOCX includes final document link and signature placeholders',
     text.includes('Document link:') && text.includes('Signature:') && text.includes('Date:'),
   );
+  record(
+    'DOCX appends a review summary listing manual completion items',
+    text.includes('Conversion Review Summary') &&
+      text.includes('Manual Completion Items') &&
+      text.includes('delete this page before submitting') &&
+      ((merged.reviewNotes?.length ?? 0) === 0 || text.includes('Placement and Duplication Review Notes')),
+  );
+  record('Review period line absent for all-years documents', !text.includes('Review period (Section II activities):'));
+
+  const periodBuffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs(), { sinceYear: 2020 });
+  const periodText = docxXmlToText((await docxParts(periodBuffer)).documentXml);
+  record(
+    'Review period line rendered when sinceYear is set',
+    periodText.includes('Review period (Section II activities):') && periodText.includes('2020 – present'),
+  );
 
   const failed = checks.filter(check => !check.pass);
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed.`);
