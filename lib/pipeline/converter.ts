@@ -31,6 +31,12 @@ import {
   sortChronologically,
   stripStudentGroupPrefix,
 } from '../text-utils';
+import {
+  cleanGeneratedRecord,
+  sortByInitialDate,
+  splitLeadingDate,
+  stripLeadingSourceNumber,
+} from '../date-utils';
 
 // ── BioBib reference text shared by all section prompts ──────────────────────
 
@@ -159,6 +165,7 @@ const PRESENTATION_RULES = `
 - Exclude posters, contributed talks, conference abstracts, co-author abstracts, and numbered abstract lists; those belong in Section III abstracts, not Section II.
 - Exclude grant review panels, editorial boards, conference organization, and professional committee service; those belong in externalProfessionalActivities or reviewerActivities.
 - Return concise presentation strings without leading source numbering such as "1." or "23.".
+- If a source presentation starts with a date, move that date to the end of the returned record.
 `.trim();
 
 const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: string }> = {
@@ -194,6 +201,8 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - It is acceptable for an elected fellow distinction to appear both as a membership and as an honor/award when the CV supports both uses.
 - Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
 - Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
+- Chronological order means oldest first by the initial date of service, membership, award, or honor; for date ranges, use the first date in the range.
+- Put dates in the "dates" field when a structured service record has one. For string-only records, put the date at the end of the record rather than the beginning.
 `.trim(),
     schema: `{
   "sections": {
@@ -233,6 +242,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - Current grants are active or future-ending awards; past grants are completed awards.
 - Preserve the CV's title, agency, total-cost wording, dates, PI/co-PI role, and co-PI share when available.
 - Do not include fellowships or awards unless they are explicitly listed as research support/contracts/grants.
+- Sort current and past grants chronologically by the initial date in the grant period when the CV provides one. Sparse dates are still useful; preserve them.
 `.trim(),
     schema: `{
   "sections": {
@@ -249,6 +259,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - reviewerActivities: journal/editorial reviewing, funding-agency panels, manuscript/proposal reviewing, and external academic file reviews.
 - externalReviews: significant independent reviews of the faculty member's own work only; do not include reviews performed by the faculty member.
 - Do not extract presentation lists, posters, abstracts, teaching, mentoring, or grants in this slice.
+- Sort records chronologically by initial date when dates are present, and put dates at the end of string records rather than the beginning.
 `.trim(),
     schema: `{
   "sections": {
@@ -316,6 +327,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - diversityContributions should contain substantive diversity-related leadership, programs, service, training grants, mentoring, and access/equity work.
 - otherActivities should contain sabbaticals, outreach, public engagement, and activities that do not fit Section II categories a-f.
 - Do not extract presentations, publications, grants, or professional committee service in this slice.
+- Preserve short diversity narratives when present, not only bullet-like entries. Sort dated entries chronologically and put dates at the end of string records.
 `.trim(),
     schema: `{
   "sections": {
@@ -385,6 +397,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_abstracts_pre_2000: {
     fields: `Section III abstracts ONLY — abstracts published in ${ABSTRACT_PRE_2000_END} or earlier. Skip abstracts published in ${ABSTRACT_MID_START} or later. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    rules: '- Do not preserve source ordering placeholders such as "(22)" or "20."; return the abstract citation text only. Sort abstracts chronologically oldest first.',
     schema: `{
   "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
@@ -394,6 +407,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_abstracts_2000_2010: {
     fields: `Section III abstracts ONLY — abstracts published from ${ABSTRACT_MID_START} through ${ABSTRACT_MID_END}, inclusive. Skip abstracts outside that date range. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    rules: '- Do not preserve source ordering placeholders such as "(22)" or "20."; return the abstract citation text only. Sort abstracts chronologically oldest first.',
     schema: `{
   "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
@@ -403,6 +417,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_abstracts_2011_2020: {
     fields: `Section III abstracts ONLY — abstracts published from ${ABSTRACT_LATE_START} through ${ABSTRACT_LATE_END}, inclusive. Skip abstracts outside that date range. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    rules: '- Do not preserve source ordering placeholders such as "(22)" or "20."; return the abstract citation text only. Sort abstracts chronologically oldest first.',
     schema: `{
   "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
@@ -412,6 +427,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_abstracts_post_2020: {
     fields: `Section III abstracts ONLY — abstracts published in ${ABSTRACT_POST_2020_START} or later. Skip abstracts published before ${ABSTRACT_POST_2020_START}. Number sequentially starting at 1 (numbering will be re-done at merge).`,
+    rules: '- Do not preserve source ordering placeholders such as "(22)" or "20."; return the abstract citation text only. Sort abstracts chronologically oldest first.',
     schema: `{
   "sections": {
     "abstracts": [{"number": 1, "citation": "", "type": "abstract"}]
@@ -475,11 +491,20 @@ const buildSliceUserPrompt = (
 ): string => {
   const { fields, schema, rules } = SLICE_PROMPTS[slice];
   const cvText = provider === 'onPrem' ? compactCvTextForSlice(cv.rawText, slice) : cv.rawText;
+  const reviewPeriodRules = cv.reviewPeriodStart
+    ? `Review-period delimiter:
+- The user provided ${cv.reviewPeriodStart} as the "new since last review" date.
+- When a record is dated on or after ${cv.reviewPeriodStart}, set isNewSinceLastReview=true for publication records when that field is available.
+- For non-publication records, preserve enough date text for the final BioBib generator to insert the review-period divider.
+
+`
+    : '';
   return `Extract from this faculty CV the following BioBib fields ONLY: ${fields}.
 
 CV TEXT:
 ${cvText}
 
+${reviewPeriodRules}
 ${rules ? `Slice-specific rules:
 ${rules}
 
@@ -494,7 +519,9 @@ Content rules:
 - Only populate the fields listed above. Do not include keys for other sections.
 - Preserve citation text exactly — do not reformat or standardize.
 - Employment must be chronological (oldest first), preserve month-level dates, and include academic assistantships/appointments when the CV lists them.
-- Publications must be chronological and numbered sequentially within each subsection. Keep labels such as "New", asterisks, "RESEARCH ARTICLE", "REVIEW ARTICLE", "previously B.1", contribution notes, and URLs if present.
+- Publications must be chronological oldest first by initial date and numbered sequentially within each subsection. Keep labels such as "New", asterisks, "RESEARCH ARTICLE", "REVIEW ARTICLE", "previously B.1", contribution notes, and URLs if present.
+- Section II string records should put dates at the end of the record, not at the beginning.
+- Do not preserve source ordering placeholders such as "71.", "(22)", "(21)", or "(20)" in returned strings or citations; generated BioBib numbering will be applied later.
 - For Section II categories with no evidence in the CV, return an empty array. Do not add a gap unless the missing item is truly required for BioBib submission.
 - For gaps, only flag fields that belong to the slice above. Be specific and actionable.
 - severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.${reviewPeriodRule(slice, sinceYear)}`;
@@ -829,6 +856,8 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   moveWorkInProgressPublications(sections);
   moveHonorificAppointmentsToAwards(sections);
   reclassifyOtherPublications(sections);
+  normalizeSectionIIRecords(sections);
+  normalizePublicationRecords(sections);
 
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
@@ -867,6 +896,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.clinicalActivities = dedupeStrings(sections.clinicalActivities);
   sections.otherActivities = dedupeStrings(sections.otherActivities);
   sections.externalReviews = dedupeStrings(sections.externalReviews);
+  sortSectionIIRecords(sections);
   addDuplicatePlacementReviewNotes(sections, reviewNotes);
   addStructuralReviewGaps(sections, gaps);
 
@@ -921,6 +951,126 @@ function reclassifyOtherPublications(sections: BioBibSections): void {
   sections.otherArticles = remainingOtherArticles;
   const primaryProceedingKeys = new Set(sections.refereedProceedings.map(item => normalizePublicationCitation(item.citation)));
   sections.otherProceedings = sections.otherProceedings.filter(item => !primaryProceedingKeys.has(normalizePublicationCitation(item.citation)));
+}
+
+function normalizeSectionIIRecords(sections: BioBibSections): void {
+  sections.universityService = sections.universityService.map(cleanServiceEntry);
+  sections.publicService = sections.publicService.map(cleanGeneratedRecord);
+  sections.professionalActivities = sections.professionalActivities.map(cleanGeneratedRecord);
+  sections.memberships = sections.memberships.map(cleanGeneratedRecord);
+  sections.awards = sections.awards.map(cleanGeneratedRecord);
+  sections.teaching = sections.teaching.map(cleanGeneratedRecord);
+  sections.studentInstructionalActivities = sections.studentInstructionalActivities.map(cleanGeneratedRecord);
+  sections.studentInstructionalGroups = sections.studentInstructionalGroups.map(group => ({
+    ...group,
+    entries: group.entries.map(cleanGeneratedRecord),
+  }));
+  sections.externalProfessionalActivities = sections.externalProfessionalActivities.map(cleanGeneratedRecord);
+  sections.consulting = sections.consulting.map(cleanGeneratedRecord);
+  sections.reviewerActivities = sections.reviewerActivities.map(cleanGeneratedRecord);
+  sections.presentations = sections.presentations.map(cleanGeneratedRecord);
+  sections.invitedPresentations = sections.invitedPresentations.map(cleanGeneratedRecord);
+  sections.diversityContributions = sections.diversityContributions.map(cleanGeneratedRecord);
+  sections.outreach = sections.outreach.map(cleanGeneratedRecord);
+  sections.clinicalActivities = sections.clinicalActivities.map(cleanGeneratedRecord);
+  sections.otherActivities = sections.otherActivities.map(cleanGeneratedRecord);
+  sections.externalReviews = sections.externalReviews.map(cleanGeneratedRecord);
+}
+
+function sortSectionIIRecords(sections: BioBibSections): void {
+  sections.universityService = sortByInitialDate(sections.universityService, serviceDateText);
+  sections.publicService = sortByInitialDate(sections.publicService, item => item);
+  sections.professionalActivities = sortByInitialDate(sections.professionalActivities, item => item);
+  sections.memberships = sortByInitialDate(sections.memberships, item => item);
+  sections.awards = sortByInitialDate(sections.awards, item => item);
+  sections.teaching = sortByInitialDate(sections.teaching, item => item);
+  sections.studentInstructionalActivities = sortByInitialDate(sections.studentInstructionalActivities, item => item);
+  sections.studentInstructionalGroups = sections.studentInstructionalGroups.map(group => ({
+    ...group,
+    entries: sortByInitialDate(group.entries, item => item),
+  }));
+  sections.grants = sortByInitialDate(sections.grants, grantDateText);
+  sections.externalProfessionalActivities = sortByInitialDate(sections.externalProfessionalActivities, item => item);
+  sections.consulting = sortByInitialDate(sections.consulting, item => item);
+  sections.reviewerActivities = sortByInitialDate(sections.reviewerActivities, item => item);
+  sections.presentations = sortByInitialDate(sections.presentations, item => item);
+  sections.invitedPresentations = sortByInitialDate(sections.invitedPresentations, item => item);
+  sections.diversityContributions = sortByInitialDate(sections.diversityContributions, item => item);
+  sections.outreach = sortByInitialDate(sections.outreach, item => item);
+  sections.clinicalActivities = sortByInitialDate(sections.clinicalActivities, item => item);
+  sections.otherActivities = sortByInitialDate(sections.otherActivities, item => item);
+  sections.externalReviews = sortByInitialDate(sections.externalReviews, item => item);
+}
+
+function cleanServiceEntry(entry: BioBibSections['universityService'][number]): BioBibSections['universityService'][number] {
+  const description = stripLeadingSourceNumber(entry.description).replace(/\s+/g, ' ').trim();
+  const split = splitLeadingDate(description);
+  if (!split) {
+    return {
+      ...entry,
+      description,
+      dates: cleanServiceDate(entry.dates),
+    };
+  }
+
+  return {
+    ...entry,
+    description: split.rest,
+    dates: cleanServiceDate(entry.dates || split.dateLabel),
+  };
+}
+
+function cleanServiceDate(value: string): string {
+  return value.trim().replace(/^\((.*)\)$/, '$1').trim();
+}
+
+function serviceDateText(entry: BioBibSections['universityService'][number]): string {
+  return `${entry.dates} ${entry.description}`;
+}
+
+function grantDateText(entry: BioBibSections['grants'][number]): string {
+  return `${entry.period} ${entry.title}`;
+}
+
+function normalizePublicationRecords(sections: BioBibSections): void {
+  const publicationKeys: (keyof Pick<
+    BioBibSections,
+    | 'peerReviewedJournals'
+    | 'reviewAndInvited'
+    | 'books'
+    | 'chapters'
+    | 'refereedProceedings'
+    | 'otherArticles'
+    | 'otherProceedings'
+    | 'abstracts'
+    | 'popularWorks'
+    | 'additionalProducts'
+    | 'theses'
+    | 'patents'
+    | 'workInProgress'
+  >)[] = [
+    'peerReviewedJournals',
+    'reviewAndInvited',
+    'books',
+    'chapters',
+    'refereedProceedings',
+    'otherArticles',
+    'otherProceedings',
+    'abstracts',
+    'popularWorks',
+    'additionalProducts',
+    'theses',
+    'patents',
+    'workInProgress',
+  ];
+
+  for (const key of publicationKeys) {
+    const cleaned = sections[key].map(item => ({
+      ...item,
+      citation: stripLeadingSourceNumber(item.citation).replace(/\s+/g, ' ').trim(),
+    }));
+    sections[key] = sortByInitialDate(cleaned, item => item.citation) as BioBibSections[typeof key];
+  }
 }
 
 function isBookReviewCitation(citation: string): boolean {
@@ -1105,10 +1255,6 @@ function normalizeReviewItem(value: string): string {
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
   return normalized.length >= 24 ? normalized : '';
-}
-
-function stripLeadingSourceNumber(value: string): string {
-  return value.trim().replace(/^\d+\s*[.)]\s*/, '');
 }
 
 function dedupeReviewNotes(notes: BioBibReviewNote[]): BioBibReviewNote[] {

@@ -39,6 +39,8 @@ export interface JobManifest {
   aiModel?: string;
   /** Earliest year to include for Section II activities; absent = all years. */
   sinceYear?: number;
+  /** Exact cutoff date used to mark clearly dated new records; absent = cumulative draft. */
+  reviewPeriodStart?: string;
 }
 
 export async function writeManifest(jobId: string, manifest: JobManifest): Promise<void> {

@@ -86,6 +86,50 @@ async function main() {
       !merged.sections.otherArticles.some(item => item.citation.includes('Proceedings, Example Conference')) &&
       !merged.sections.otherProceedings.some(item => item.citation.includes('Proceedings, Example Conference')),
   );
+  record(
+    'Dated Section II records are sorted oldest first by initial date',
+    orderedText(merged.sections.awards.join('\n'), [
+      'Phi Beta Kappa',
+      'David and Lucile Packard Fellow in Science and Engineering',
+      'Camille Dreyfus Teacher-Scholar',
+    ]) &&
+      orderedText(merged.sections.memberships.join('\n'), [
+        'Sigma Xi research grant',
+        'Fellow of the Royal Entomological Society',
+        'Elected President, North American Section',
+      ]) &&
+      orderedText(merged.sections.professionalActivities.join('\n'), [
+        'Opponent for Ph.D. Defense',
+        'Panelist and grant reviewer for the Foundation for Food and Agriculture Research',
+        'Service on a National Science Foundation Integrative Organismal Systems',
+      ]),
+  );
+  record(
+    'Date-first Section II strings move dates to the end',
+    merged.sections.invitedPresentations.some(item =>
+      item === 'Nieh JC. Invited talk. The role of pheromones in the food location communication system of Melipona panamica. Seminar. University of Utrecht, Netherlands (May 20, 1995)',
+    ) &&
+      merged.sections.presentations.some(item =>
+        item === 'Nieh JC. Invited talk. The emergent properties of superorganism signaling: inhibitory signals shape honey bee foraging in a changing and dangerous world. Seminar. Xishuangbanna Tropical Botanical Garden, Chinese Academy of Science, Xishuangbanna, China. (Sept 23, 2014)',
+      ),
+  );
+  record(
+    'Grant rows are sorted by sparse initial period dates',
+    orderedText(merged.sections.grants.map(grant => `${grant.title} ${grant.period}`).join('\n'), [
+      'Doctoral Dissertation Improvement Grant 2005',
+      'NAPPC Honey Bee Health Grant 2010-2012',
+      'Dynamics and Energetics 2024-2027',
+    ]),
+  );
+  record(
+    'Abstracts drop source ordering placeholders and sort chronologically',
+    orderedText(merged.sections.abstracts.map(item => item.citation).join('\n'), [
+      'Nieh J (1996) A stingless bee',
+      'Nieh J (1998) Multiple communication channels',
+      'Eiri D and Nieh JC (2010)',
+    ]) &&
+      merged.sections.abstracts.every(item => !/^\(\d+\)|^\d+[.)]/.test(item.citation)),
+  );
 
   const buffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs());
   const parts = await docxParts(buffer);
@@ -119,7 +163,7 @@ async function main() {
   );
   record(
     'Presentation subsections restart numbering at 1',
-    /Presentations at National and International Meetings\s+1\.\s+Gordon Research Conference[\s\S]*Other Invited Presentations\s+1\.\s+Example H2O\+ presentation[\s\S]*2\.\s+Department of Chemistry Seminar/.test(text),
+    /Presentations at National and International Meetings\s+1\.\s+Nieh JC\. Invited talk[\s\S]*2\.\s+Gordon Research Conference[\s\S]*Other Invited Presentations\s+1\.\s+Nieh JC\. Invited talk[\s\S]*2\.\s+Example H2O\+ presentation[\s\S]*3\.\s+Department of Chemistry Seminar/.test(text),
   );
   record(
     'Student instructional activities render grouped numbered lists without repeated group labels',
@@ -174,6 +218,12 @@ async function main() {
       ((merged.reviewNotes?.length ?? 0) === 0 || text.includes('Placement and Duplication Review Notes')),
   );
   record('Review period line absent for all-years documents', !text.includes('Review period (Section II activities):'));
+  record(
+    'DOCX records optional review-period date and renders divider marker',
+    text.includes('New since last review date: 2020-01-01') &&
+      text.includes('New since last review') &&
+      /New since last review[\s\S]*\*1\.\s+A\. Scholar/.test(text),
+  );
 
   const periodBuffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs(), { sinceYear: 2020 });
   const periodText = docxXmlToText((await docxParts(periodBuffer)).documentXml);
@@ -223,7 +273,39 @@ function buildPartialResult(): PartialResult {
           dateReceived: '1989',
         },
       ],
+      universityService: [
+        {
+          description: '2024-2025 Reviewed grants for the UC San Diego Strategic Plan Refresh Convene and Influence Award.',
+          dates: '',
+          category: 'departmental',
+        },
+        {
+          description: '2018 Panelist and grant reviewer for the UC MEXUS-CONACYT postdoctoral fellowship and collaborative grant competition.',
+          dates: '',
+          category: 'departmental',
+        },
+      ],
+      memberships: [
+        '2023 Elected President, North American Section of the International Union for the Study of Social Insects.',
+        '2017 Elected Fellow of the Royal Entomological Society, United Kingdom.',
+        '1993 Sigma Xi research grant, Cornell University, New York, USA.',
+      ],
+      awards: [
+        'Camille Dreyfus Teacher-Scholar 1996-2001',
+        'David and Lucile Packard Fellow in Science and Engineering 1994-1999',
+        'Phi Beta Kappa 1989',
+      ],
       grants: [
+        {
+          title: 'NAPPC Honey Bee Health Grant',
+          funder: 'North American Pollinator Protection Campaign',
+          amount: '',
+          totalAward: '',
+          period: '2010-2012',
+          status: 'past',
+          role: 'PI',
+          coPIsShare: '',
+        },
         {
           title: 'Dynamics and Energetics',
           funder: 'National Science Foundation',
@@ -234,15 +316,33 @@ function buildPartialResult(): PartialResult {
           role: '',
           coPIsShare: '',
         },
+        {
+          title: 'Doctoral Dissertation Improvement Grant',
+          funder: 'National Science Foundation',
+          amount: '',
+          totalAward: '',
+          period: '2005',
+          status: 'past',
+          role: 'PI',
+          coPIsShare: '',
+        },
       ],
       presentations: [],
       invitedPresentations: [
+        '71. Sept 23, 2014 Nieh JC. Invited talk. The emergent properties of superorganism signaling: inhibitory signals shape honey bee foraging in a changing and dangerous world. Seminar. Xishuangbanna Tropical Botanical Garden, Chinese Academy of Science, Xishuangbanna, China.',
+        '1. May 20, 1995 Nieh JC. Invited talk. The role of pheromones in the food location communication system of Melipona panamica. Seminar. University of Utrecht, Netherlands',
         'Gordon Research Conference on Molecular Beams, 2024.',
         'Example H2O+ presentation, Department of Chemistry Seminar, 2025.',
         'Department of Chemistry Seminar, Example University, 2025.',
       ],
       professionalActivities: [
+        '2025 Service on a National Science Foundation Integrative Organismal Systems (IOS) Grant review panel.',
         'Opponent for Ph.D. Defense of Karoline Wiesner, Department of Physics, University of Uppsala, Uppsala, Sweden January 24, 2004',
+        '2017 Panelist and grant reviewer for the Foundation for Food and Agriculture Research (FFAR) for the Pollinator Health Special Initiative.',
+      ],
+      diversityContributions: [
+        '2023 Chair of the search committee for the School of Biological Sciences Director of Diversity Initiatives staff position.',
+        '2008-2014 School of Biological Sciences Diversity Committee member.',
       ],
       studentInstructionalGroups: [
         {
@@ -293,6 +393,24 @@ function buildPartialResult(): PartialResult {
           type: 'proceedings',
         }),
       ],
+      abstracts: [
+        publication({
+          citation: '(21) Eiri D and Nieh JC (2010) Picky eater syndrome: the pesticide imidacloprid alters honey bee (Apis mellifera) sucrose response threshold and potentially, colony health. Entomological Society of America, San Diego, California, USA.',
+          type: 'abstract',
+        }),
+        publication({
+          citation: 'Nieh J (1998) Multiple communication channels: examples from two eusocial bees. Fifth International Congress of Neuroethology Abstracts.',
+          type: 'abstract',
+        }),
+        publication({
+          citation: '(20) Eiri D and Nieh JC (2010) Picky eaters and poor navigators: the pesticide imidacloprid alters honey bee (Apis mellifera) sucrose response thresholds and search distance estimation. 10th Annual North American Pollinator Protection Campaign Conference, Washington D.C., USA.',
+          type: 'abstract',
+        }),
+        publication({
+          citation: 'Nieh J (1996) A stingless bee, Melipona panamica, may use sounds to communicate the location of a food source. 10th International Insect Sound and Vibration Meeting Abstracts. Woods Hole, Massachusetts.',
+          type: 'abstract',
+        }),
+      ],
     },
     gaps: [],
   };
@@ -310,6 +428,10 @@ function publication(overrides: Partial<PublicationEntry>): PublicationEntry {
 function buildConversionResult(merged: ConversionResult): ConversionResult {
   return {
     ...merged,
+    metadata: {
+      ...merged.metadata,
+      reviewPeriodStart: '2020-01-01',
+    },
     sections: {
       ...merged.sections,
       specialization: 'Chemical dynamics.',

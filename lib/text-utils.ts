@@ -4,6 +4,8 @@
  * student-group normalization behave identically at merge time and at render time.
  */
 
+import { extractInitialDateInfo } from './date-utils';
+
 export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -42,10 +44,9 @@ export function dedupeStrings(items: string[]): string[] {
   return dedupeBy(items, normalizeForDedupe);
 }
 
-/** Latest year mentioned in the string; undated items sort last. */
+/** Initial date mentioned in the string; undated items sort last. */
 export function chronologicalYear(value: string): number {
-  const years = [...value.matchAll(/\b(19|20)\d{2}\b/g)].map(match => Number(match[0]));
-  return years.length > 0 ? Math.max(...years) : Number.MAX_SAFE_INTEGER;
+  return extractInitialDateInfo(value)?.sortKey ?? Number.MAX_SAFE_INTEGER;
 }
 
 export function sortChronologically(items: string[]): string[] {

@@ -5,6 +5,7 @@
 export interface ParsedCV {
   rawText: string;
   richTextParagraphs?: RichTextParagraph[];
+  reviewPeriodStart?: string;
   name?: string;
   department?: string;
   title?: string;
@@ -153,5 +154,6 @@ export interface ConversionResult {
     department: string;
     title: string;
     processedAt: string;
+    reviewPeriodStart?: string;
   };
 }

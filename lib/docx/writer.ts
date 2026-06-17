@@ -26,6 +26,7 @@ import {
   normalizeStudentGroupHeading,
   stripStudentGroupPrefix,
 } from '../text-utils';
+import { dateBefore, dateOnOrAfter } from '../date-utils';
 
 const UCSD_BLUE = '003B5C';
 const LIGHT_GRAY = 'F2F2F2';
@@ -86,6 +87,52 @@ function dividerLine(): Paragraph {
     thematicBreak: true,
     spacing: { before: 60, after: 60 },
   });
+}
+
+function reviewPeriodDivider(): Paragraph[] {
+  return [
+    new Paragraph({
+      thematicBreak: true,
+      spacing: { before: 80, after: 40 },
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [run({ text: 'New since last review', italics: true, size: 18 })],
+      spacing: { after: 80 },
+    }),
+  ];
+}
+
+interface ReviewDividerOptions<T> {
+  reviewPeriodStart?: string;
+  textForItem: (item: T) => string;
+  isExplicitlyNew?: (item: T) => boolean;
+}
+
+function reviewDividerIndex<T>(
+  items: T[],
+  options?: ReviewDividerOptions<T>,
+): number | null {
+  if (!options?.reviewPeriodStart) return null;
+  const datedOld = items.some(item => dateBefore(options.textForItem(item), options.reviewPeriodStart));
+  if (!datedOld) return null;
+
+  const firstNew = items.findIndex(item =>
+    options.isExplicitlyNew?.(item) || dateOnOrAfter(options.textForItem(item), options.reviewPeriodStart),
+  );
+  return firstNew > 0 ? firstNew : null;
+}
+
+function withReviewDivider<T>(
+  items: T[],
+  renderItem: (item: T, index: number) => Paragraph[],
+  options?: ReviewDividerOptions<T>,
+): Paragraph[] {
+  const dividerIndex = reviewDividerIndex(items, options);
+  return items.flatMap((item, index) => [
+    ...(dividerIndex === index ? reviewPeriodDivider() : []),
+    ...renderItem(item, index),
+  ]);
 }
 
 function pageNumberFooter(): Footer {
@@ -219,10 +266,15 @@ function tableCell(text: string, options?: { bold?: boolean; shaded?: boolean; w
   });
 }
 
-function publicationList(entries: PublicationEntry[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
+function publicationList(
+  entries: PublicationEntry[],
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
   if (entries.length === 0) return [];
-  return entries.flatMap(e => {
-    const prefix = e.isNewSinceLastReview ? `*${e.number}. ` : `${e.number}. `;
+  return withReviewDivider(entries, e => {
+    const isNew = e.isNewSinceLastReview || dateOnOrAfter(e.citation, reviewPeriodStart);
+    const prefix = isNew ? `*${e.number}. ` : `${e.number}. `;
     const notes = [
       formatArticleKind(e.articleKind),
       formatPreviouslyListedAs(e.previouslyListedAs),
@@ -254,6 +306,10 @@ function publicationList(entries: PublicationEntry[], richTextParagraphs: RichTe
     }
 
     return paragraphs;
+  }, {
+    reviewPeriodStart,
+    textForItem: item => item.citation,
+    isExplicitlyNew: item => item.isNewSinceLastReview === true,
   });
 }
 
@@ -361,32 +417,53 @@ function sentenceCaseAllCaps(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
-function stringList(items: string[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
-  return items.map(item => new Paragraph({
-    children: richTextRunsForText(item, richTextParagraphs),
-    spacing: { after: 60 },
-  }));
+function stringList(
+  items: string[],
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
+  return withReviewDivider(items, item => [
+    new Paragraph({
+      children: richTextRunsForText(item, richTextParagraphs),
+      spacing: { after: 60 },
+    }),
+  ], { reviewPeriodStart, textForItem: item => item });
 }
 
-function numberedStringList(items: string[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
-  return items.map((item, index) => new Paragraph({
-    children: [
-      run({ text: `${index + 1}. `, bold: true, size: 20 }),
-      ...richTextRunsForText(item, richTextParagraphs),
-    ],
-    spacing: { after: 60 },
-  }));
+function numberedStringList(
+  items: string[],
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
+  return withReviewDivider(items, (item, index) => [
+    new Paragraph({
+      children: [
+        run({ text: `${index + 1}. `, bold: true, size: 20 }),
+        ...richTextRunsForText(item, richTextParagraphs),
+      ],
+      spacing: { after: 60 },
+    }),
+  ], { reviewPeriodStart, textForItem: item => item });
 }
 
-function listOrNone(items: string[], noneText = 'None.', richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
-  return items.length > 0 ? stringList(items, richTextParagraphs) : [body(noneText)];
+function listOrNone(
+  items: string[],
+  noneText = 'None.',
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
+  return items.length > 0 ? stringList(items, richTextParagraphs, reviewPeriodStart) : [body(noneText)];
 }
 
-function serviceList(items: { description: string; dates: string }[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
+function serviceList(
+  items: { description: string; dates: string }[],
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
   return stringList(items.map(s => {
     const dates = cleanWrappedDate(s.dates);
     return `${s.description}${dates ? ` (${dates})` : ''}`;
-  }), richTextParagraphs);
+  }), richTextParagraphs, reviewPeriodStart);
 }
 
 function cleanWrappedDate(value: string): string {
@@ -402,7 +479,7 @@ function shouldRenderPresentation(value: string): boolean {
   return !lower.includes('(poster)') && !lower.includes('poster presentation') && !lower.includes('contributed talk');
 }
 
-function grantTable(grants: GrantEntry[]): Table {
+function grantTable(grants: GrantEntry[], reviewPeriodStart?: string): Table {
   const rows = [
     new TableRow({
       tableHeader: true,
@@ -415,16 +492,7 @@ function grantTable(grants: GrantEntry[]): Table {
         tableCell('Co-PIs / share', { bold: true, shaded: true, width: 12 }),
       ],
     }),
-    ...grants.map(g => new TableRow({
-      children: [
-        tableCell(g.title),
-        tableCell(g.funder),
-        tableCell(g.totalAward || g.amount || ''),
-        tableCell(g.period),
-        tableCell(g.role || ''),
-        tableCell(g.coPIsShare || ''),
-      ],
-    })),
+    ...grantRows(grants, reviewPeriodStart),
   ];
 
   return new Table({
@@ -433,10 +501,44 @@ function grantTable(grants: GrantEntry[]): Table {
   });
 }
 
-function grantsOrNone(grants: GrantEntry[]): (Paragraph | Table)[] {
+function grantRows(grants: GrantEntry[], reviewPeriodStart?: string): TableRow[] {
+  const dividerIndex = reviewDividerIndex(grants, {
+    reviewPeriodStart,
+    textForItem: grant => `${grant.period} ${grant.title}`,
+  });
+
+  return grants.flatMap((g, index) => [
+    ...(dividerIndex === index ? [grantDividerRow()] : []),
+    new TableRow({
+      children: [
+        tableCell(g.title),
+        tableCell(g.funder),
+        tableCell(g.totalAward || g.amount || ''),
+        tableCell(g.period),
+        tableCell(g.role || ''),
+        tableCell(g.coPIsShare || ''),
+      ],
+    }),
+  ]);
+}
+
+function grantDividerRow(): TableRow {
+  return new TableRow({
+    children: [
+      tableCell('New since last review', { bold: true, shaded: true, width: 27 }),
+      tableCell('', { shaded: true, width: 20, fallback: '' }),
+      tableCell('', { shaded: true, width: 17, fallback: '' }),
+      tableCell('', { shaded: true, width: 14, fallback: '' }),
+      tableCell('', { shaded: true, width: 10, fallback: '' }),
+      tableCell('', { shaded: true, width: 12, fallback: '' }),
+    ],
+  });
+}
+
+function grantsOrNone(grants: GrantEntry[], reviewPeriodStart?: string): (Paragraph | Table)[] {
   if (grants.length === 0) return [body('None.')];
   return [
-    grantTable(grants),
+    grantTable(grants, reviewPeriodStart),
     new Paragraph({ text: '', spacing: { after: 120 } }),
   ];
 }
@@ -446,10 +548,11 @@ function subSection(
   items: string[],
   noneText = 'None.',
   richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
 ): Paragraph[] {
   return [
     heading3(heading),
-    ...listOrNone(items, noneText, richTextParagraphs),
+    ...listOrNone(items, noneText, richTextParagraphs, reviewPeriodStart),
   ];
 }
 
@@ -458,11 +561,12 @@ function presentationSubSection(
   items: string[],
   noneText = 'None.',
   richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
 ): Paragraph[] {
   const cleaned = items.map(stripSourceNumber).filter(shouldRenderPresentation);
   return [
     heading3(heading),
-    ...(cleaned.length > 0 ? numberedStringList(cleaned, richTextParagraphs) : [body(noneText)]),
+    ...(cleaned.length > 0 ? numberedStringList(cleaned, richTextParagraphs, reviewPeriodStart) : [body(noneText)]),
   ];
 }
 
@@ -471,17 +575,18 @@ function studentInstructionalSection(
   flatItems: string[],
   fallbackTeaching: string[],
   richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
 ): Paragraph[] {
   const normalizedGroups = normalizeStudentGroups(groups, flatItems);
   if (normalizedGroups.length > 0) {
     return normalizedGroups.flatMap(group => [
       heading3(group.heading),
-      ...numberedStringList(group.entries, richTextParagraphs),
+      ...numberedStringList(group.entries, richTextParagraphs, reviewPeriodStart),
     ]);
   }
 
   const mentoringOnly = fallbackTeaching.filter(looksLikeStudentMentoring);
-  if (mentoringOnly.length > 0) return stringList(mentoringOnly, richTextParagraphs);
+  if (mentoringOnly.length > 0) return stringList(mentoringOnly, richTextParagraphs, reviewPeriodStart);
   return [manualPlaceholder('List students supervised, postdoctoral researchers mentored, undergraduate research students, visiting scholars/students, and thesis committee service.')];
 }
 
@@ -524,10 +629,11 @@ function publicationSubSection(
   heading: string,
   entries: PublicationEntry[],
   richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
 ): Paragraph[] {
   return [
     heading3(heading, { italic: false }),
-    ...(entries.length > 0 ? publicationList(entries, richTextParagraphs) : [body('None.')]),
+    ...(entries.length > 0 ? publicationList(entries, richTextParagraphs, reviewPeriodStart) : [body('None.')]),
   ];
 }
 
@@ -537,18 +643,19 @@ function additionalProductsSection(
   patents: PublicationEntry[],
   facultyName: string,
   richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
 ): Paragraph[] {
   const ownTheses = filterOwnTheses(theses, facultyName);
   const children = [
     heading3('IV. Additional Products of Major Research', { italic: false }),
-    ...publicationSubSection('a. Theses', ownTheses, richTextParagraphs),
-    ...publicationSubSection('b. Patent/Patent License', patents, richTextParagraphs),
+    ...publicationSubSection('a. Theses', ownTheses, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('b. Patent/Patent License', patents, richTextParagraphs, reviewPeriodStart),
   ];
 
   if (additionalProducts.length > 0) {
     children.push(
       heading3('c. Other Products', { italic: false }),
-      ...publicationList(additionalProducts, richTextParagraphs),
+      ...publicationList(additionalProducts, richTextParagraphs, reviewPeriodStart),
     );
   }
 
@@ -564,7 +671,11 @@ function filterOwnTheses(theses: PublicationEntry[], facultyName: string): Publi
   });
 }
 
-function workInProgressSection(entries: PublicationEntry[], richTextParagraphs: RichTextParagraph[] = []): Paragraph[] {
+function workInProgressSection(
+  entries: PublicationEntry[],
+  richTextParagraphs: RichTextParagraph[] = [],
+  reviewPeriodStart?: string,
+): Paragraph[] {
   const byType = {
     journal: entries.filter(entry => entry.type === 'journal'),
     review: entries.filter(entry => entry.type === 'review'),
@@ -574,11 +685,11 @@ function workInProgressSection(entries: PublicationEntry[], richTextParagraphs: 
   };
   return [
     heading2('C. Work in Progress'),
-    ...publicationSubSection('I. Refereed Journal Articles', renumberForDisplay(byType.journal), richTextParagraphs),
-    ...publicationSubSection('II. Review and Invited Articles', renumberForDisplay(byType.review), richTextParagraphs),
-    ...publicationSubSection('III. Books and Book Chapters', renumberForDisplay(byType.book), richTextParagraphs),
-    ...publicationSubSection('IV. Refereed Conference Proceedings', renumberForDisplay(byType.proceedings), richTextParagraphs),
-    ...publicationSubSection('V. Other Articles', renumberForDisplay(byType.other), richTextParagraphs),
+    ...publicationSubSection('I. Refereed Journal Articles', renumberForDisplay(byType.journal), richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('II. Review and Invited Articles', renumberForDisplay(byType.review), richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('III. Books and Book Chapters', renumberForDisplay(byType.book), richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('IV. Refereed Conference Proceedings', renumberForDisplay(byType.proceedings), richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('V. Other Articles', renumberForDisplay(byType.other), richTextParagraphs, reviewPeriodStart),
   ];
 }
 
@@ -665,6 +776,7 @@ export async function generateBioBibDocx(
   options: GenerateDocxOptions = {},
 ): Promise<Buffer> {
   const { sections, metadata } = result;
+  const reviewPeriodStart = metadata.reviewPeriodStart;
 
   // ── Document title block ───────────────────────────────────────────────────
   const titleBlock = [
@@ -688,7 +800,7 @@ export async function generateBioBibDocx(
         run({ text: 'Title: ', bold: true, size: 22 }),
         run({ text: metadata.title || '________________', size: 22 }),
       ],
-      spacing: { after: options.sinceYear ? 80 : 200 },
+      spacing: { after: options.sinceYear || reviewPeriodStart ? 80 : 200 },
     }),
     ...(options.sinceYear
       ? [new Paragraph({
@@ -696,8 +808,19 @@ export async function generateBioBibDocx(
             run({ text: 'Review period (Section II activities): ', bold: true, size: 22 }),
             run({ text: `${options.sinceYear} – present`, size: 22 }),
           ],
-          spacing: { after: 200 },
+          spacing: { after: reviewPeriodStart ? 80 : 200 },
         })]
+      : []),
+    ...(reviewPeriodStart
+      ? [
+          new Paragraph({
+            children: [
+              run({ text: 'New since last review date: ', bold: true, size: 20 }),
+              run({ text: reviewPeriodStart, size: 20 }),
+            ],
+            spacing: { after: 200 },
+          }),
+        ]
       : []),
   ];
 
@@ -732,40 +855,40 @@ export async function generateBioBibDocx(
 
     heading2('(a) University Service', { underline: true }),
     heading3('Departmental Service'),
-    ...(departmentalService.length > 0 ? serviceList(departmentalService, richTextParagraphs) : [body('None.')]),
+    ...(departmentalService.length > 0 ? serviceList(departmentalService, richTextParagraphs, reviewPeriodStart) : [body('None.')]),
     heading3('University, Campus, Academic Senate, and Systemwide Service'),
-    ...(nonDepartmentalService.length > 0 ? serviceList(nonDepartmentalService, richTextParagraphs) : [body('None.')]),
-    ...(sections.publicService.length > 0 ? [heading3('Public Service'), ...stringList(sections.publicService, richTextParagraphs)] : []),
+    ...(nonDepartmentalService.length > 0 ? serviceList(nonDepartmentalService, richTextParagraphs, reviewPeriodStart) : [body('None.')]),
+    ...(sections.publicService.length > 0 ? [heading3('Public Service'), ...stringList(sections.publicService, richTextParagraphs, reviewPeriodStart)] : []),
 
     dividerLine(),
     heading2('(b) Memberships', { underline: true }),
-    ...listOrNone(sections.memberships, 'None.', richTextParagraphs),
+    ...listOrNone(sections.memberships, 'None.', richTextParagraphs, reviewPeriodStart),
 
     dividerLine(),
     heading2('(c) Honors and Awards', { underline: true }),
-    ...(sections.awards.length > 0 ? stringList(sections.awards, richTextParagraphs) : [manualPlaceholder('List awards and honors with dates received.')]),
+    ...(sections.awards.length > 0 ? stringList(sections.awards, richTextParagraphs, reviewPeriodStart) : [manualPlaceholder('List awards and honors with dates received.')]),
 
     dividerLine(),
     heading2('(d) Contracts and Grants', { underline: true }),
     heading3('Current Research Support'),
-    ...grantsOrNone(currentGrants),
+    ...grantsOrNone(currentGrants, reviewPeriodStart),
     heading3('Past Research Support'),
-    ...grantsOrNone(pastGrants),
+    ...grantsOrNone(pastGrants, reviewPeriodStart),
 
     dividerLine(),
     heading2('(e) External Professional Activities', { underline: true }),
     ...subSection('Professional Committee Service and Conference Organization', [
       ...sections.professionalActivities,
       ...sections.externalProfessionalActivities,
-    ], 'None.', richTextParagraphs),
-    ...subSection('Consulting', sections.consulting, 'None.', richTextParagraphs),
-    ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities, 'None.', richTextParagraphs),
-    ...presentationSubSection('Presentations at National and International Meetings', sections.presentations, 'None.', richTextParagraphs),
-    ...presentationSubSection('Other Invited Presentations', sections.invitedPresentations, 'None.', richTextParagraphs),
+    ], 'None.', richTextParagraphs, reviewPeriodStart),
+    ...subSection('Consulting', sections.consulting, 'None.', richTextParagraphs, reviewPeriodStart),
+    ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities, 'None.', richTextParagraphs, reviewPeriodStart),
+    ...presentationSubSection('Presentations at National and International Meetings', sections.presentations, 'None.', richTextParagraphs, reviewPeriodStart),
+    ...presentationSubSection('Other Invited Presentations', sections.invitedPresentations, 'None.', richTextParagraphs, reviewPeriodStart),
 
     dividerLine(),
     heading2('(f) Most Significant Contributions to Promoting Diversity', { underline: true }),
-    ...listOrNone(sections.diversityContributions, 'None.', richTextParagraphs),
+    ...listOrNone(sections.diversityContributions, 'None.', richTextParagraphs, reviewPeriodStart),
 
     dividerLine(),
     heading2('(g) Other Activities', { underline: true }),
@@ -773,7 +896,7 @@ export async function generateBioBibDocx(
       ...sections.outreach,
       ...sections.clinicalActivities,
       ...sections.otherActivities,
-    ], 'None.', richTextParagraphs),
+    ], 'None.', richTextParagraphs, reviewPeriodStart),
 
     dividerLine(),
     heading2('(h) Student Instructional Activities', { underline: true }),
@@ -782,11 +905,12 @@ export async function generateBioBibDocx(
       sections.studentInstructionalActivities,
       sections.teaching,
       richTextParagraphs,
+      reviewPeriodStart,
     ),
 
     dividerLine(),
     heading2('(i) External Reviews of Primary Creative Work', { underline: true }),
-    ...listOrNone(sections.externalReviews, 'None submitted with file.', richTextParagraphs),
+    ...listOrNone(sections.externalReviews, 'None submitted with file.', richTextParagraphs, reviewPeriodStart),
   ];
 
   // ── Section III ────────────────────────────────────────────────────────────
@@ -794,21 +918,21 @@ export async function generateBioBibDocx(
     heading1('Section III – Bibliography'),
 
     heading2('A. Primary Published Work or Creative Work:'),
-    ...publicationSubSection('I. Refereed Journal Articles', sections.peerReviewedJournals, richTextParagraphs),
-    ...publicationSubSection('II. Review and Invited Articles', sections.reviewAndInvited, richTextParagraphs),
+    ...publicationSubSection('I. Refereed Journal Articles', sections.peerReviewedJournals, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('II. Review and Invited Articles', sections.reviewAndInvited, richTextParagraphs, reviewPeriodStart),
 
     heading3('III. Books and Book Chapters', { italic: false }),
-    ...publicationSubSection('a. Books', sections.books, richTextParagraphs),
-    ...publicationSubSection('b. Book Chapters', sections.chapters, richTextParagraphs),
-    ...publicationSubSection('IV. Refereed Conference Proceedings', sections.refereedProceedings, richTextParagraphs),
-    ...publicationSubSection('V. Other Articles', sections.otherArticles, richTextParagraphs),
+    ...publicationSubSection('a. Books', sections.books, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('b. Book Chapters', sections.chapters, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('IV. Refereed Conference Proceedings', sections.refereedProceedings, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('V. Other Articles', sections.otherArticles, richTextParagraphs, reviewPeriodStart),
 
     heading2('B. Other Work'),
-    ...publicationSubSection('I. Other Conference Proceedings', sections.otherProceedings, richTextParagraphs),
-    ...publicationSubSection('II. Abstracts', sections.abstracts, richTextParagraphs),
-    ...publicationSubSection('III. Popular Works', sections.popularWorks, richTextParagraphs),
-    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name, richTextParagraphs),
-    ...workInProgressSection(sections.workInProgress, richTextParagraphs),
+    ...publicationSubSection('I. Other Conference Proceedings', sections.otherProceedings, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('II. Abstracts', sections.abstracts, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('III. Popular Works', sections.popularWorks, richTextParagraphs, reviewPeriodStart),
+    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name, richTextParagraphs, reviewPeriodStart),
+    ...workInProgressSection(sections.workInProgress, richTextParagraphs, reviewPeriodStart),
     ...finalCertificationBlock(),
     ...reviewSummarySection(result),
   ];

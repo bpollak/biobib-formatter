@@ -40,10 +40,16 @@ function isAllowedUploadUrl(value: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const { blobUrl, fileName, sinceYear: rawSinceYear } = (await req.json().catch(() => ({}))) as {
+  const {
+    blobUrl,
+    fileName,
+    sinceYear: rawSinceYear,
+    reviewPeriodStart: rawReviewPeriodStart,
+  } = (await req.json().catch(() => ({}))) as {
     blobUrl?: string;
     fileName?: string;
     sinceYear?: unknown;
+    reviewPeriodStart?: string;
   };
   const sinceYear =
     typeof rawSinceYear === 'number' &&
@@ -52,6 +58,7 @@ export async function POST(req: NextRequest) {
     rawSinceYear <= new Date().getFullYear() + 1
       ? rawSinceYear
       : undefined;
+  const reviewPeriodStart = normalizeReviewPeriodStart(rawReviewPeriodStart);
 
   if (!blobUrl || !fileName) {
     return NextResponse.json({ error: 'blobUrl and fileName are required.' }, { status: 400 });
@@ -61,6 +68,12 @@ export async function POST(req: NextRequest) {
   }
   if (!isAllowedUploadUrl(blobUrl)) {
     return NextResponse.json({ error: 'Invalid upload URL.' }, { status: 400 });
+  }
+  if (reviewPeriodStart === false) {
+    return NextResponse.json(
+      { error: 'reviewPeriodStart must be omitted, empty, or formatted as YYYY-MM-DD.' },
+      { status: 400 },
+    );
   }
 
   // Fail fast at the boundary if the internal secret is missing.
@@ -103,6 +116,7 @@ export async function POST(req: NextRequest) {
     sourceBlobUrl: blobUrl,
     aiModel: LITELLM_ROUTING_LABEL,
     sinceYear,
+    ...(reviewPeriodStart ? { reviewPeriodStart } : {}),
   });
 
   // Workers don't need the source .docx — they use cv.txt. Clean up now.
@@ -128,4 +142,15 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ jobId }, { status: 202 });
+}
+
+function normalizeReviewPeriodStart(value: string | undefined): string | false {
+  const trimmed = value?.trim();
+  if (!trimmed) return '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;
+
+  const parsed = new Date(`${trimmed}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  if (parsed.toISOString().slice(0, 10) !== trimmed) return false;
+  return trimmed;
 }

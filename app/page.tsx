@@ -5,7 +5,7 @@ import {
   Box, Container, Typography, Button, Paper, LinearProgress,
   Alert, Chip, List, ListItem, ListItemIcon, ListItemText,
   Accordion, AccordionSummary, AccordionDetails, Stack, Divider,
-  FormControl, InputLabel, Select, MenuItem,
+  FormControl, InputLabel, Select, MenuItem, TextField,
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
@@ -149,6 +149,7 @@ export default function HomePage() {
   const [resumedJob, setResumedJob] = useState(false);
   const [recoveryCopied, setRecoveryCopied] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [reviewPeriodStart, setReviewPeriodStart] = useState('');
   const [slices, setSlices] = useState<Record<SliceKey, SliceState>>(initialSlices);
   // 0 = all years. A real sentinel (not '') so the Select renders the
   // "All years" choice instead of showing an empty box.
@@ -319,6 +320,7 @@ export default function HomePage() {
           blobUrl: blob.url,
           fileName: file.name,
           sinceYear: sinceYear > 0 ? sinceYear : undefined,
+          ...(reviewPeriodStart ? { reviewPeriodStart } : {}),
         }),
       });
     } catch (e) {
@@ -354,7 +356,7 @@ export default function HomePage() {
       fileName: file.name,
       startedAt: Date.now(),
     });
-  }, [startPolling, sinceYear]);
+  }, [reviewPeriodStart, sinceYear, startPolling]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -414,6 +416,8 @@ export default function HomePage() {
     setRecoveryCopied(false);
     setResultState(null);
     setError('');
+    setReviewPeriodStart('');
+    setSinceYear(0);
     setSlices(initialSlices());
   };
 
@@ -580,6 +584,21 @@ export default function HomePage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               or browse for a Word document. Accepted format: .docx
             </Typography>
+            <Box
+              onClick={(e) => e.stopPropagation()}
+              sx={{ maxWidth: 320, mx: 'auto', mb: 2 }}
+            >
+              <TextField
+                label="New since last review date"
+                type="date"
+                size="small"
+                value={reviewPeriodStart}
+                onChange={(e) => setReviewPeriodStart(e.target.value)}
+                fullWidth
+                slotProps={{ inputLabel: { shrink: true } }}
+                helperText="Optional. Used to mark and separate new dated records."
+              />
+            </Box>
             <input id="file-input" type="file" accept=".docx" hidden onChange={onFileChange} />
             <Button
               variant="contained"
@@ -695,6 +714,11 @@ export default function HomePage() {
                 <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>
                   This result remains recoverable from this browser until you start over.
                 </Typography>
+                {resultState.result.metadata.reviewPeriodStart && (
+                  <Typography variant="body2" sx={{ opacity: 0.85, mt: 0.5 }}>
+                    New since last review date: {resultState.result.metadata.reviewPeriodStart}
+                  </Typography>
+                )}
               </Box>
               <Button
                 variant="contained"

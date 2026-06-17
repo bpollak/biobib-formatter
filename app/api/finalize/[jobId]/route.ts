@@ -80,6 +80,9 @@ export async function POST(
       }
 
       const merged = mergeSlices(parts);
+      if (manifest.reviewPeriodStart) {
+        merged.metadata.reviewPeriodStart = manifest.reviewPeriodStart;
+      }
       const richTextParagraphs = await readCvRichText(jobId);
       const docxBuffer = await generateBioBibDocx(merged, richTextParagraphs, {
         sinceYear: manifest.sinceYear,

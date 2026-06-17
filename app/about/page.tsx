@@ -72,6 +72,16 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'June 17, 2026, 10:42 AM PDT',
+    title: 'Chronology and Review-Period Update',
+    changes: [
+      'Added an optional new-since-last-review date so generated drafts can mark and separate clearly dated new records.',
+      'Improved chronological ordering for dated service, memberships, honors, grants, external activities, presentations, diversity contributions, student activity, and abstract entries.',
+      'Moved leading dates to the end of generated professional-data records for cleaner BioBib formatting.',
+      'Improved cleanup of inherited CV numbering in presentations and abstracts so generated BioBib numbering remains the only visible list numbering.',
+    ],
+  },
+  {
     releasedAt: 'June 9, 2026, 3:30 PM PDT',
     title: 'Activity History Selector Fix',
     changes: [

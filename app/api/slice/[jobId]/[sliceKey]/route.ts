@@ -66,7 +66,7 @@ export async function POST(
       }
 
       const rawText = await readCvText(jobId);
-      const cv = { rawText };
+      const cv = { rawText, reviewPeriodStart: manifest.reviewPeriodStart };
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), LITELLM_TIMEOUT_MS);
