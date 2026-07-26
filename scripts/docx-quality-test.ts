@@ -34,7 +34,9 @@ async function main() {
       SLICE_KEYS.includes('II_memberships_awards'),
   );
   const highFidelityRoute = modelCandidatesForSlice('III_journals_late', { cloud: true, onPrem: true });
-  const mechanicalRoute = modelCandidatesForSlice('II_presentations_post_2020', { cloud: true, onPrem: true });
+  const feedbackSensitiveRoute = modelCandidatesForSlice('II_memberships_awards', { cloud: true, onPrem: true });
+  const presentationRoute = modelCandidatesForSlice('II_presentations_post_2020', { cloud: true, onPrem: true });
+  const mechanicalRoute = modelCandidatesForSlice('II_service_post_2020', { cloud: true, onPrem: true });
   const onPremOnlyRoute = modelCandidatesForSlice('meta_and_I', { cloud: false, onPrem: true });
 
   record(
@@ -43,6 +45,13 @@ async function main() {
       highFidelityRoute[0]?.model === LITELLM_MODEL &&
       highFidelityRoute[1]?.provider === 'onPrem' &&
       highFidelityRoute[1]?.model === LITELLM_ON_PREM_MODEL,
+  );
+  record(
+    'Feedback-sensitive honors and presentation slices prefer the high-fidelity route',
+    feedbackSensitiveRoute[0]?.provider === 'cloud' &&
+      feedbackSensitiveRoute[1]?.provider === 'onPrem' &&
+      presentationRoute[0]?.provider === 'cloud' &&
+      presentationRoute[1]?.provider === 'onPrem',
   );
   record(
     'Mechanical extraction slices prefer on-prem with cloud fallback',
@@ -126,6 +135,26 @@ async function main() {
       honorsAndFellowshipsExcerpt.includes('Doctoral Fellowship') &&
       !honorsAndFellowshipsExcerpt.includes('UNRELATED GRANT'),
   );
+  const appointmentHonorsExcerpt = compactCvTextForSlice([
+    'Faculty CV',
+    'Appointments',
+    'Professor, Example University 1999-present',
+    'Kurt Shuler Scholar in Physical Chemistry 2006-2011',
+    'Wilsmore Fellow, University of Melbourne 2012',
+    'Aarhus University Faculty Fellow 2017',
+    'Honors and Awards',
+    'Distinguished Teaching Award 2020',
+    'Contracts and Grants',
+    'UNRELATED GRANT',
+  ].join('\n'), 'II_memberships_awards');
+  record(
+    'Appointment sections are included when extracting honorific awards',
+    appointmentHonorsExcerpt.includes('Kurt Shuler Scholar') &&
+      appointmentHonorsExcerpt.includes('Wilsmore Fellow') &&
+      appointmentHonorsExcerpt.includes('Aarhus University Faculty Fellow') &&
+      appointmentHonorsExcerpt.includes('Distinguished Teaching Award') &&
+      !appointmentHonorsExcerpt.includes('UNRELATED GRANT'),
+  );
 
   const merged = mergeSlices([buildPartialResult()]);
 
@@ -153,7 +182,10 @@ async function main() {
 
   record(
     'Honorific appointment-like entries are retained as honors and awards',
-    merged.sections.awards.some(item => item.includes('Visiting Scientist') && item.includes('Sandia')),
+    merged.sections.awards.some(item => item.includes('Visiting Scientist') && item.includes('Sandia')) &&
+      merged.sections.awards.some(item => item.includes('Kurt Shuler Scholar') && item.includes('2006 – 2011')) &&
+      merged.sections.awards.some(item => item.includes('Wilsmore Fellow') && item.includes('2012')) &&
+      merged.sections.awards.some(item => item.includes('Aarhus University Faculty Fellow') && item.includes('2017')),
   );
   record(
     'Potential duplicate Section II placements are flagged for review',
@@ -192,9 +224,16 @@ async function main() {
   record(
     'Other Publications are reclassified into proceedings and popular works when patterns are clear',
     merged.sections.refereedProceedings.some(item => item.citation.includes('Proceedings, Example Conference')) &&
+      merged.sections.refereedProceedings.some(item => item.citation.includes('On the origin of carbonaceous particulates')) &&
+      merged.sections.refereedProceedings.some(item => item.citation.includes('XIIIth International Hot Atom Chemistry Symposium')) &&
+      merged.sections.refereedProceedings.some(item => item.citation.includes('Experimentally probing the three-body predissociation dynamics')) &&
+      merged.sections.refereedProceedings.some(item => item.citation.includes('Dissociation dynamics of highly excited molecules')) &&
       merged.sections.popularWorks.some(item => item.citation.includes('Review of Advances in Chemical Physics')) &&
       !merged.sections.otherArticles.some(item => item.citation.includes('Proceedings, Example Conference')) &&
-      !merged.sections.otherProceedings.some(item => item.citation.includes('Proceedings, Example Conference')),
+      !merged.sections.otherArticles.some(item => item.citation.includes('On the origin of carbonaceous particulates')) &&
+      !merged.sections.otherProceedings.some(item => item.citation.includes('XIIIth International Hot Atom Chemistry Symposium')) &&
+      !merged.sections.otherProceedings.some(item => item.citation.includes('Experimentally probing the three-body predissociation dynamics')) &&
+      !merged.sections.otherProceedings.some(item => item.citation.includes('Dissociation dynamics of highly excited molecules')),
   );
   record(
     'Dated Section II records are sorted oldest first by initial date',
@@ -239,6 +278,13 @@ async function main() {
       'Eiri D and Nieh JC (2010)',
     ]) &&
       merged.sections.abstracts.every(item => !/^\(\d+\)|^\d+[.)]/.test(item.citation)),
+  );
+  record(
+    'Abstract citations do not leak into Section II presentation lists',
+    !merged.sections.presentations.some(item => item.includes('Picky eater syndrome')) &&
+      !merged.sections.presentations.some(item => item.includes('Variation in height communication')) &&
+      merged.sections.abstracts.some(item => item.citation.includes('Picky eater syndrome')) &&
+      merged.sections.abstracts.some(item => item.citation.includes('Variation in height communication')),
   );
 
   const buffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs());
@@ -416,6 +462,27 @@ function buildPartialResult(): PartialResult {
           location: 'Livermore, CA',
           rank: 'Visiting Scientist',
         },
+        {
+          from: '2006',
+          to: '2011',
+          institution: '',
+          location: '',
+          rank: 'Kurt Shuler Scholar in Physical Chemistry',
+        },
+        {
+          from: '2012',
+          to: '2012',
+          institution: 'University of Melbourne',
+          location: '',
+          rank: 'Wilsmore Fellow',
+        },
+        {
+          from: '2017',
+          to: '2017',
+          institution: '',
+          location: '',
+          rank: 'Aarhus University Faculty Fellow',
+        },
       ],
       education: [
         {
@@ -482,7 +549,10 @@ function buildPartialResult(): PartialResult {
           coPIsShare: '',
         },
       ],
-      presentations: [],
+      presentations: [
+        'Eiri D and Nieh JC (2010) Picky eater syndrome: the pesticide imidacloprid alters honey bee (Apis mellifera) sucrose response threshold and potentially, colony health. Entomological Society of America, San Diego, California, USA.',
+        'Nieh J, Contrera F, Ramírez, S., and Imperatriz-Fonseca V.L. (2002) Variation in height communication: testing three-dimensional location communication in the stingless bees, Melipona mandacaia and Melipona bicolor. Anais do Encontro Sobre Abelhas V, Ribeirao Preto, Sao Paulo, Brasil.',
+      ],
       invitedPresentations: [
         '71. Sept 23, 2014 Nieh JC. Invited talk. The emergent properties of superorganism signaling: inhibitory signals shape honey bee foraging in a changing and dangerous world. Seminar. Xishuangbanna Tropical Botanical Garden, Chinese Academy of Science, Xishuangbanna, China.',
         '1. May 20, 1995 Nieh JC. Invited talk. The role of pheromones in the food location communication system of Melipona panamica. Seminar. University of Utrecht, Netherlands',
@@ -548,6 +618,18 @@ function buildPartialResult(): PartialResult {
           type: 'other',
         }),
         publication({
+          citation: "L.A. Currie, G.A. Klouda, R.E. Continetti, I.R. Kaplan, W.W. Wong, T.G. Dzubay and R.K. Stevens, On the origin of carbonaceous particulates in American cities: Results of radiocarbon 'dating' and chemical characterization, Radiocarbon 25, 603 (1983).",
+          type: 'other',
+        }),
+        publication({
+          citation: 'C.M. Laperle, J.E. Mann, T.G. Clements and R.E. Continetti, Experimentally probing the three-body predissociation dynamics of the low-lying Rydberg states of H3 and D3, J. Phys. B Conf. Proc. (6th Int. Conf. on Dissociative Recombination), 4, 111-117 (2005).',
+          type: 'other',
+        }),
+        publication({
+          citation: 'J. D. Savee, J.E. Mann and R.E. Continetti, Dissociation dynamics of highly excited molecules produced by charge exchange: Two-body dynamics of CH5 and three-body dynamics of sym-triazine, J. Phys. B. Conf. Proc. (7th Int. Conf. on Dissociative Recombination), 192, 012007, (2009).',
+          type: 'other',
+        }),
+        publication({
           citation: 'R.E. Continetti, Review of Advances in Chemical Physics, Vol. 128, Ed. S.A. Rice, John Wiley, in J. Am. Chem. Soc. 126, 7728-7729 (2004).',
           type: 'other',
         }),
@@ -555,6 +637,18 @@ function buildPartialResult(): PartialResult {
       otherProceedings: [
         publication({
           citation: 'R.E. Continetti, Example article, Proceedings, Example Conference, pp. 1-2 (2002).',
+          type: 'proceedings',
+        }),
+        publication({
+          citation: 'G.N. Robinson, R.E. Continetti and Y.T. Lee, Molecular beam studies of hot atom chemical reactions, XIIIth International Hot Atom Chemistry Symposium, Japan, May 1987. Radiochimica Acta 43, pp. 103-104 (1988).',
+          type: 'proceedings',
+        }),
+        publication({
+          citation: 'C.M. Laperle, J.E. Mann, T.G. Clements and R.E. Continetti, Experimentally probing the three-body predissociation dynamics of the low-lying Rydberg states of H3 and D3, J. Phys. B Conf. Proc. (6th Int. Conf. on Dissociative Recombination), 4, 111-117 (2005).',
+          type: 'proceedings',
+        }),
+        publication({
+          citation: 'J. D. Savee, J.E. Mann and R.E. Continetti, Dissociation dynamics of highly excited molecules produced by charge exchange: Two-body dynamics of CH5 and three-body dynamics of sym-triazine, J. Phys. B. Conf. Proc. (7th Int. Conf. on Dissociative Recombination), 192, 012007, (2009).',
           type: 'proceedings',
         }),
       ],
@@ -573,6 +667,10 @@ function buildPartialResult(): PartialResult {
         }),
         publication({
           citation: 'Nieh J (1996) A stingless bee, Melipona panamica, may use sounds to communicate the location of a food source. 10th International Insect Sound and Vibration Meeting Abstracts. Woods Hole, Massachusetts.',
+          type: 'abstract',
+        }),
+        publication({
+          citation: 'Nieh J, Contrera F, Ramírez, S., and Imperatriz V.L. (2002) Variation in height communication: testing three-dimensional location communication in the stingless bees, Melipona mandacaia and Melipona bicolor. Anais do Encontro Sobre Abelhas V, Ribeirao Preto, Sao Paulo, Brasil',
           type: 'abstract',
         }),
       ],

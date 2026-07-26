@@ -11,6 +11,18 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    releasedAt: 'July 26, 2026, 11:53 AM PDT',
+    releasedAtIso: '2026-07-26T11:53:00-07:00',
+    title: 'Academic Record Classification Update',
+    changes: [
+      'Expanded honors review to retain named scholars, named fellows, and other honorific appointments when they are listed alongside ordinary employment.',
+      'Improved conference-proceedings reconciliation so refereed proceedings are placed consistently and repeated copies are removed from other publication sections.',
+      'Prevented conference abstracts from being repeated as Section II presentations when the same scholarly record belongs in the bibliography.',
+      'Strengthened presentation review instructions to preserve complete source dates, including month and day, when moving dates to the end of an entry.',
+      'Routed honors and presentation review through the higher-fidelity model first, with the on-prem model retained as a fallback.',
+    ],
+  },
+  {
     releasedAt: 'July 26, 2026, 9:15 AM PDT',
     releasedAtIso: '2026-07-26T09:15:00-07:00',
     title: 'Dedicated Release Notes and Production Verification Update',

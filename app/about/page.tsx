@@ -79,6 +79,8 @@ const OUTPUT_RULES = [
   'Avoids adding extra publication details unless the CV clearly provides them.',
   'Removes many duplicate entries after the sections are combined.',
   'Tries to keep fellowships, visiting titles, senate offices, and service roles out of Section I employment when they are not true employment history.',
+  'Keeps named scholars, named fellows, and other honorific appointments in Awards and Honors when the CV lists them alongside ordinary appointments.',
+  'Reconciles refereed proceedings and abstracts across publication and presentation sections to reduce repeated or misplaced scholarly records.',
   'Creates a Word document with BioBib-style Section I tables, Section II subsections, grant tables, and Section III bibliography subsections.',
   'Creates a list of items that may need manual review or confirmation.',
 ];
