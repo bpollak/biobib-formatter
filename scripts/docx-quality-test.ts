@@ -185,7 +185,12 @@ async function main() {
     merged.sections.awards.some(item => item.includes('Visiting Scientist') && item.includes('Sandia')) &&
       merged.sections.awards.some(item => item.includes('Kurt Shuler Scholar') && item.includes('2006 – 2011')) &&
       merged.sections.awards.some(item => item.includes('Wilsmore Fellow') && item.includes('2012')) &&
-      merged.sections.awards.some(item => item.includes('Aarhus University Faculty Fellow') && item.includes('2017')),
+      merged.sections.awards.some(item => item.includes('Aarhus University Faculty Fellow') && item.includes('2017')) &&
+      merged.sections.awards.some(item =>
+        item.includes('Distinguished Professor') &&
+        item.includes('University of California, San Diego') &&
+        item.includes('2015 – 2025'),
+      ),
   );
   record(
     'Honorific awards with extra location wording do not render twice',
@@ -459,6 +464,13 @@ function buildPartialResult(): PartialResult {
           institution: 'University of California San Diego',
           location: '',
           rank: 'Professor',
+        },
+        {
+          from: '2015',
+          to: '2025',
+          institution: 'University of California, San Diego',
+          location: 'La Jolla, CA',
+          rank: 'Distinguished Professor',
         },
         {
           from: '2000',
