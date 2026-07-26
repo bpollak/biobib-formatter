@@ -15,7 +15,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     releasedAtIso: '2026-07-26T11:53:00-07:00',
     title: 'Academic Record Classification Update',
     changes: [
-      'Expanded honors review to retain named scholars, named fellows, and other honorific appointments when they are listed alongside ordinary employment.',
+      'Expanded honors review to retain named scholars, named fellows, and other honorific appointments when they are listed alongside ordinary employment, without repeating the same record when location wording differs.',
       'Improved conference-proceedings reconciliation so refereed proceedings are placed consistently and repeated copies are removed from other publication sections.',
       'Prevented conference abstracts from being repeated as Section II presentations when the same scholarly record belongs in the bibliography.',
       'Strengthened presentation review instructions to preserve complete source dates, including month and day, when moving dates to the end of an entry.',

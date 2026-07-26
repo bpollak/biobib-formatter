@@ -996,7 +996,13 @@ function moveHonorificAppointmentsToAwards(sections: BioBibSections): void {
     .filter(entry => isHonorificAppointment(entry))
     .map(formatHonorificAppointmentAward)
     .filter(Boolean);
-  sections.awards = dedupeStrings([...sections.awards, ...awardCandidates]);
+  const awards = dedupeStrings(sections.awards);
+  for (const candidate of awardCandidates) {
+    if (!awards.some(existing => likelySameCitation(existing, candidate))) {
+      awards.push(candidate);
+    }
+  }
+  sections.awards = awards;
 }
 
 function isHonorificAppointment(entry: BioBibSections['employment'][number]): boolean {
