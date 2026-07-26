@@ -44,6 +44,20 @@ Open [http://localhost:3000](http://localhost:3000)
 
 Push to `main` → Vercel auto-deploys. Set env vars in Vercel dashboard.
 
+## Required Regression Gate
+
+Run `npm run test:release` for every change. Changes that can affect conversion
+behavior or generated Word output also require the live real-CV and second-pass
+gate:
+
+```bash
+npm run test:release:live
+```
+
+See [docs/release-regression.md](docs/release-regression.md) for required
+environment variables, the semantic acceptance profiles, the five-CV release
+cohort, and pass criteria.
+
 ## Source Materials
 
 - BioBib instructions: https://academicaffairs.ucsd.edu/_files/aps/forms/word/BioBib-instructions.docx

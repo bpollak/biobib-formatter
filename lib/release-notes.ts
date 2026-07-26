@@ -11,6 +11,16 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    releasedAt: 'July 26, 2026, 12:18 PM PDT',
+    releasedAtIso: '2026-07-26T12:18:00-07:00',
+    title: 'Release Verification and Abstract Placement Update',
+    changes: [
+      'Strengthened conference-abstract reconciliation so the same scholarly event is not repeated as a Section II presentation when the presentation date is written without parentheses.',
+      'Added repeatable release verification that checks documented honors, proceedings placement, abstract and presentation separation, full source dates, and clean bibliography numbering on both the initial output and a second processing pass.',
+      'Standardized pre-release checks across document quality, application validation, production builds, live conversions, and a broader multi-CV release cohort.',
+    ],
+  },
+  {
     releasedAt: 'July 26, 2026, 11:53 AM PDT',
     releasedAtIso: '2026-07-26T11:53:00-07:00',
     title: 'Academic Record Classification Update',

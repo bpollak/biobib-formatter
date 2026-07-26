@@ -11,6 +11,8 @@
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx
  *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx --roundtrip
+ *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx \
+ *     --roundtrip --profile continetti --review-period-start 2020-01-01
  *   BIOBIB_URL=https://biobib-formatter.vercel.app BLOB_READ_WRITE_TOKEN=... \
  *     npm run test:regression -- path/to/cv.docx
  *
@@ -27,6 +29,11 @@ import {
   normalizeRecordForComparison,
   normalizeServiceRecordForComparison,
 } from '../lib/text-utils';
+import {
+  evaluateRegressionProfile,
+  isRegressionProfileName,
+} from './regression-profiles';
+import type { RegressionProfileName } from './regression-profiles';
 
 interface Check {
   name: string;
@@ -90,11 +97,12 @@ interface PipelineRun {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const roundtrip = args.includes('--roundtrip');
-  const cvPath = args.find(arg => arg !== '--roundtrip');
-  if (!cvPath) {
-    console.error('Usage: npm run test:regression -- <path-to-cv.docx> [--roundtrip]');
+  const options = parseArguments(process.argv.slice(2));
+  if (!options) {
+    console.error(
+      'Usage: npm run test:regression -- <path-to-cv.docx> [--roundtrip] ' +
+      '[--profile continetti|nieh] [--review-period-start YYYY-MM-DD]',
+    );
     process.exit(2);
   }
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -102,10 +110,13 @@ async function main() {
     process.exit(2);
   }
 
-  const absPath = resolve(cvPath);
+  const { roundtrip, profile, reviewPeriodStart } = options;
+  const absPath = resolve(options.cvPath);
   const baseUrl = (process.env.BIOBIB_URL || 'http://localhost:3000').replace(/\/$/, '');
   console.log(`Target: ${baseUrl}`);
   console.log(`CV:     ${absPath}\n`);
+  if (profile) console.log(`Profile: ${profile}`);
+  if (reviewPeriodStart) console.log(`Review period start: ${reviewPeriodStart}\n`);
 
   // 1. File checks
   const info = await stat(absPath);
@@ -137,7 +148,11 @@ async function main() {
     upRes = await fetch(`${baseUrl}/api/upload`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ blobUrl, fileName: basename(absPath) }),
+      body: JSON.stringify({
+        blobUrl,
+        fileName: basename(absPath),
+        ...(reviewPeriodStart ? { reviewPeriodStart } : {}),
+      }),
     });
   } catch (e) {
     record('POST /api/upload reached server', false, `fetch threw: ${(e as Error).message}`);
@@ -213,6 +228,16 @@ async function main() {
 
   record('Response has result.sections', !!lastStatus.result?.sections);
   record('Response has result.gaps array', Array.isArray(lastStatus.result?.gaps));
+  if (reviewPeriodStart) {
+    record(
+      'Structured result retains the exact review-period start date',
+      lastStatus.result?.metadata?.reviewPeriodStart === reviewPeriodStart,
+      String(lastStatus.result?.metadata?.reviewPeriodStart ?? 'missing'),
+    );
+  }
+  if (profile && lastStatus.result?.sections) {
+    recordProfileChecks(profile, lastStatus.result.sections, lastStatus.result.metadata, 'First pass');
+  }
 
   const sec = lastStatus.result?.sections ?? {};
   const emp = (sec.employment as unknown[] | undefined)?.length ?? 0;
@@ -263,6 +288,12 @@ async function main() {
       record('Generated DOCX does not expose review-material metadata', !/\breview material:/i.test(outputText));
       record('Generated DOCX does not render duplicate article labels', !/\bARTICLE\s+ARTICLE\b/i.test(outputText));
       record('Generated DOCX uses explicit review text for unavailable table values', outputText.includes('Not listed'));
+      if (reviewPeriodStart) {
+        record(
+          'Generated DOCX displays the exact review-period start date',
+          outputText.includes(`New since last review date: ${reviewPeriodStart}`),
+        );
+      }
     }
   }
 
@@ -275,6 +306,8 @@ async function main() {
     await runRoundtripVerification({
       baseUrl,
       sourcePath: absPath,
+      profile,
+      reviewPeriodStart,
       firstPass: {
         jobId,
         status: lastStatus,
@@ -291,10 +324,14 @@ async function main() {
 async function runRoundtripVerification({
   baseUrl,
   sourcePath,
+  profile,
+  reviewPeriodStart,
   firstPass,
 }: {
   baseUrl: string;
   sourcePath: string;
+  profile?: RegressionProfileName;
+  reviewPeriodStart?: string;
   firstPass: PipelineRun;
 }): Promise<void> {
   console.log('\nRoundtrip verification: submitting the generated DOCX again...');
@@ -322,6 +359,21 @@ async function runRoundtripVerification({
   const secondCounts = sectionCounts(secondSections);
   const firstResult = firstPass.status.result;
   const secondResult = secondPass.status.result;
+  if (profile) {
+    recordProfileChecks(profile, secondSections, secondResult?.metadata, 'Second pass');
+  }
+  if (reviewPeriodStart) {
+    record(
+      'Second pass retains the exact review-period start date',
+      secondResult?.metadata?.reviewPeriodStart === reviewPeriodStart,
+      String(secondResult?.metadata?.reviewPeriodStart ?? 'missing'),
+    );
+    const secondOutputText = await docxText(secondPass.output);
+    record(
+      'Second-pass DOCX displays the exact review-period start date',
+      secondOutputText.includes(`New since last review date: ${reviewPeriodStart}`),
+    );
+  }
 
   record(
     'First pass has no high-confidence cross-section or publication duplicates',
@@ -386,6 +438,62 @@ async function runRoundtripVerification({
     checks,
   }, null, 2));
   record('Roundtrip artifacts and comparison report written', true, artifactDir);
+}
+
+function recordProfileChecks(
+  profile: RegressionProfileName,
+  sections: Record<string, unknown[]>,
+  metadata: Record<string, unknown> | undefined,
+  label: string,
+): void {
+  console.log(`\n${label} semantic acceptance profile: ${profile}`);
+  for (const check of evaluateRegressionProfile(profile, sections, metadata)) {
+    record(`${label}: ${check.name}`, check.pass, check.detail);
+  }
+}
+
+function parseArguments(args: string[]): {
+  cvPath: string;
+  roundtrip: boolean;
+  profile?: RegressionProfileName;
+  reviewPeriodStart?: string;
+} | null {
+  let cvPath = '';
+  let profile: RegressionProfileName | undefined;
+  let reviewPeriodStart: string | undefined;
+  let roundtrip = false;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === '--roundtrip') {
+      roundtrip = true;
+      continue;
+    }
+    if (value === '--profile') {
+      const candidate = args[index + 1];
+      if (!candidate || !isRegressionProfileName(candidate)) return null;
+      profile = candidate;
+      index += 1;
+      continue;
+    }
+    if (value === '--review-period-start') {
+      const candidate = args[index + 1];
+      if (!candidate || !isValidDate(candidate)) return null;
+      reviewPeriodStart = candidate;
+      index += 1;
+      continue;
+    }
+    if (value.startsWith('--') || cvPath) return null;
+    cvPath = value;
+  }
+
+  return cvPath ? { cvPath, roundtrip, profile, reviewPeriodStart } : null;
+}
+
+function isValidDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function countWithinTolerance(actual: number, expected: number, tolerance: number): boolean {

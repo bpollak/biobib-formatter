@@ -1455,7 +1455,7 @@ function removeAbstractDuplicatesFromPresentations(sections: BioBibSections): vo
   if (abstracts.length === 0) return;
 
   const belongsOnlyInAbstracts = (item: string) =>
-    /\((?:19|20)\d{2}\)/.test(item) &&
+    /\b(?:19|20)\d{2}\b/.test(item) &&
     abstracts.some(abstract => likelySameCitation(item, abstract));
 
   sections.presentations = sections.presentations.filter(item => !belongsOnlyInAbstracts(item));

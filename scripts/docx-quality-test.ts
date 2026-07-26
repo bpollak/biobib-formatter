@@ -440,6 +440,7 @@ async function main() {
   const failed = checks.filter(check => !check.pass);
   console.log(`\n${checks.length - failed.length}/${checks.length} checks passed.`);
   if (failed.length) process.exit(1);
+  process.exit(0);
 }
 
 function buildPartialResult(): PartialResult {
