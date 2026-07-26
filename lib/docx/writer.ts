@@ -20,6 +20,7 @@ import {
 } from '../types';
 import {
   chronologicalYear,
+  dedupeComparableStrings,
   dedupeStrings,
   escapeRegex,
   normalizeForComparison,
@@ -877,10 +878,16 @@ export async function generateBioBibDocx(
 
     dividerLine(),
     heading2('(e) External Professional Activities', { underline: true }),
-    ...subSection('Professional Committee Service and Conference Organization', [
-      ...sections.professionalActivities,
-      ...sections.externalProfessionalActivities,
-    ], 'None.', richTextParagraphs, reviewPeriodStart),
+    ...subSection(
+      'Professional Committee Service and Conference Organization',
+      dedupeComparableStrings([
+        ...sections.professionalActivities,
+        ...sections.externalProfessionalActivities,
+      ]),
+      'None.',
+      richTextParagraphs,
+      reviewPeriodStart,
+    ),
     ...subSection('Consulting', sections.consulting, 'None.', richTextParagraphs, reviewPeriodStart),
     ...subSection('Reviewer for External Academic Files, Funding Agencies, and Journals', sections.reviewerActivities, 'None.', richTextParagraphs, reviewPeriodStart),
     ...presentationSubSection('Presentations at National and International Meetings', sections.presentations, 'None.', richTextParagraphs, reviewPeriodStart),

@@ -7,9 +7,29 @@ import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { ParsedCV, RichTextParagraph, RichTextRun } from '../types';
 
+const GENERATED_REVIEW_SUMMARY_INTRO =
+  'This page lists items the automated conversion could not complete or was unsure how to place.';
+
+/**
+ * A generated review appendix repeats complete source records for the human
+ * reviewer. Never feed those repetitions back into the extraction pipeline.
+ */
+export function stripGeneratedReviewSummary(value: string): string {
+  const heading = /(?:^|\n)\s*Conversion Review Summary\s*(?:\n|$)/g;
+  for (const match of value.matchAll(heading)) {
+    const index = match.index ?? -1;
+    if (index < 0) continue;
+    const followingText = value.slice(index, index + 600).replace(/\s+/g, ' ');
+    if (followingText.includes(GENERATED_REVIEW_SUMMARY_INTRO)) {
+      return value.slice(0, index).trimEnd();
+    }
+  }
+  return value;
+}
+
 export async function parseCV(buffer: Buffer): Promise<ParsedCV> {
   const result = await mammoth.extractRawText({ buffer });
-  const rawText = result.value;
+  const rawText = stripGeneratedReviewSummary(result.value);
   const richTextParagraphs = await extractRichTextParagraphs(buffer).catch(err => {
     console.warn('[docx reader] rich text extraction failed:', (err as Error).message);
     return [] as RichTextParagraph[];

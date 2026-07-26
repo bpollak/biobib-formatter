@@ -28,6 +28,18 @@ export function normalizeForComparison(value: string): string {
     .trim();
 }
 
+/**
+ * Canonical key for rendered list records. Source numbering and harmless
+ * punctuation/date-dash differences should not make the same record unique.
+ */
+export function normalizeRecordForComparison(value: string): string {
+  return normalizeForComparison(
+    value
+      .replace(/^\s*\d+\s*[.)]\s*/, '')
+      .replace(/\bcurrent\b/gi, 'present'),
+  );
+}
+
 export function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
@@ -42,6 +54,10 @@ export function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
 
 export function dedupeStrings(items: string[]): string[] {
   return dedupeBy(items, normalizeForDedupe);
+}
+
+export function dedupeComparableStrings(items: string[]): string[] {
+  return dedupeBy(items, normalizeRecordForComparison);
 }
 
 /** Initial date mentioned in the string; undated items sort last. */

@@ -10,17 +10,20 @@
  *
  * Usage:
  *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx
+ *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx --roundtrip
  *   BIOBIB_URL=https://biobib-formatter.vercel.app BLOB_READ_WRITE_TOKEN=... \
  *     npm run test:regression -- path/to/cv.docx
  *
  * Exit code 0 = pass, 1 = fail.
  */
 
-import { readFile, stat } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, extname, join, resolve } from 'node:path';
 import { put } from '@vercel/blob';
 import JSZip from 'jszip';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
+import { normalizeRecordForComparison } from '../lib/text-utils';
 
 interface Check {
   name: string;
@@ -72,10 +75,18 @@ interface StatusResponse {
   startedAt: number;
 }
 
+interface PipelineRun {
+  jobId: string;
+  status: StatusResponse;
+  output: Buffer;
+}
+
 async function main() {
-  const cvPath = process.argv[2];
+  const args = process.argv.slice(2);
+  const roundtrip = args.includes('--roundtrip');
+  const cvPath = args.find(arg => arg !== '--roundtrip');
   if (!cvPath) {
-    console.error('Usage: npm run test:regression -- <path-to-cv.docx>');
+    console.error('Usage: npm run test:regression -- <path-to-cv.docx> [--roundtrip]');
     process.exit(2);
   }
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
@@ -224,11 +235,13 @@ async function main() {
   // 5. Download
   const dl = await fetch(`${baseUrl}/api/download/${jobId}`);
   record('Download endpoint returns 2xx', dl.ok, `status ${dl.status}`);
+  let firstPassOutput: Buffer | undefined;
   if (dl.ok) {
     const buf = Buffer.from(await dl.arrayBuffer());
     const isDocx = buf.slice(0, 2).toString('hex') === '504b';
     record('Downloaded file is a valid .docx (zip signature)', isDocx, `${buf.length} bytes`);
     if (isDocx) {
+      firstPassOutput = buf;
       const outputText = await docxText(buf);
       record('Generated DOCX does not expose source-number metadata', !/\bsource\s+no\.?\b/i.test(outputText));
       record('Generated DOCX does not expose BioBib section metadata', !/\bBioBib section:/i.test(outputText));
@@ -238,7 +251,335 @@ async function main() {
     }
   }
 
+  if (roundtrip && firstPassOutput && lastStatus.result?.sections) {
+    await runRoundtripVerification({
+      baseUrl,
+      sourcePath: absPath,
+      firstPass: {
+        jobId,
+        status: lastStatus,
+        output: firstPassOutput,
+      },
+    });
+  } else if (roundtrip) {
+    record('Roundtrip verification could start', false, 'first-pass output or sections missing');
+  }
+
   finish();
+}
+
+async function runRoundtripVerification({
+  baseUrl,
+  sourcePath,
+  firstPass,
+}: {
+  baseUrl: string;
+  sourcePath: string;
+  firstPass: PipelineRun;
+}): Promise<void> {
+  console.log('\nRoundtrip verification: submitting the generated DOCX again...');
+  const sourceStem = basename(sourcePath, extname(sourcePath));
+  const artifactDir = await mkdtemp(join(tmpdir(), 'biobib-roundtrip-'));
+  const firstOutputPath = join(artifactDir, `${sourceStem}-first-pass.docx`);
+  await writeFile(firstOutputPath, firstPass.output);
+
+  const secondPass = await runPipelinePass(
+    firstPass.output,
+    `${sourceStem}-first-pass.docx`,
+    baseUrl,
+    'Second pass',
+  );
+  if (!secondPass) return;
+
+  const secondOutputPath = join(artifactDir, `${sourceStem}-second-pass.docx`);
+  await writeFile(secondOutputPath, secondPass.output);
+
+  const firstSections = firstPass.status.result?.sections ?? {};
+  const secondSections = secondPass.status.result?.sections ?? {};
+  const firstDuplicates = duplicateInventory(firstSections);
+  const secondDuplicates = duplicateInventory(secondSections);
+
+  record(
+    'First pass has no high-confidence cross-section or publication duplicates',
+    firstDuplicates.length === 0,
+    firstDuplicates.join(' | '),
+  );
+  record(
+    'Second pass has no high-confidence cross-section or publication duplicates',
+    secondDuplicates.length === 0,
+    secondDuplicates.join(' | '),
+  );
+  record(
+    'Second pass does not introduce new exact duplicate keys',
+    secondDuplicates.every(item => firstDuplicates.includes(item)),
+    `${firstDuplicates.length} first-pass; ${secondDuplicates.length} second-pass`,
+  );
+
+  const reportPath = join(artifactDir, `${sourceStem}-roundtrip-report.json`);
+  await writeFile(reportPath, JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    sourcePath,
+    baseUrl,
+    firstPass: {
+      jobId: firstPass.jobId,
+      state: firstPass.status.state,
+      counts: sectionCounts(firstSections),
+      duplicates: firstDuplicates,
+      outputPath: firstOutputPath,
+    },
+    secondPass: {
+      jobId: secondPass.jobId,
+      state: secondPass.status.state,
+      counts: sectionCounts(secondSections),
+      duplicates: secondDuplicates,
+      outputPath: secondOutputPath,
+    },
+    checks,
+  }, null, 2));
+  record('Roundtrip artifacts and comparison report written', true, artifactDir);
+}
+
+async function runPipelinePass(
+  fileBytes: Buffer,
+  fileName: string,
+  baseUrl: string,
+  label: string,
+): Promise<PipelineRun | null> {
+  let blobUrl: string;
+  try {
+    const blob = await put(fileName, fileBytes, {
+      access: 'public',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      addRandomSuffix: true,
+    });
+    blobUrl = blob.url;
+    record(`${label}: uploaded generated DOCX`, true, blobUrl);
+  } catch (error) {
+    record(`${label}: uploaded generated DOCX`, false, (error as Error).message);
+    return null;
+  }
+
+  const uploadStartedAt = Date.now();
+  const uploadResponse = await fetch(`${baseUrl}/api/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ blobUrl, fileName }),
+  });
+  const uploadSeconds = (Date.now() - uploadStartedAt) / 1000;
+  record(`${label}: upload dispatcher reached`, uploadResponse.ok, `status ${uploadResponse.status}`);
+  record(`${label}: upload dispatcher remains fast`, uploadSeconds < 5, `${uploadSeconds.toFixed(2)}s`);
+
+  const uploadBody = (await uploadResponse.json()) as { jobId?: string; error?: string };
+  if (!uploadResponse.ok || !uploadBody.jobId) {
+    record(`${label}: response has jobId`, false, uploadBody.error ?? '(no error field)');
+    return null;
+  }
+  const jobId = uploadBody.jobId;
+  record(`${label}: response has jobId`, true, jobId);
+
+  const status = await pollForTerminalStatus(baseUrl, jobId, label);
+  if (!status) return null;
+  record(
+    `${label}: job completed without total failure`,
+    status.state !== 'failed',
+    status.state === 'failed' ? status.error ?? '(no error message)' : status.state,
+  );
+  if (status.state === 'failed') return null;
+  record(`${label}: response has result.sections`, !!status.result?.sections);
+  record(`${label}: response has result.gaps array`, Array.isArray(status.result?.gaps));
+  recordSectionPresence(status.result?.sections ?? {}, label);
+
+  const download = await fetch(`${baseUrl}/api/download/${jobId}`);
+  record(`${label}: download endpoint returns 2xx`, download.ok, `status ${download.status}`);
+  if (!download.ok) return null;
+
+  const output = Buffer.from(await download.arrayBuffer());
+  const isDocx = output.slice(0, 2).toString('hex') === '504b';
+  record(`${label}: downloaded file is a valid DOCX`, isDocx, `${output.length} bytes`);
+  if (!isDocx) return null;
+  await recordDocxChecks(output, label);
+  return { jobId, status, output };
+}
+
+async function pollForTerminalStatus(
+  baseUrl: string,
+  jobId: string,
+  label: string,
+): Promise<StatusResponse | null> {
+  const startedAt = Date.now();
+  let lastStatus: StatusResponse | null = null;
+  const printedTransitions = new Set<string>();
+
+  while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+    await sleep(POLL_INTERVAL_MS);
+    const response = await fetch(`${baseUrl}/api/status/${jobId}`, { cache: 'no-store' });
+    if (!response.ok) {
+      record(`${label}: status endpoint reachable`, false, `status ${response.status}`);
+      return null;
+    }
+    const status = (await response.json()) as StatusResponse;
+    lastStatus = status;
+    for (const [slice, state] of Object.entries(status.slices)) {
+      const transition = `${slice}:${state}`;
+      if (state !== 'pending' && !printedTransitions.has(transition)) {
+        printedTransitions.add(transition);
+        const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+        console.log(`       [${elapsed}s] ${label} slice "${slice}" → ${state}`);
+      }
+    }
+    if (status.state !== 'pending' && status.state !== 'merging') break;
+  }
+
+  if (!lastStatus) {
+    record(`${label}: reached terminal status`, false, 'no status received');
+    return null;
+  }
+  record(
+    `${label}: reached terminal status`,
+    lastStatus.state !== 'pending' && lastStatus.state !== 'merging',
+    `state=${lastStatus.state} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
+  );
+  return lastStatus;
+}
+
+function recordSectionPresence(sections: Record<string, unknown[]>, label: string): void {
+  const counts = sectionCounts(sections);
+  record(`${label}: employment entries extracted`, counts.employment > 0, `${counts.employment} entries`);
+  record(`${label}: education entries extracted`, counts.education > 0, `${counts.education} entries`);
+  record(`${label}: peer-reviewed publications extracted`, counts.peerReviewedJournals > 0, `${counts.peerReviewedJournals} entries`);
+  record(`${label}: Section II content extracted`, counts.sectionII > 0, `${counts.sectionII} entries`);
+  record(`${label}: Section III non-journal publications extracted`, counts.otherPublications > 0, `${counts.otherPublications} entries`);
+}
+
+async function recordDocxChecks(buffer: Buffer, label: string): Promise<void> {
+  const outputText = await docxText(buffer);
+  record(`${label}: DOCX does not expose source-number metadata`, !/\bsource\s+no\.?\b/i.test(outputText));
+  record(`${label}: DOCX does not expose BioBib section metadata`, !/\bBioBib section:/i.test(outputText));
+  record(`${label}: DOCX does not expose review-material metadata`, !/\breview material:/i.test(outputText));
+  record(`${label}: DOCX does not render duplicate article labels`, !/\bARTICLE\s+ARTICLE\b/i.test(outputText));
+  record(`${label}: DOCX uses explicit review text for unavailable table values`, outputText.includes('Not listed'));
+}
+
+function sectionCounts(sections: Record<string, unknown[]>): Record<string, number> & {
+  employment: number;
+  education: number;
+  peerReviewedJournals: number;
+  sectionII: number;
+  otherPublications: number;
+} {
+  const count = (key: string) => Array.isArray(sections[key]) ? sections[key].length : 0;
+  const counts: Record<string, number> = {};
+  for (const [key, value] of Object.entries(sections)) {
+    if (Array.isArray(value)) counts[key] = value.length;
+  }
+  return {
+    ...counts,
+    employment: count('employment'),
+    education: count('education'),
+    peerReviewedJournals: count('peerReviewedJournals'),
+    sectionII: [
+      'universityService', 'publicService', 'professionalActivities', 'memberships',
+      'awards', 'teaching', 'studentInstructionalActivities', 'studentInstructionalGroups',
+      'grants', 'externalProfessionalActivities', 'consulting', 'reviewerActivities',
+      'presentations', 'invitedPresentations', 'diversityContributions', 'outreach',
+      'clinicalActivities', 'otherActivities', 'externalReviews',
+    ].reduce((total, key) => total + count(key), 0),
+    otherPublications: [
+      'reviewAndInvited', 'books', 'chapters', 'refereedProceedings', 'otherArticles',
+      'otherProceedings', 'abstracts', 'popularWorks', 'additionalProducts', 'theses',
+      'patents', 'workInProgress',
+    ].reduce((total, key) => total + count(key), 0),
+  };
+}
+
+function duplicateInventory(sections: Record<string, unknown[]>): string[] {
+  const duplicates = new Set<string>();
+  const serviceKeys = new Set(
+    asRecords(sections.universityService).map(item =>
+      normalizeRecordForComparison(`${stringField(item, 'description')} ${stringField(item, 'dates')}`),
+    ),
+  );
+  for (const item of [
+    ...asStrings(sections.professionalActivities),
+    ...asStrings(sections.externalProfessionalActivities),
+  ]) {
+    const key = normalizeRecordForComparison(item);
+    if (key && serviceKeys.has(key)) duplicates.add(`service/external:${key}`);
+  }
+
+  const publicationSections = [
+    'peerReviewedJournals', 'reviewAndInvited', 'books', 'chapters',
+    'refereedProceedings', 'otherArticles', 'otherProceedings', 'abstracts',
+    'popularWorks', 'additionalProducts', 'theses', 'patents',
+  ];
+  for (const section of publicationSections) {
+    addRepeatedPublicationKeys(section, sections[section], duplicates);
+  }
+  addRepeatedPublicationKeys('workInProgress', sections.workInProgress, duplicates);
+  addRepeatedStringKeys(
+    'external-professional-activities',
+    [
+      ...asStrings(sections.professionalActivities),
+      ...asStrings(sections.externalProfessionalActivities),
+    ],
+    duplicates,
+  );
+  return [...duplicates].sort();
+}
+
+function addRepeatedPublicationKeys(
+  section: string,
+  value: unknown,
+  duplicates: Set<string>,
+): void {
+  const seen = new Set<string>();
+  for (const item of asRecords(value)) {
+    const key = publicationKey(stringField(item, 'citation'));
+    if (!key) continue;
+    if (seen.has(key)) duplicates.add(`${section}:${key}`);
+    seen.add(key);
+  }
+}
+
+function addRepeatedStringKeys(
+  section: string,
+  values: string[],
+  duplicates: Set<string>,
+): void {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const key = normalizeRecordForComparison(value);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.add(`${section}:${key}`);
+    seen.add(key);
+  }
+}
+
+function publicationKey(value: string): string {
+  return normalizeRecordForComparison(
+    value.replace(
+      /(?:\s+)\*{1,2}\s*(?:co[- ]author|co[- ]corresponding author|corresponding author|senior author)[^.]*\.?$/i,
+      '',
+    ),
+  );
+}
+
+function asRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> =>
+      typeof item === 'object' && item !== null && !Array.isArray(item),
+    )
+    : [];
+}
+
+function asStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function stringField(value: Record<string, unknown>, key: string): string {
+  return typeof value[key] === 'string' ? value[key] : '';
 }
 
 function finish() {
