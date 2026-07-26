@@ -28,6 +28,7 @@ import {
   dedupeStrings,
   hasText,
   normalizeForDedupe,
+  normalizeForComparison,
   normalizeServiceRecordForComparison,
   normalizeStudentGroupHeading,
   sortChronologically,
@@ -136,7 +137,12 @@ const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 1600
 
 const HIGH_FIDELITY_SLICES = new Set<SliceKey>([
   'meta_and_I',
+  'II_memberships_awards',
   'II_teaching',
+  'II_presentations_pre_2000',
+  'II_presentations_2000_2010',
+  'II_presentations_2011_2020',
+  'II_presentations_post_2020',
   'III_journals_pre_2000',
   'III_journals_2000_2010',
   'III_journals_late',
@@ -169,6 +175,7 @@ const PRESENTATION_RULES = `
 - Exclude grant review panels, editorial boards, conference organization, and professional committee service; those belong in externalProfessionalActivities or reviewerActivities.
 - Return concise presentation strings without leading source numbering such as "1." or "23.".
 - If a source presentation starts with a date, move that date to the end of the returned record.
+- Preserve the source date at its original precision when moving it. For example, "May 20, 1995" must remain "May 20, 1995" at the end, not be shortened to "1995".
 `.trim();
 
 const SERVICE_RULES = `
@@ -630,7 +637,7 @@ function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
   if (slice === 'II_memberships_awards') {
     return linesBetween(
       lines,
-      /\b(memberships|professional societies|honors(?:,\s*|\s+and\s+)awards(?:\s+and\s+fellowships)?|awards and fellowships|honors and fellowships)\b/i,
+      /\b(appointments|memberships|professional societies|professional affiliations|honors(?:,\s*|\s+and\s+)awards(?:\s+and\s+fellowships)?|awards and fellowships|honors and fellowships)\b/i,
       /\b(contracts and grants|research support|external professional activities)\b/i,
     );
   }
@@ -971,6 +978,7 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   sections.presentations = dedupeStrings(sections.presentations);
   sections.invitedPresentations = dedupeStrings(sections.invitedPresentations);
   normalizePresentationBuckets(sections);
+  removeAbstractDuplicatesFromPresentations(sections);
   sections.diversityContributions = dedupeStrings(sections.diversityContributions);
   sections.outreach = dedupeStrings(sections.outreach);
   sections.clinicalActivities = dedupeStrings(sections.clinicalActivities);
@@ -1029,6 +1037,16 @@ function reclassifyOtherPublications(sections: BioBibSections): void {
   }
 
   sections.otherArticles = remainingOtherArticles;
+  const remainingOtherProceedings: PublicationEntry[] = [];
+  for (const item of sections.otherProceedings) {
+    if (looksLikeRefereedProceeding(item.citation)) {
+      sections.refereedProceedings.push({ ...item, type: 'proceedings' });
+    } else {
+      remainingOtherProceedings.push(item);
+    }
+  }
+  sections.otherProceedings = remainingOtherProceedings;
+
   const primaryProceedingKeys = new Set(sections.refereedProceedings.map(item => normalizePublicationCitation(item.citation)));
   sections.otherProceedings = sections.otherProceedings.filter(item => !primaryProceedingKeys.has(normalizePublicationCitation(item.citation)));
 }
@@ -1334,7 +1352,7 @@ function isBookReviewCitation(citation: string): boolean {
 }
 
 function looksLikeRefereedProceeding(citation: string): boolean {
-  return /\b(proceedings|proc\.|conference proceedings|conf\. proc\.|spie conference|rarefied gas dynamics|international symposium|intl\. conf\.|j\. phys\. b conf\.)\b/i
+  return /(?:\bproceedings\b|\bproc\.|\bconference proceedings\b|\bconf\.?\s+proc\.?|\bspie conference\b|\brarefied gas dynamics\b|\binternational\b.{0,80}\bsymposium\b|\bintl\.?\s+conf\.?|\bj\.?\s*phys\.?\s*b\.?\s*conf\.?\s*proc\.?|\bradiocarbon\s+\d+\b)/i
     .test(citation);
 }
 
@@ -1424,6 +1442,31 @@ function normalizePresentationBuckets(sections: BioBibSections): void {
 
   sections.presentations = dedupeStrings(presentations);
   sections.invitedPresentations = dedupeStrings(invitedPresentations);
+}
+
+function removeAbstractDuplicatesFromPresentations(sections: BioBibSections): void {
+  const abstracts = sections.abstracts.map(item => item.citation);
+  if (abstracts.length === 0) return;
+
+  const belongsOnlyInAbstracts = (item: string) =>
+    /\((?:19|20)\d{2}\)/.test(item) &&
+    abstracts.some(abstract => likelySameCitation(item, abstract));
+
+  sections.presentations = sections.presentations.filter(item => !belongsOnlyInAbstracts(item));
+  sections.invitedPresentations = sections.invitedPresentations.filter(item => !belongsOnlyInAbstracts(item));
+}
+
+function likelySameCitation(left: string, right: string): boolean {
+  const leftTokens = new Set(normalizeForComparison(left).split(' ').filter(Boolean));
+  const rightTokens = new Set(normalizeForComparison(right).split(' ').filter(Boolean));
+  const smallerSize = Math.min(leftTokens.size, rightTokens.size);
+  if (smallerSize < 8) return false;
+
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1;
+  }
+  return overlap / smallerSize >= 0.9;
 }
 
 function looksLikeNationalOrInternationalPresentation(value: string): boolean {
