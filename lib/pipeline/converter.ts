@@ -1007,6 +1007,7 @@ function moveHonorificAppointmentsToAwards(sections: BioBibSections): void {
 
 function isHonorificAppointment(entry: BioBibSections['employment'][number]): boolean {
   const text = `${entry.rank} ${entry.institution}`.toLowerCase();
+  if (/\bdistinguished professor\b/i.test(text)) return true;
   if (!/\b(visiting scientist|professore visitatore|visiting professor|visiting scholar|scholar|fellow)\b/i.test(text)) {
     return false;
   }
