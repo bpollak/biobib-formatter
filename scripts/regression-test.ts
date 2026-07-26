@@ -23,7 +23,10 @@ import { basename, extname, join, resolve } from 'node:path';
 import { put } from '@vercel/blob';
 import JSZip from 'jszip';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
-import { normalizeRecordForComparison } from '../lib/text-utils';
+import {
+  normalizeRecordForComparison,
+  normalizeServiceRecordForComparison,
+} from '../lib/text-utils';
 
 interface Check {
   name: string;
@@ -190,6 +193,13 @@ async function main() {
 
   record('Job completed without total failure', lastStatus.state !== 'failed',
     lastStatus.state === 'failed' ? lastStatus.error ?? '(no error message)' : '');
+  if (roundtrip) {
+    record(
+      'Roundtrip first pass completed every extraction slice',
+      lastStatus.state === 'complete',
+      `state=${lastStatus.state}`,
+    );
+  }
 
   if (lastStatus.state === 'failed') {
     finish();
@@ -251,7 +261,12 @@ async function main() {
     }
   }
 
-  if (roundtrip && firstPassOutput && lastStatus.result?.sections) {
+  if (
+    roundtrip &&
+    lastStatus.state === 'complete' &&
+    firstPassOutput &&
+    lastStatus.result?.sections
+  ) {
     await runRoundtripVerification({
       baseUrl,
       sourcePath: absPath,
@@ -261,7 +276,7 @@ async function main() {
         output: firstPassOutput,
       },
     });
-  } else if (roundtrip) {
+  } else if (roundtrip && lastStatus.state === 'complete') {
     record('Roundtrip verification could start', false, 'first-pass output or sections missing');
   }
 
@@ -385,6 +400,12 @@ async function runPipelinePass(
     status.state === 'failed' ? status.error ?? '(no error message)' : status.state,
   );
   if (status.state === 'failed') return null;
+  record(
+    `${label}: every extraction slice completed`,
+    status.state === 'complete',
+    `state=${status.state}`,
+  );
+  if (status.state !== 'complete') return null;
   record(`${label}: response has result.sections`, !!status.result?.sections);
   record(`${label}: response has result.gaps array`, Array.isArray(status.result?.gaps));
   recordSectionPresence(status.result?.sections ?? {}, label);
@@ -496,14 +517,17 @@ function duplicateInventory(sections: Record<string, unknown[]>): string[] {
   const duplicates = new Set<string>();
   const serviceKeys = new Set(
     asRecords(sections.universityService).map(item =>
-      normalizeRecordForComparison(`${stringField(item, 'description')} ${stringField(item, 'dates')}`),
+      normalizeServiceRecordForComparison(
+        stringField(item, 'description'),
+        stringField(item, 'dates'),
+      ),
     ),
   );
   for (const item of [
     ...asStrings(sections.professionalActivities),
     ...asStrings(sections.externalProfessionalActivities),
   ]) {
-    const key = normalizeRecordForComparison(item);
+    const key = normalizeServiceRecordForComparison(item);
     if (key && serviceKeys.has(key)) duplicates.add(`service/external:${key}`);
   }
 
