@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { parseCV, stripGeneratedReviewSummary } from '../lib/docx/reader';
 import { generateBioBibDocx } from '../lib/docx/writer';
 import { LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../lib/constants';
 import { mergeSlices, modelCandidatesForSlice, PartialResult } from '../lib/pipeline/converter';
@@ -80,6 +81,33 @@ async function main() {
     ),
   );
   record(
+    'Exact University Service copies are removed from external activities',
+    merged.sections.professionalActivities.every(item =>
+      !item.includes('Strategic Plan Refresh Convene and Influence Award'),
+    ) &&
+      merged.sections.externalProfessionalActivities.length === 0,
+  );
+  record(
+    'Similar service records with conflicting dates remain flagged for review',
+    merged.sections.professionalActivities.some(item =>
+      item.includes('UC MEXUS-CONACYT postdoctoral fellowship'),
+    ) &&
+      (merged.reviewNotes ?? []).some(note =>
+        note.topic === 'Potential duplicate placement' &&
+        note.instruction.includes('differing date or wording') &&
+        note.instruction.includes('UC MEXUS-CONACYT'),
+      ),
+  );
+  record(
+    'Work in Progress citations are deduplicated across publication types',
+    merged.sections.workInProgress.filter(item =>
+      item.citation.includes('Submitted discovery'),
+    ).length === 1 &&
+      merged.sections.workInProgress.some(item =>
+        item.citation.includes('Submitted discovery') && item.type === 'journal',
+      ),
+  );
+  record(
     'Other Publications are reclassified into proceedings and popular works when patterns are clear',
     merged.sections.refereedProceedings.some(item => item.citation.includes('Proceedings, Example Conference')) &&
       merged.sections.popularWorks.some(item => item.citation.includes('Review of Advances in Chemical Physics')) &&
@@ -132,6 +160,19 @@ async function main() {
   );
 
   const buffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs());
+  const reparsed = await parseCV(buffer);
+  record(
+    'Generated review summary is excluded when a BioBib is parsed again',
+    !reparsed.rawText.includes('Conversion Review Summary') &&
+      !reparsed.rawText.includes('Placement and Duplication Review Notes') &&
+      reparsed.rawText.includes('Section III – Bibliography'),
+  );
+  record(
+    'Ordinary source text mentioning review concepts is not truncated',
+    stripGeneratedReviewSummary(
+      'Faculty CV\nConversion Review Summary\nA scholarly article title without the generated explanatory sentence.',
+    ).includes('scholarly article title'),
+  );
   const parts = await docxParts(buffer);
   const xml = parts.documentXml;
   const text = docxXmlToText(xml);
@@ -143,6 +184,7 @@ async function main() {
   record('DOCX does not render duplicate article labels', !/\bARTICLE\s+ARTICLE\b/i.test(text));
   record('DOCX replaces blank table cells with explicit review text', (text.match(/Not listed/g) ?? []).length >= 5);
   record('DOCX removes contribution notes already present in the citation', countOccurrences(text, 'Featured in Virtual Journal') === 1);
+  record('DOCX renders a deduplicated Work in Progress citation once', countOccurrences(text, 'Submitted discovery') === 1);
   record('DOCX declares Arial run fonts', /w:rFonts\b[^>]*w:ascii="Arial"/.test(xml));
   record(
     'Requested Section I and II headings are underlined semantic headings',
@@ -340,6 +382,10 @@ function buildPartialResult(): PartialResult {
         'Opponent for Ph.D. Defense of Karoline Wiesner, Department of Physics, University of Uppsala, Uppsala, Sweden January 24, 2004',
         '2017 Panelist and grant reviewer for the Foundation for Food and Agriculture Research (FFAR) for the Pollinator Health Special Initiative.',
       ],
+      externalProfessionalActivities: [
+        'Reviewed grants for the UC San Diego Strategic Plan Refresh Convene and Influence Award. (2024–2025)',
+        'Panelist and grant reviewer for the UC MEXUS-CONACYT postdoctoral fellowship and collaborative grant competition. (2018-2019)',
+      ],
       diversityContributions: [
         '2023 Chair of the search committee for the School of Biological Sciences Director of Diversity Initiatives staff position.',
         '2008-2014 School of Biological Sciences Diversity Committee member.',
@@ -375,6 +421,12 @@ function buildPartialResult(): PartialResult {
         publication({
           citation: 'C. Research, "Submitted discovery," Journal of Chemical Physics, under review.',
           type: 'journal',
+        }),
+      ],
+      workInProgress: [
+        publication({
+          citation: 'C. Research, "Submitted discovery," Journal of Chemical Physics, under review.',
+          type: 'other',
         }),
       ],
       otherArticles: [

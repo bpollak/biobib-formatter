@@ -24,9 +24,11 @@ import { SliceKey } from './slices';
 import { sanitizePartialResult } from './sanitize';
 import {
   dedupeBy,
+  dedupeComparableStrings,
   dedupeStrings,
   hasText,
   normalizeForDedupe,
+  normalizeRecordForComparison,
   normalizeStudentGroupHeading,
   sortChronologically,
   stripStudentGroupPrefix,
@@ -84,6 +86,7 @@ Your task is to extract part of a UCSD BioBib from a faculty CV. You must:
 2. Preserve citation formatting exactly as it appears in the CV — do not reformat citations.
 3. Identify gaps sparingly. Only flag true missing data for fields in your slice when the BioBib explicitly requires manual completion. Do not create gaps for optional empty sections.
 4. Prefer empty arrays over speculative entries. If the CV does not provide a section, leave the corresponding array empty.
+5. Ignore generated conversion appendices such as "Conversion Review Summary", "Manual Completion Items", "Placement and Duplication Review Notes", document-link fields, and signature fields. They are reviewer instructions, not CV source content.
 
 UCSD BioBib reference:
 ${BIOBIB_INSTRUCTIONS_INLINE}`;
@@ -253,9 +256,10 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   II_external: {
     fields:
-      'Section II subset: professionalActivities, externalProfessionalActivities, consulting, reviewerActivities, and externalReviews only. Do not extract presentations or teaching.',
+      'Section II subset: professionalActivities, consulting, reviewerActivities, and externalReviews only. externalProfessionalActivities is a legacy compatibility field and must remain empty. Do not extract presentations or teaching.',
     rules: `
-- professionalActivities/externalProfessionalActivities: committee service, conference organization, advisory boards, editorial roles, review panels, external program reviews, and society service.
+- professionalActivities: committee service, conference organization, advisory boards, editorial roles, review panels, external program reviews, and society service.
+- Leave externalProfessionalActivities empty. Do not place the same activity in more than one array.
 - reviewerActivities: journal/editorial reviewing, funding-agency panels, manuscript/proposal reviewing, and external academic file reviews.
 - externalReviews: significant independent reviews of the faculty member's own work only; do not include reviews performed by the faculty member.
 - Do not extract presentation lists, posters, abstracts, teaching, mentoring, or grants in this slice.
@@ -858,6 +862,8 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   reclassifyOtherPublications(sections);
   normalizeSectionIIRecords(sections);
   normalizePublicationRecords(sections);
+  reconcileSectionIIActivityBuckets(sections, reviewNotes);
+  dedupePublicationRecords(sections);
 
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
@@ -879,13 +885,13 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
     g => `${normalizeForDedupe(g.title)}|${normalizeForDedupe(g.funder)}|${normalizeForDedupe(g.period)}`,
   );
   sections.publicService = dedupeStrings(sections.publicService);
-  sections.professionalActivities = dedupeStrings(sections.professionalActivities);
+  sections.professionalActivities = dedupeComparableStrings(sections.professionalActivities);
   sections.memberships = dedupeStrings(sections.memberships);
   sections.awards = dedupeStrings(sections.awards);
   sections.teaching = dedupeStrings(sections.teaching);
   sections.studentInstructionalActivities = dedupeStrings(sections.studentInstructionalActivities);
   sections.studentInstructionalGroups = mergeStudentInstructionalGroups(sections.studentInstructionalGroups);
-  sections.externalProfessionalActivities = dedupeStrings(sections.externalProfessionalActivities);
+  sections.externalProfessionalActivities = dedupeComparableStrings(sections.externalProfessionalActivities);
   sections.consulting = dedupeStrings(sections.consulting);
   sections.reviewerActivities = dedupeStrings(sections.reviewerActivities);
   sections.presentations = dedupeStrings(sections.presentations);
@@ -1071,6 +1077,178 @@ function normalizePublicationRecords(sections: BioBibSections): void {
     }));
     sections[key] = sortByInitialDate(cleaned, item => item.citation) as BioBibSections[typeof key];
   }
+}
+
+function reconcileSectionIIActivityBuckets(
+  sections: BioBibSections,
+  reviewNotes: BioBibReviewNote[],
+): void {
+  const serviceKeys = new Set(
+    sections.universityService.map(entry =>
+      normalizeRecordForComparison(`${entry.description} ${entry.dates}`),
+    ),
+  );
+  const serviceByCore = new Map(
+    sections.universityService.map(entry => [
+      activityCoreFingerprint(entry.description),
+      entry,
+    ]),
+  );
+  const combinedActivities = dedupeComparableStrings([
+    ...sections.professionalActivities,
+    ...sections.externalProfessionalActivities,
+  ]);
+  const retainedActivities: string[] = [];
+
+  for (const item of combinedActivities) {
+    const key = normalizeRecordForComparison(item);
+    if (serviceKeys.has(key)) continue;
+
+    const service = serviceByCore.get(activityCoreFingerprint(item));
+    if (service) {
+      reviewNotes.push({
+        section: 'Section II: University Service; Section II: External Professional Activities',
+        topic: 'Potential duplicate placement',
+        instruction:
+          `Review the differing date or wording before choosing one placement: ` +
+          `${service.description} (${service.dates}) / ${stripLeadingSourceNumber(item)}`,
+      });
+    }
+    retainedActivities.push(item);
+  }
+
+  // Both legacy fields render under the same BioBib subsection. Keep one
+  // canonical bucket so the JSON result and the generated document agree.
+  sections.professionalActivities = retainedActivities;
+  sections.externalProfessionalActivities = [];
+}
+
+function activityCoreFingerprint(value: string): string {
+  return normalizeRecordForComparison(
+    stripLeadingSourceNumber(value)
+      .replace(
+        /\b(?:19|20)\d{2}\b(?:\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2}))?/gi,
+        ' ',
+      )
+      .replace(/\b(?:present|current)\b/gi, ' '),
+  );
+}
+
+const PUBLICATION_DEDUPE_KEYS = [
+  'peerReviewedJournals',
+  'reviewAndInvited',
+  'books',
+  'chapters',
+  'refereedProceedings',
+  'otherArticles',
+  'otherProceedings',
+  'abstracts',
+  'popularWorks',
+  'additionalProducts',
+  'theses',
+  'patents',
+] as const;
+
+function dedupePublicationRecords(sections: BioBibSections): void {
+  for (const key of PUBLICATION_DEDUPE_KEYS) {
+    sections[key] = dedupePublicationList(sections[key]) as BioBibSections[typeof key];
+  }
+  sections.workInProgress = dedupePublicationList(sections.workInProgress, true);
+}
+
+function dedupePublicationList(
+  items: PublicationEntry[],
+  preferSpecificType = false,
+): PublicationEntry[] {
+  const byCitation = new Map<string, PublicationEntry>();
+  for (const item of items) {
+    const key = publicationFingerprint(item.citation);
+    if (!key) continue;
+    const existing = byCitation.get(key);
+    byCitation.set(
+      key,
+      existing
+        ? mergeDuplicatePublication(existing, item, preferSpecificType)
+        : normalizePublicationContribution(item),
+    );
+  }
+  return [...byCitation.values()];
+}
+
+function publicationFingerprint(citation: string): string {
+  return normalizePublicationCitation(splitTrailingContribution(citation).citation);
+}
+
+function normalizePublicationContribution(item: PublicationEntry): PublicationEntry {
+  const split = splitTrailingContribution(item.citation);
+  if (!split.contributionNote || item.contributionNote) return item;
+  return {
+    ...item,
+    citation: split.citation,
+    contributionNote: split.contributionNote,
+  };
+}
+
+function splitTrailingContribution(citation: string): {
+  citation: string;
+  contributionNote?: string;
+} {
+  const match = citation.match(
+    /^(.*?)(?:\s+)(\*{1,2}\s*(?:co[- ]author|co[- ]corresponding author|corresponding author|senior author)[^.]*\.?)$/i,
+  );
+  if (!match) return { citation: citation.trim() };
+  return {
+    citation: match[1].trim(),
+    contributionNote: match[2].trim(),
+  };
+}
+
+function mergeDuplicatePublication(
+  first: PublicationEntry,
+  second: PublicationEntry,
+  preferSpecificType: boolean,
+): PublicationEntry {
+  const left = normalizePublicationContribution(first);
+  const right = normalizePublicationContribution(second);
+  const citation = left.citation.length <= right.citation.length
+    ? left.citation
+    : right.citation;
+  const type = preferSpecificType
+    ? preferredPublicationType(left.type, right.type)
+    : left.type;
+
+  return {
+    ...left,
+    citation,
+    type,
+    articleKind: left.articleKind ?? right.articleKind,
+    bioBibSection: left.bioBibSection ?? right.bioBibSection,
+    originalNumber: left.originalNumber ?? right.originalNumber,
+    previouslyListedAs: left.previouslyListedAs ?? right.previouslyListedAs,
+    contributionNote: left.contributionNote ?? right.contributionNote,
+    reviewMaterialUrl: left.reviewMaterialUrl ?? right.reviewMaterialUrl,
+    isNewSinceLastReview:
+      left.isNewSinceLastReview === true || right.isNewSinceLastReview === true
+        ? true
+        : left.isNewSinceLastReview ?? right.isNewSinceLastReview,
+  };
+}
+
+function preferredPublicationType(
+  first: PublicationEntry['type'],
+  second: PublicationEntry['type'],
+): PublicationEntry['type'] {
+  const priority: PublicationEntry['type'][] = [
+    'journal',
+    'review',
+    'book',
+    'chapter',
+    'proceedings',
+    'abstract',
+    'popular',
+    'other',
+  ];
+  return priority.indexOf(first) <= priority.indexOf(second) ? first : second;
 }
 
 function isBookReviewCitation(citation: string): boolean {
