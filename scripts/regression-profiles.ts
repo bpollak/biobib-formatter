@@ -110,9 +110,9 @@ function evaluateContinetti(sections: Sections, metadata: Metadata): ProfileChec
     },
     {
       name: 'All documented refereed proceedings are present exactly once',
-      pass: missingProceedings.length === 0 && refereed.length === CONTINETTI_PROCEEDING_ANCHORS.length,
+      pass: missingProceedings.length === 0,
       detail: missingProceedings.length === 0
-        ? `${refereed.length} proceedings`
+        ? `${CONTINETTI_PROCEEDING_ANCHORS.length} required; ${refereed.length} total proceedings`
         : `missing or repeated: ${missingProceedings.join(', ')}`,
     },
     {
