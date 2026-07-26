@@ -1,3 +1,4 @@
+import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import ThemeRegistry from './ThemeRegistry';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -17,13 +18,15 @@ export default function RootLayout({
     <html lang="en">
       <head />
       <body style={{ margin: 0, padding: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <ThemeRegistry>
-          <Header />
-          <main style={{ flex: 1 }}>
-            {children}
-          </main>
-          <Footer />
-        </ThemeRegistry>
+        <AppRouterCacheProvider>
+          <ThemeRegistry>
+            <Header />
+            <main style={{ flex: 1 }}>
+              {children}
+            </main>
+            <Footer />
+          </ThemeRegistry>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );
