@@ -3,6 +3,7 @@ import { parseCV, stripGeneratedReviewSummary } from '../lib/docx/reader';
 import { generateBioBibDocx } from '../lib/docx/writer';
 import { LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../lib/constants';
 import { mergeSlices, modelCandidatesForSlice, PartialResult } from '../lib/pipeline/converter';
+import { SLICE_KEYS } from '../lib/pipeline/slices';
 import { ConversionResult, PublicationEntry } from '../lib/types';
 
 interface Check {
@@ -19,6 +20,14 @@ function record(name: string, pass: boolean, detail?: string) {
 }
 
 async function main() {
+  record(
+    'Long service histories are split into bounded extraction slices',
+    SLICE_KEYS.length === 23 &&
+      SLICE_KEYS.includes('II_service_pre_2010') &&
+      SLICE_KEYS.includes('II_service_2011_2020') &&
+      SLICE_KEYS.includes('II_service_post_2020') &&
+      SLICE_KEYS.includes('II_memberships_awards'),
+  );
   const highFidelityRoute = modelCandidatesForSlice('III_journals_late', { cloud: true, onPrem: true });
   const mechanicalRoute = modelCandidatesForSlice('II_presentations_post_2020', { cloud: true, onPrem: true });
   const onPremOnlyRoute = modelCandidatesForSlice('meta_and_I', { cloud: false, onPrem: true });

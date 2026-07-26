@@ -7,7 +7,10 @@
 
 export type SliceKey =
   | 'meta_and_I'
-  | 'II_service'
+  | 'II_service_pre_2010'
+  | 'II_service_2011_2020'
+  | 'II_service_post_2020'
+  | 'II_memberships_awards'
   | 'II_teaching'
   | 'II_grants'
   | 'II_external'
@@ -29,7 +32,10 @@ export type SliceKey =
 
 export const SLICE_LABELS: Record<SliceKey, string> = {
   meta_and_I: 'Section I — Employment & Education',
-  II_service: 'Section II — Service, Memberships, Awards',
+  II_service_pre_2010: 'Section II — University Service (through 2010)',
+  II_service_2011_2020: 'Section II — University Service (2011–2020)',
+  II_service_post_2020: 'Section II — University Service (after 2020)',
+  II_memberships_awards: 'Section II — Memberships & Awards',
   II_teaching: 'Section II — Teaching & Mentoring',
   II_grants: 'Section II — Contracts & Grants',
   II_external: 'Section II — External Activities & Reviews',

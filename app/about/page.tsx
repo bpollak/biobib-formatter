@@ -20,7 +20,7 @@ const PIPELINE_STEPS = [
   },
   {
     title: '2. The CV is split into smaller review tasks',
-    body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 20 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
+    body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 23 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
   },
   {
     title: '3. UCSD TritonAI reviews each part',
@@ -79,6 +79,7 @@ const RELEASE_NOTES = [
       'Improved exact-duplicate cleanup across University Service and External Professional Activities while retaining uncertain near-matches for human review.',
       'Improved bibliography cleanup so repeated citations do not accumulate within publication sections or Work in Progress.',
       'Added two-pass release verification to confirm generated documents retain the expected formatting and do not introduce new high-confidence duplicates when reprocessed.',
+      'Split long university-service histories into smaller review periods so service-heavy CVs can complete more reliably.',
     ],
   },
   {
@@ -221,7 +222,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'Why does conversion take a few minutes?',
-    a: 'The app breaks the CV into 20 smaller BioBib parts and reviews several parts at the same time through UCSD TritonAI. This helps large CVs finish more reliably, especially when there are many publications or presentations.',
+    a: 'The app breaks the CV into 23 smaller BioBib parts and reviews several parts at the same time through UCSD TritonAI. This helps large CVs finish more reliably, especially when there are many service records, publications, or presentations.',
   },
   {
     q: 'What AI model does it use?',
