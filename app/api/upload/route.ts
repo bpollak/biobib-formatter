@@ -15,7 +15,12 @@ import { del, get } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { parseCV } from '@/lib/docx/reader';
 import { SLICE_KEYS } from '@/lib/pipeline/slices';
-import { writeManifest, writeCvRichText, writeCvText } from '@/lib/jobs/store';
+import {
+  writeCvResult,
+  writeCvRichText,
+  writeCvText,
+  writeManifest,
+} from '@/lib/jobs/store';
 import { getInternalFetchHeaders, getInternalSecret } from '@/lib/jobs/auth';
 import { LITELLM_ROUTING_LABEL, MAX_FILE_SIZE_BYTES } from '@/lib/constants';
 
@@ -51,7 +56,7 @@ export async function POST(req: NextRequest) {
     sinceYear?: unknown;
     reviewPeriodStart?: string;
   };
-  const sinceYear =
+  const requestedSinceYear =
     typeof rawSinceYear === 'number' &&
     Number.isInteger(rawSinceYear) &&
     rawSinceYear >= 1950 &&
@@ -105,17 +110,26 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await new Response(uploadedBlob.stream).arrayBuffer());
   const cv = await parseCV(buffer);
   const jobId = randomUUID();
+  const roundTripSnapshot = Boolean(cv.embeddedResult);
+  const sinceYear = requestedSinceYear ?? cv.embeddedSinceYear;
 
-  // Persist the parsed text so workers don't re-parse a multi-MB docx.
-  await writeCvText(jobId, cv.rawText);
+  // Generated BioBibs already carry their reviewed structured result. Keep
+  // that exact result for deterministic reprocessing; ordinary CVs continue
+  // through the model extraction slices using parsed text.
+  if (cv.embeddedResult) {
+    await writeCvResult(jobId, cv.embeddedResult);
+  } else {
+    await writeCvText(jobId, cv.rawText);
+  }
   await writeCvRichText(jobId, cv.richTextParagraphs ?? []);
   await writeManifest(jobId, {
     fileName,
-    sliceKeys: [...SLICE_KEYS],
+    sliceKeys: roundTripSnapshot ? [] : [...SLICE_KEYS],
     createdAt: Date.now(),
     sourceBlobUrl: blobUrl,
-    aiModel: LITELLM_ROUTING_LABEL,
+    aiModel: roundTripSnapshot ? 'Structured BioBib reprocessing' : LITELLM_ROUTING_LABEL,
     sinceYear,
+    roundTripSnapshot,
     ...(reviewPeriodStart ? { reviewPeriodStart } : {}),
   });
 
@@ -126,6 +140,16 @@ export async function POST(req: NextRequest) {
   const secret = getInternalSecret();
 
   after(async () => {
+    if (roundTripSnapshot) {
+      await fetch(`${origin}/api/finalize/${jobId}`, {
+        method: 'POST',
+        headers: getInternalFetchHeaders(secret),
+      }).catch(err => {
+        console.error('[/api/upload] structured reprocessing finalize dispatch failed:', err);
+      });
+      return;
+    }
+
     // Each fetch's child returns 202 immediately and runs its real work in
     // its own after(). We only need the dispatch to commit (sub-second).
     const headers = getInternalFetchHeaders(secret);

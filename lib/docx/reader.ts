@@ -6,6 +6,11 @@
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { ParsedCV, RichTextParagraph, RichTextRun } from '../types';
+import {
+  BIOBIB_SNAPSHOT_PROPERTY,
+  decodeBioBibSnapshot,
+  snapshotMatchesDocument,
+} from './snapshot';
 
 const GENERATED_REVIEW_SUMMARY_INTRO =
   'This page lists items the automated conversion could not complete or was unsure how to place.';
@@ -30,10 +35,17 @@ export function stripGeneratedReviewSummary(value: string): string {
 export async function parseCV(buffer: Buffer): Promise<ParsedCV> {
   const result = await mammoth.extractRawText({ buffer });
   const rawText = stripGeneratedReviewSummary(result.value);
-  const richTextParagraphs = await extractRichTextParagraphs(buffer).catch(err => {
-    console.warn('[docx reader] rich text extraction failed:', (err as Error).message);
-    return [] as RichTextParagraph[];
-  });
+  const zip = JSZip.loadAsync(buffer);
+  const [richTextParagraphs, embeddedSnapshot] = await Promise.all([
+    extractRichTextParagraphs(zip).catch(err => {
+      console.warn('[docx reader] rich text extraction failed:', (err as Error).message);
+      return [] as RichTextParagraph[];
+    }),
+    extractEmbeddedSnapshot(zip).catch(err => {
+      console.warn('[docx reader] embedded result extraction failed:', (err as Error).message);
+      return undefined;
+    }),
+  ]);
 
   // Attempt to extract name from first non-empty line
   const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
@@ -53,11 +65,36 @@ export async function parseCV(buffer: Buffer): Promise<ParsedCV> {
     if (department && title) break;
   }
 
-  return { rawText, richTextParagraphs, name, department, title };
+  return {
+    rawText,
+    richTextParagraphs,
+    embeddedResult: embeddedSnapshot?.result,
+    embeddedSinceYear: embeddedSnapshot?.sinceYear,
+    name,
+    department,
+    title,
+  };
 }
 
-async function extractRichTextParagraphs(buffer: Buffer): Promise<RichTextParagraph[]> {
-  const zip = await JSZip.loadAsync(buffer);
+async function extractEmbeddedSnapshot(zipPromise: Promise<JSZip>) {
+  const zip = await zipPromise;
+  const xml = await zip.file('docProps/custom.xml')?.async('string');
+  if (!xml) return undefined;
+
+  for (const match of xml.matchAll(/<property\b([^>]*)>([\s\S]*?)<\/property>/g)) {
+    const name = match[1].match(/\bname="([^"]*)"/)?.[1];
+    if (!name || decodeXml(name) !== BIOBIB_SNAPSHOT_PROPERTY) continue;
+    const value = match[2].match(/<vt:lpwstr(?:\s[^>]*)?>([\s\S]*?)<\/vt:lpwstr>/)?.[1];
+    const snapshot = decodeBioBibSnapshot(value === undefined ? undefined : decodeXml(value));
+    if (!snapshot || !await snapshotMatchesDocument(snapshot, zip)) return undefined;
+    return snapshot;
+  }
+
+  return undefined;
+}
+
+async function extractRichTextParagraphs(zipPromise: Promise<JSZip>): Promise<RichTextParagraph[]> {
+  const zip = await zipPromise;
   const xml = await zip.file('word/document.xml')?.async('string');
   if (!xml) return [];
 

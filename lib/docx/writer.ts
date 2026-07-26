@@ -28,6 +28,11 @@ import {
   stripStudentGroupPrefix,
 } from '../text-utils';
 import { dateBefore, dateOnOrAfter } from '../date-utils';
+import {
+  BIOBIB_SNAPSHOT_PLACEHOLDER,
+  BIOBIB_SNAPSHOT_PROPERTY,
+  embedBioBibSnapshot,
+} from './snapshot';
 
 const UCSD_BLUE = '003B5C';
 const LIGHT_GRAY = 'F2F2F2';
@@ -642,14 +647,16 @@ function additionalProductsSection(
   additionalProducts: PublicationEntry[],
   theses: PublicationEntry[],
   patents: PublicationEntry[],
-  facultyName: string,
   richTextParagraphs: RichTextParagraph[] = [],
   reviewPeriodStart?: string,
 ): Paragraph[] {
-  const ownTheses = filterOwnTheses(theses, facultyName);
+  // The extraction slice owns the faculty-vs-advisee decision. Older
+  // generated records predate the explicit flag, so only an explicit false
+  // is excluded; absence must not discard a legitimate degree thesis.
+  const facultyTheses = theses.filter(entry => entry.isFacultyThesis !== false);
   const children = [
     heading3('IV. Additional Products of Major Research', { italic: false }),
-    ...publicationSubSection('a. Theses', ownTheses, richTextParagraphs, reviewPeriodStart),
+    ...publicationSubSection('a. Theses', facultyTheses, richTextParagraphs, reviewPeriodStart),
     ...publicationSubSection('b. Patent/Patent License', patents, richTextParagraphs, reviewPeriodStart),
   ];
 
@@ -661,15 +668,6 @@ function additionalProductsSection(
   }
 
   return children;
-}
-
-function filterOwnTheses(theses: PublicationEntry[], facultyName: string): PublicationEntry[] {
-  const lastName = facultyName.split(',')[0]?.trim().toLowerCase();
-  if (!lastName) return theses;
-  return theses.filter(t => {
-    const citationStart = t.citation.slice(0, 120).toLowerCase();
-    return citationStart.includes(lastName);
-  });
 }
 
 function workInProgressSection(
@@ -938,7 +936,7 @@ export async function generateBioBibDocx(
     ...publicationSubSection('I. Other Conference Proceedings', sections.otherProceedings, richTextParagraphs, reviewPeriodStart),
     ...publicationSubSection('II. Abstracts', sections.abstracts, richTextParagraphs, reviewPeriodStart),
     ...publicationSubSection('III. Popular Works', sections.popularWorks, richTextParagraphs, reviewPeriodStart),
-    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, metadata.name, richTextParagraphs, reviewPeriodStart),
+    ...additionalProductsSection(sections.additionalProducts, sections.theses, sections.patents, richTextParagraphs, reviewPeriodStart),
     ...workInProgressSection(sections.workInProgress, richTextParagraphs, reviewPeriodStart),
     ...finalCertificationBlock(),
     ...reviewSummarySection(result),
@@ -952,6 +950,10 @@ export async function generateBioBibDocx(
     creator: 'BioBib Formatter',
     description: 'Generated UCSD Academic Biography/Bibliography draft.',
     keywords: 'UC San Diego, BioBib, academic biography, bibliography',
+    customProperties: [{
+      name: BIOBIB_SNAPSHOT_PROPERTY,
+      value: BIOBIB_SNAPSHOT_PLACEHOLDER,
+    }],
     styles: {
       default: {
         document: {
@@ -975,5 +977,6 @@ export async function generateBioBibDocx(
     }],
   });
 
-  return Buffer.from(await Packer.toBuffer(doc));
+  const packed = Buffer.from(await Packer.toBuffer(doc));
+  return embedBioBibSnapshot(packed, result, { sinceYear: options.sinceYear });
 }

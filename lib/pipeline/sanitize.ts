@@ -148,6 +148,7 @@ function sanitizePublications(value: unknown): PublicationEntry[] {
     copyOptionalString(item, entry, 'contributionNote');
     copyOptionalString(item, entry, 'reviewMaterialUrl');
     if (typeof item.isNewSinceLastReview === 'boolean') entry.isNewSinceLastReview = item.isNewSinceLastReview;
+    if (typeof item.isFacultyThesis === 'boolean') entry.isFacultyThesis = item.isFacultyThesis;
     return [entry];
   });
 }

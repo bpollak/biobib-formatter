@@ -19,6 +19,7 @@ const path = {
   manifest: (j: string) => `${root(j)}/manifest.json`,
   cv: (j: string) => `${root(j)}/cv.txt`,
   cvRich: (j: string) => `${root(j)}/cv-rich.json`,
+  cvResult: (j: string) => `${root(j)}/cv-result.json`,
   sliceResult: (j: string, k: SliceKey) => `${root(j)}/slice-${k}.json`,
   sliceError: (j: string, k: SliceKey) => `${root(j)}/slice-${k}.error`,
   lock: (j: string) => `${root(j)}/finalize.lock`,
@@ -41,6 +42,8 @@ export interface JobManifest {
   sinceYear?: number;
   /** Exact cutoff date used to mark clearly dated new records; absent = cumulative draft. */
   reviewPeriodStart?: string;
+  /** True when a generated BioBib supplied an embedded structured result. */
+  roundTripSnapshot?: boolean;
 }
 
 export async function writeManifest(jobId: string, manifest: JobManifest): Promise<void> {
@@ -75,6 +78,22 @@ export async function readCvRichText(jobId: string): Promise<RichTextParagraph[]
     return (await readJson<RichTextParagraph[]>(path.cvRich(jobId))) ?? [];
   } catch (e) {
     if (e instanceof BlobNotFoundError || (e as Error).message.includes('status 404')) return [];
+    throw e;
+  }
+}
+
+export async function writeCvResult(jobId: string, result: ConversionResult): Promise<void> {
+  await put(path.cvResult(jobId), JSON.stringify(result), {
+    ...PUT_OPTS,
+    contentType: 'application/json; charset=utf-8',
+  });
+}
+
+export async function readCvResult(jobId: string): Promise<ConversionResult | null> {
+  try {
+    return await readJson<ConversionResult>(path.cvResult(jobId));
+  } catch (e) {
+    if (e instanceof BlobNotFoundError || (e as Error).message.includes('status 404')) return null;
     throw e;
   }
 }
@@ -243,7 +262,7 @@ export async function computeStatus(jobId: string): Promise<JobStatus | null> {
   if (!manifest) return null;
 
   const slices: Record<SliceKey, SliceState> = SLICE_KEYS.reduce((acc, k) => {
-    acc[k] = 'pending';
+    acc[k] = manifest.roundTripSnapshot ? 'done' : 'pending';
     return acc;
   }, {} as Record<SliceKey, SliceState>);
 

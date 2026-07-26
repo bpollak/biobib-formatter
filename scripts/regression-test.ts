@@ -76,6 +76,8 @@ interface StatusResponse {
   result?: {
     sections?: Record<string, unknown[]>;
     gaps?: unknown[];
+    reviewNotes?: unknown[];
+    metadata?: Record<string, unknown>;
   };
   error?: string;
   startedAt: number;
@@ -318,6 +320,8 @@ async function runRoundtripVerification({
   const secondDuplicates = duplicateInventory(secondSections);
   const firstCounts = sectionCounts(firstSections);
   const secondCounts = sectionCounts(secondSections);
+  const firstResult = firstPass.status.result;
+  const secondResult = secondPass.status.result;
 
   record(
     'First pass has no high-confidence cross-section or publication duplicates',
@@ -333,6 +337,18 @@ async function runRoundtripVerification({
     'Second pass does not introduce new exact duplicate keys',
     secondDuplicates.every(item => firstDuplicates.includes(item)),
     `${firstDuplicates.length} first-pass; ${secondDuplicates.length} second-pass`,
+  );
+  record(
+    'Second pass preserves every structured BioBib section exactly',
+    stableStringify(firstResult?.sections) === stableStringify(secondResult?.sections),
+  );
+  record(
+    'Second pass preserves the manual-completion gap array exactly',
+    stableStringify(firstResult?.gaps) === stableStringify(secondResult?.gaps),
+  );
+  record(
+    'Second pass preserves placement and duplication review notes exactly',
+    stableStringify(firstResult?.reviewNotes ?? []) === stableStringify(secondResult?.reviewNotes ?? []),
   );
   record(
     'Second pass retains stable identity and bibliography counts',
@@ -375,6 +391,20 @@ async function runRoundtripVerification({
 function countWithinTolerance(actual: number, expected: number, tolerance: number): boolean {
   if (expected === 0) return actual === 0;
   return Math.abs(actual - expected) / expected <= tolerance;
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortObjectKeys(value));
+}
+
+function sortObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortObjectKeys);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, sortObjectKeys(item)]),
+  );
 }
 
 async function runPipelinePass(
