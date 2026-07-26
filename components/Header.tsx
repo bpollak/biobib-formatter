@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
 import Drawer from '@mui/material/Drawer';
@@ -16,15 +17,19 @@ import { useTheme } from '@mui/material/styles';
 const NAV_LINKS = [
   { label: 'Home', href: '/' },
   { label: 'About', href: '/about' },
+  { label: 'Release Notes', href: '/release-notes' },
 ];
 
 export default function Header() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const pathname = usePathname();
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md')); // 768px+
 
   const handleDrawerClose = () => setDrawerOpen(false);
   const handleDrawerOpen = () => setDrawerOpen(true);
+  const isActive = (href: string) =>
+    href === '/' ? pathname === href : pathname.startsWith(href);
 
   return (
     <Box component="header" sx={{ width: '100%' }}>
@@ -114,28 +119,34 @@ export default function Header() {
         >
           {isDesktop ? (
             /* Desktop: horizontal nav links */
-            NAV_LINKS.map(({ label, href }) => (
-              <Link
-                key={label}
-                href={href}
-                underline="none"
-                sx={{
-                  color: '#ffffff',
-                  fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
-                  fontSize: 16,
-                  fontWeight: 400,
-                  px: 2,
-                  py: 1.25,
-                  display: 'block',
-                  '&:hover': {
-                    backgroundColor: '#004268',
+            NAV_LINKS.map(({ label, href }) => {
+              const active = isActive(href);
+              return (
+                <Link
+                  key={label}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  underline="none"
+                  sx={{
                     color: '#ffffff',
-                  },
-                }}
-              >
-                {label}
-              </Link>
-            ))
+                    backgroundColor: active ? '#004268' : 'transparent',
+                    borderBottom: active ? '4px solid #F5C242' : '4px solid transparent',
+                    fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
+                    fontSize: 16,
+                    fontWeight: active ? 700 : 400,
+                    px: 2,
+                    py: 1.25,
+                    display: 'block',
+                    '&:hover': {
+                      backgroundColor: '#004268',
+                      color: '#ffffff',
+                    },
+                  }}
+                >
+                  {label}
+                </Link>
+              );
+            })
           ) : (
             /* Mobile: hamburger + UCSD logo */
             <Box
@@ -258,34 +269,40 @@ export default function Header() {
 
         {/* Nav links */}
         <List disablePadding>
-          {NAV_LINKS.map(({ label, href }) => (
-            <ListItem key={label} disablePadding divider sx={{ borderColor: 'rgba(255,255,255,0.15)' }}>
-              <ListItemButton
-                component="a"
-                href={href}
-                onClick={handleDrawerClose}
-                sx={{
-                  px: 3,
-                  py: 1.5,
-                  '&:hover': { backgroundColor: '#004268' },
-                }}
-              >
-                <ListItemText
-                  primary={label}
-                  slotProps={{
-                    primary: {
-                      sx: {
-                        color: '#ffffff',
-                        fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
-                        fontSize: '1rem',
-                        fontWeight: 400,
-                      },
-                    },
+          {NAV_LINKS.map(({ label, href }) => {
+            const active = isActive(href);
+            return (
+              <ListItem key={label} disablePadding divider sx={{ borderColor: 'rgba(255,255,255,0.15)' }}>
+                <ListItemButton
+                  component="a"
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={handleDrawerClose}
+                  sx={{
+                    px: 3,
+                    py: 1.5,
+                    backgroundColor: active ? '#004268' : 'transparent',
+                    borderLeft: active ? '4px solid #F5C242' : '4px solid transparent',
+                    '&:hover': { backgroundColor: '#004268' },
                   }}
-                />
-              </ListItemButton>
-            </ListItem>
-          ))}
+                >
+                  <ListItemText
+                    primary={label}
+                    slotProps={{
+                      primary: {
+                        sx: {
+                          color: '#ffffff',
+                          fontFamily: '"Roboto", "Helvetica Neue", Arial, sans-serif',
+                          fontSize: '1rem',
+                          fontWeight: active ? 700 : 400,
+                        },
+                      },
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          })}
         </List>
       </Drawer>
     </Box>
