@@ -171,6 +171,35 @@ const PRESENTATION_RULES = `
 - If a source presentation starts with a date, move that date to the end of the returned record.
 `.trim();
 
+const SERVICE_RULES = `
+- Extract University Service and Public Service only. Do not extract professional society service, external reviewing, memberships, honors, awards, grants, teaching, or presentations.
+- Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
+- Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
+- Chronological order means oldest first by the initial date of service; for date ranges, use the first date in the range.
+- Put dates in the "dates" field when a structured service record has one. For string-only public-service records, put the date at the end.
+`.trim();
+
+const SERVICE_SCHEMA = `{
+  "sections": {
+    "universityService": [{"description": "", "dates": "", "category": "departmental|college|campus|university|senate|systemwide|other"}],
+    "publicService": [""]
+  },
+  "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
+}`;
+
+function serviceSlicePrompt(periodRule: string): {
+  fields: string;
+  schema: string;
+  rules: string;
+} {
+  return {
+    fields: `Section II subset: universityService and publicService whose initial date matches this period: ${periodRule}`,
+    rules: `${SERVICE_RULES}
+- Include only records whose initial date matches this slice's period. For a date range, classify the record by its first date.`,
+    schema: SERVICE_SCHEMA,
+  };
+}
+
 const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: string }> = {
   meta_and_I: {
     fields:
@@ -193,24 +222,22 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   "gaps": [{"section": "", "field": "", "instruction": "", "severity": "required|recommended|optional"}]
 }`,
   },
-  II_service: {
-    fields:
-      'Section II subset: universityService, publicService, memberships, awards',
+  II_service_pre_2010: serviceSlicePrompt('2010 or earlier'),
+  II_service_2011_2020: serviceSlicePrompt('2011 through 2020, inclusive'),
+  II_service_post_2020: serviceSlicePrompt('2021 or later'),
+  II_memberships_awards: {
+    fields: 'Section II subset: memberships and awards only',
     rules: `
 - Memberships must include scholarly societies, professional boards, civic/professional organizations, elected fellow memberships, and honor societies when listed.
 - Do not omit general society memberships such as AGU, RSC, AAAS, APS, ACS, or Phi Beta Kappa when present.
 - Honors and awards should include fellowships, awards, named honors, elected fellow distinctions, and honorific or short-term visiting appointments with dates.
 - When the CV lists appointment-like honors under an "Appointments" heading, classify Visiting Scientist, Professore Visitatore, named Scholar, named Fellow, visiting faculty fellow, and sabbatical/short-term honorific appointments as Honors and Awards unless the CV clearly presents them as ordinary employment.
 - It is acceptable for an elected fellow distinction to appear both as a membership and as an honor/award when the CV supports both uses.
-- Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
-- Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
-- Chronological order means oldest first by the initial date of service, membership, award, or honor; for date ranges, use the first date in the range.
-- Put dates in the "dates" field when a structured service record has one. For string-only records, put the date at the end of the record rather than the beginning.
+- Do not extract university service, public service, external professional activities, grants, teaching, or presentations.
+- Sort memberships and awards chronologically by their initial date and put dates at the end of each string record.
 `.trim(),
     schema: `{
   "sections": {
-    "universityService": [{"description": "", "dates": "", "category": "departmental|college|campus|university|senate|systemwide|other"}],
-    "publicService": [""],
     "memberships": [""],
     "awards": [""]
   },
@@ -465,7 +492,10 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 // history). Section I and the Section III bibliography stay cumulative —
 // the BioBib requires the full record there.
 const REVIEW_PERIOD_SLICES = new Set<SliceKey>([
-  'II_service',
+  'II_service_pre_2010',
+  'II_service_2011_2020',
+  'II_service_post_2020',
+  'II_memberships_awards',
   'II_grants',
   'II_external',
   'II_diversity_other',
@@ -538,6 +568,7 @@ interface YearWindow {
 }
 
 function yearWindowForSlice(slice: SliceKey): YearWindow | null {
+  if (slice === 'II_service_pre_2010') return { end: 2010 };
   if (slice.endsWith('_pre_2000')) return { end: 1999 };
   if (slice.endsWith('_2000_2010')) return { start: 2000, end: 2010 };
   if (slice.endsWith('_2011_2020')) return { start: 2011, end: 2020 };
@@ -588,6 +619,13 @@ function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
 }
 
 function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
+  if (slice.startsWith('II_service_')) {
+    return linesBetween(
+      lines,
+      /\b(departmental and university service activities|service to uc(?:\s*&\s*|\s+and\s+)uc san diego)\b/i,
+      /\b(professional service activities|service outside of uc(?:\s*&\s*|\s+and\s+)uc san diego)\b/i,
+    );
+  }
   if (slice.startsWith('II_presentations')) {
     return linesBetween(
       lines,
@@ -632,6 +670,9 @@ function isWorkInProgressLine(line: string): boolean {
 function isLikelySourceHeading(line: string, slice: SliceKey): boolean {
   if (line.length > 140) return false;
   if (/^section\s/i.test(line)) return true;
+  if (slice.startsWith('II_service_')) {
+    return /\b(service|committee|council|senate|departmental|campus|university|systemwide)\b/i.test(line);
+  }
   if (slice.startsWith('II_presentations')) {
     return /\b(presentations?|lectures?|seminars?|meetings?)\b/i.test(line);
   }

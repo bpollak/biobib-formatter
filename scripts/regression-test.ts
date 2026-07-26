@@ -46,7 +46,10 @@ const POLL_TIMEOUT_MS = 12 * 60 * 1000;
 
 type SliceKey =
   | 'meta_and_I'
-  | 'II_service'
+  | 'II_service_pre_2010'
+  | 'II_service_2011_2020'
+  | 'II_service_post_2020'
+  | 'II_memberships_awards'
   | 'II_teaching'
   | 'II_grants'
   | 'II_external'
