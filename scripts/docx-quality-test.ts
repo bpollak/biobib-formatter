@@ -383,7 +383,7 @@ function buildPartialResult(): PartialResult {
         '2017 Panelist and grant reviewer for the Foundation for Food and Agriculture Research (FFAR) for the Pollinator Health Special Initiative.',
       ],
       externalProfessionalActivities: [
-        'Reviewed grants for the UC San Diego Strategic Plan Refresh Convene and Influence Award. (2024–2025)',
+        'Chair, Departmental Reviewed grants for the UC San Diego Strategic Plan Refresh Convene and Influence Award. (2024–2025)',
         'Panelist and grant reviewer for the UC MEXUS-CONACYT postdoctoral fellowship and collaborative grant competition. (2018-2019)',
       ],
       diversityContributions: [

@@ -40,6 +40,25 @@ export function normalizeRecordForComparison(value: string): string {
   );
 }
 
+/**
+ * Category and role prefixes are sometimes included in a rendered service
+ * description and sometimes represented by its surrounding BioBib heading.
+ * Treat those presentation-only prefixes as equivalent when the dated record
+ * otherwise matches.
+ */
+export function normalizeServiceRecordForComparison(
+  value: string,
+  dates = '',
+): string {
+  const description = value
+    .replace(/^\s*\d+\s*[.)]\s*/, '')
+    .replace(
+      /^(?:(?:co[- ]?chair|vice[- ]?chair|chair|member(?:\s+of)?|departmental|campus|academic\s+senate|senate|university|systemwide|ucsd|uc\s+san\s+diego)\b[\s,:;–—-]*)+/i,
+      '',
+    );
+  return normalizeRecordForComparison(`${description} ${dates}`);
+}
+
 export function dedupeBy<T>(items: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>();
   const out: T[] = [];

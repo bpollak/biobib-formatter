@@ -28,7 +28,7 @@ import {
   dedupeStrings,
   hasText,
   normalizeForDedupe,
-  normalizeRecordForComparison,
+  normalizeServiceRecordForComparison,
   normalizeStudentGroupHeading,
   sortChronologically,
   stripStudentGroupPrefix,
@@ -1085,7 +1085,7 @@ function reconcileSectionIIActivityBuckets(
 ): void {
   const serviceKeys = new Set(
     sections.universityService.map(entry =>
-      normalizeRecordForComparison(`${entry.description} ${entry.dates}`),
+      normalizeServiceRecordForComparison(entry.description, entry.dates),
     ),
   );
   const serviceByCore = new Map(
@@ -1101,7 +1101,7 @@ function reconcileSectionIIActivityBuckets(
   const retainedActivities: string[] = [];
 
   for (const item of combinedActivities) {
-    const key = normalizeRecordForComparison(item);
+    const key = normalizeServiceRecordForComparison(item);
     if (serviceKeys.has(key)) continue;
 
     const service = serviceByCore.get(activityCoreFingerprint(item));
@@ -1124,7 +1124,7 @@ function reconcileSectionIIActivityBuckets(
 }
 
 function activityCoreFingerprint(value: string): string {
-  return normalizeRecordForComparison(
+  return normalizeServiceRecordForComparison(
     stripLeadingSourceNumber(value)
       .replace(
         /\b(?:19|20)\d{2}\b(?:\s*(?:-|–|—|to)\s*(?:present|current|(?:19|20)\d{2}))?/gi,
