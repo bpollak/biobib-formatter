@@ -15,7 +15,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     releasedAtIso: '2026-07-26T09:15:00-07:00',
     title: 'Dedicated Release Notes and Production Verification Update',
     changes: [
-      'Added a dedicated Release Notes page and direct navigation link so product changes are easier to find without searching through the About page.',
       'Reorganized the public update history into one chronological source shared by the Release Notes and About pages.',
       'Completed a live two-pass production review with five real faculty CVs, confirming that generated BioBibs retain their sections, manual-completion guidance, placement review notes, and document structure when processed again.',
       'Clarified the About page’s current 23-part review workflow and temporary-file handling.',
