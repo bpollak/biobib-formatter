@@ -471,6 +471,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
       'Section III subset miscellaneous: popularWorks, additionalProducts, theses, patents, and workInProgress only. Number sequentially within each subsection starting at 1. Put dissertations/theses in theses and patent or patent-license material in patents.',
     rules: `
 - "theses" means the faculty member's own thesis or dissertation only. Do not list advisee/student theses here; those belong in Section II Student Instructional Activities.
+- Set isFacultyThesis=true when the CV heading or degree context identifies the record as the faculty member's own thesis or dissertation. Set it false for an explicitly identified advisee/student thesis and do not place that record in theses.
 - "patents" should include patents and patent licenses.
 - "additionalProducts" should include software, datasets, instruments, formal products, or other major research products, not ordinary publications already captured elsewhere.
 - workInProgress should be empty unless the CV explicitly lists work in progress material for review.
@@ -479,7 +480,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   "sections": {
     "popularWorks": [{"number": 1, "citation": "", "type": "popular"}],
     "additionalProducts": [{"number": 1, "citation": "", "type": "other"}],
-    "theses": [{"number": 1, "citation": "", "type": "other"}],
+    "theses": [{"number": 1, "citation": "", "type": "other", "isFacultyThesis": true}],
     "patents": [{"number": 1, "citation": "", "type": "other"}],
     "workInProgress": [{"number": 1, "citation": "", "type": "other"}]
   },
@@ -542,7 +543,7 @@ ${reviewPeriodRules}
 ${rules ? `Slice-specific rules:
 ${rules}
 
-` : ''}Return ONE raw JSON object with this schema. Include every key shown; use empty arrays/strings for items you do not extract. You may add optional publication fields (articleKind, isNewSinceLastReview, previouslyListedAs, contributionNote, reviewMaterialUrl, bioBibSection, originalNumber) only when the CV explicitly provides that information:
+` : ''}Return ONE raw JSON object with this schema. Include every key shown; use empty arrays/strings for items you do not extract. You may add optional publication fields (articleKind, isNewSinceLastReview, isFacultyThesis, previouslyListedAs, contributionNote, reviewMaterialUrl, bioBibSection, originalNumber) only when the CV explicitly provides that information:
 ${schema}
 
 Output rules — IMPORTANT:
@@ -629,7 +630,7 @@ function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
   if (slice === 'II_memberships_awards') {
     return linesBetween(
       lines,
-      /\b(memberships|professional societies|honors and awards)\b/i,
+      /\b(memberships|professional societies|honors(?:,\s*|\s+and\s+)awards(?:\s+and\s+fellowships)?|awards and fellowships|honors and fellowships)\b/i,
       /\b(contracts and grants|research support|external professional activities)\b/i,
     );
   }
@@ -1300,6 +1301,10 @@ function mergeDuplicatePublication(
     previouslyListedAs: left.previouslyListedAs ?? right.previouslyListedAs,
     contributionNote: left.contributionNote ?? right.contributionNote,
     reviewMaterialUrl: left.reviewMaterialUrl ?? right.reviewMaterialUrl,
+    isFacultyThesis:
+      left.isFacultyThesis === true || right.isFacultyThesis === true
+        ? true
+        : left.isFacultyThesis ?? right.isFacultyThesis,
     isNewSinceLastReview:
       left.isNewSinceLastReview === true || right.isNewSinceLastReview === true
         ? true

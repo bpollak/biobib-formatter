@@ -16,6 +16,7 @@ import { SliceKey } from '@/lib/pipeline/slices';
 import { generateBioBibDocx } from '@/lib/docx/writer';
 import {
   deleteCvSourceData,
+  readCvResult,
   readCvRichText,
   readFinalStatus,
   readManifest,
@@ -79,7 +80,14 @@ export async function POST(
         }
       }
 
-      const merged = mergeSlices(parts);
+      const embeddedResult = manifest.roundTripSnapshot
+        ? await readCvResult(jobId)
+        : null;
+      if (manifest.roundTripSnapshot && !embeddedResult) {
+        throw new Error('Embedded BioBib result is missing during structured reprocessing.');
+      }
+
+      const merged = embeddedResult ?? mergeSlices(parts);
       if (manifest.reviewPeriodStart) {
         merged.metadata.reviewPeriodStart = manifest.reviewPeriodStart;
       }

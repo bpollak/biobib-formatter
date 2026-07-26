@@ -72,6 +72,16 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
+    releasedAt: 'July 26, 2026, 6:50 AM PDT',
+    title: 'Lossless BioBib Reprocessing Update',
+    changes: [
+      'Unedited generated BioBib drafts now retain their reviewed structured record inside the Word file, so processing a generated draft again preserves every section entry, manual-completion item, and placement review note without repeating AI extraction.',
+      'Faculty thesis and dissertation entries now remain in the generated bibliography even when the citation title does not repeat the faculty member’s name.',
+      'Expanded honors extraction to recognize CV sections labeled “Honors, Awards and Fellowships.”',
+      'Strengthened two-pass release verification to require exact structured-section, gap-list, and review-note preservation.',
+    ],
+  },
+  {
     releasedAt: 'July 25, 2026, 8:15 PM PDT',
     title: 'Safe Reprocessing and Duplicate Prevention Update',
     changes: [

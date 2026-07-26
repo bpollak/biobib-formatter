@@ -112,6 +112,20 @@ async function main() {
       !generatedTeachingExcerpt.includes('Diversity Program (2016)') &&
       !generatedTeachingExcerpt.includes('UNRELATED PUBLICATION'),
   );
+  const honorsAndFellowshipsExcerpt = compactCvTextForSlice([
+    'Faculty CV',
+    'Honors, Awards and Fellowships',
+    'Malcolm Jewell Award, 2015.',
+    'Doctoral Fellowship for Chinese Studies, 2014-2015.',
+    'Contracts and Grants',
+    'UNRELATED GRANT',
+  ].join('\n'), 'II_memberships_awards');
+  record(
+    'Honors, Awards and Fellowships headings are included in the awards slice',
+    honorsAndFellowshipsExcerpt.includes('Malcolm Jewell Award') &&
+      honorsAndFellowshipsExcerpt.includes('Doctoral Fellowship') &&
+      !honorsAndFellowshipsExcerpt.includes('UNRELATED GRANT'),
+  );
 
   const merged = mergeSlices([buildPartialResult()]);
 
@@ -236,6 +250,27 @@ async function main() {
       reparsed.rawText.includes('Section III – Bibliography'),
   );
   record(
+    'Generated BioBib carries an exact structured result for deterministic reprocessing',
+    JSON.stringify(reparsed.embeddedResult) === JSON.stringify(buildConversionResult(merged)),
+  );
+  const editedZip = await JSZip.loadAsync(buffer);
+  const editedDocumentXml = await editedZip.file('word/document.xml')?.async('string');
+  if (!editedDocumentXml) throw new Error('word/document.xml missing from generated DOCX');
+  editedZip.file(
+    'word/document.xml',
+    editedDocumentXml.replace('Chemical dynamics.', 'Edited specialization.'),
+  );
+  const editedBuffer = Buffer.from(await editedZip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+  }));
+  const reparsedEdited = await parseCV(editedBuffer);
+  record(
+    'Edited generated BioBibs fall back to visible-document extraction',
+    reparsedEdited.embeddedResult === undefined &&
+      reparsedEdited.rawText.includes('Edited specialization.'),
+  );
+  record(
     'Ordinary source text mentioning review concepts is not truncated',
     stripGeneratedReviewSummary(
       'Faculty CV\nConversion Review Summary\nA scholarly article title without the generated explanatory sentence.',
@@ -304,6 +339,11 @@ async function main() {
     text.includes('V. Other Articles') && text.includes('C. Work in Progress'),
   );
   record(
+    'Faculty thesis records render even when the citation omits the faculty surname',
+    text.includes('Vibrational State-Resolved Differential Cross Sections for the Reaction D + H2') &&
+      !text.includes('Advisee Dissertation That Belongs in Student Instructional Activities'),
+  );
+  record(
     'Bibliography preserves representative subscript and superscript runs',
     /w:vertAlign w:val="subscript"/.test(xml) && /w:vertAlign w:val="superscript"/.test(xml),
   );
@@ -337,9 +377,14 @@ async function main() {
 
   const periodBuffer = await generateBioBibDocx(buildConversionResult(merged), buildRichTextParagraphs(), { sinceYear: 2020 });
   const periodText = docxXmlToText((await docxParts(periodBuffer)).documentXml);
+  const reparsedPeriod = await parseCV(periodBuffer);
   record(
     'Review period line rendered when sinceYear is set',
     periodText.includes('Review period (Section II activities):') && periodText.includes('2020 – present'),
+  );
+  record(
+    'Generated BioBib snapshot preserves its Section II history option',
+    reparsedPeriod.embeddedSinceYear === 2020,
   );
 
   const failed = checks.filter(check => !check.pass);
@@ -476,7 +521,7 @@ function buildPartialResult(): PartialResult {
       peerReviewedJournals: [
         publication({
           citation: 'A. Scholar, "Example result," Journal 1, 1-2 (2025). Featured in Virtual Journal.',
-          articleKind: 'COVER ARTICLE' as PublicationEntry['articleKind'],
+          articleKind: 'research',
           contributionNote: 'Featured in Virtual Journal.',
           originalNumber: '123',
           bioBibSection: 'A.I.a',
@@ -529,6 +574,17 @@ function buildPartialResult(): PartialResult {
         publication({
           citation: 'Nieh J (1996) A stingless bee, Melipona panamica, may use sounds to communicate the location of a food source. 10th International Insect Sound and Vibration Meeting Abstracts. Woods Hole, Massachusetts.',
           type: 'abstract',
+        }),
+      ],
+      theses: [
+        publication({
+          citation: 'Vibrational State-Resolved Differential Cross Sections for the Reaction D + H2 → DH + H',
+          type: 'other',
+        }),
+        publication({
+          citation: 'Advisee Dissertation That Belongs in Student Instructional Activities',
+          type: 'other',
+          isFacultyThesis: false,
         }),
       ],
     },

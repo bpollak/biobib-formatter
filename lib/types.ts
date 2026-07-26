@@ -5,6 +5,10 @@
 export interface ParsedCV {
   rawText: string;
   richTextParagraphs?: RichTextParagraph[];
+  /** Structured result embedded by BioBib-generated DOCX files. */
+  embeddedResult?: ConversionResult;
+  /** Section II activity-history option used to generate an embedded result. */
+  embeddedSinceYear?: number;
   reviewPeriodStart?: string;
   name?: string;
   department?: string;
@@ -65,6 +69,8 @@ export interface PublicationEntry {
   previouslyListedAs?: string;
   contributionNote?: string;
   reviewMaterialUrl?: string;
+  /** Explicit source-context decision for entries placed in the theses bucket. */
+  isFacultyThesis?: boolean;
 }
 
 export interface StudentInstructionalGroup {
