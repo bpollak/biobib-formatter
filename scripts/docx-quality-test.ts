@@ -188,6 +188,10 @@ async function main() {
       merged.sections.awards.some(item => item.includes('Aarhus University Faculty Fellow') && item.includes('2017')),
   );
   record(
+    'Honorific awards with extra location wording do not render twice',
+    merged.sections.awards.filter(item => item.includes('Visiting Scientist') && item.includes('Sandia')).length === 1,
+  );
+  record(
     'Potential duplicate Section II placements are flagged for review',
     (merged.reviewNotes ?? []).some(note =>
       note.topic === 'Potential duplicate placement' &&
@@ -516,6 +520,7 @@ function buildPartialResult(): PartialResult {
         'Camille Dreyfus Teacher-Scholar 1996-2001',
         'David and Lucile Packard Fellow in Science and Engineering 1994-1999',
         'Phi Beta Kappa 1989',
+        'Visiting Scientist, Combustion Research Facility, Sandia Natl Laboratory, Livermore, CA 2000',
       ],
       grants: [
         {
