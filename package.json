@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "test:docx-quality": "tsx scripts/docx-quality-test.ts",
     "test:e2e-prod": "tsx scripts/e2e-prod-test.ts",
-    "test:regression": "tsx scripts/regression-test.ts"
+    "test:regression": "tsx scripts/regression-test.ts",
+    "test:release": "node -e \"require('node:fs').rmSync('.next', { recursive: true, force: true })\" && npm run test:docx-quality && npm run typecheck && npm run lint && npm run build",
+    "test:release:live": "tsx scripts/release-regression.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
