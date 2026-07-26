@@ -316,6 +316,8 @@ async function runRoundtripVerification({
   const secondSections = secondPass.status.result?.sections ?? {};
   const firstDuplicates = duplicateInventory(firstSections);
   const secondDuplicates = duplicateInventory(secondSections);
+  const firstCounts = sectionCounts(firstSections);
+  const secondCounts = sectionCounts(secondSections);
 
   record(
     'First pass has no high-confidence cross-section or publication duplicates',
@@ -332,6 +334,19 @@ async function runRoundtripVerification({
     secondDuplicates.every(item => firstDuplicates.includes(item)),
     `${firstDuplicates.length} first-pass; ${secondDuplicates.length} second-pass`,
   );
+  record(
+    'Second pass retains stable identity and bibliography counts',
+    secondCounts.employment === firstCounts.employment &&
+      secondCounts.education === firstCounts.education &&
+      countWithinTolerance(secondCounts.peerReviewedJournals, firstCounts.peerReviewedJournals, 0.02) &&
+      countWithinTolerance(secondCounts.otherPublications, firstCounts.otherPublications, 0.1),
+    `employment ${firstCounts.employment}→${secondCounts.employment}; education ${firstCounts.education}→${secondCounts.education}; journals ${firstCounts.peerReviewedJournals}→${secondCounts.peerReviewedJournals}; other publications ${firstCounts.otherPublications}→${secondCounts.otherPublications}`,
+  );
+  record(
+    'Second pass retains Section II content within 10%',
+    countWithinTolerance(secondCounts.sectionII, firstCounts.sectionII, 0.1),
+    `${firstCounts.sectionII}→${secondCounts.sectionII}`,
+  );
 
   const reportPath = join(artifactDir, `${sourceStem}-roundtrip-report.json`);
   await writeFile(reportPath, JSON.stringify({
@@ -341,20 +356,25 @@ async function runRoundtripVerification({
     firstPass: {
       jobId: firstPass.jobId,
       state: firstPass.status.state,
-      counts: sectionCounts(firstSections),
+      counts: firstCounts,
       duplicates: firstDuplicates,
       outputPath: firstOutputPath,
     },
     secondPass: {
       jobId: secondPass.jobId,
       state: secondPass.status.state,
-      counts: sectionCounts(secondSections),
+      counts: secondCounts,
       duplicates: secondDuplicates,
       outputPath: secondOutputPath,
     },
     checks,
   }, null, 2));
   record('Roundtrip artifacts and comparison report written', true, artifactDir);
+}
+
+function countWithinTolerance(actual: number, expected: number, tolerance: number): boolean {
+  if (expected === 0) return actual === 0;
+  return Math.abs(actual - expected) / expected <= tolerance;
 }
 
 async function runPipelinePass(

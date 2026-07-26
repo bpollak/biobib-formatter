@@ -577,7 +577,7 @@ function yearWindowForSlice(slice: SliceKey): YearWindow | null {
   return null;
 }
 
-function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
+export function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
   const lines = rawText
     .split(/\r?\n/)
     .map(line => line.trim())
@@ -622,19 +622,51 @@ function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
   if (slice.startsWith('II_service_')) {
     return linesBetween(
       lines,
-      /\b(departmental and university service activities|service to uc(?:\s*&\s*|\s+and\s+)uc san diego)\b/i,
-      /\b(professional service activities|service outside of uc(?:\s*&\s*|\s+and\s+)uc san diego)\b/i,
+      /\b(departmental and university service activities|service to uc(?:\s*&\s*|\s+and\s+)uc san diego|university service)\b/i,
+      /\b(professional service activities|service outside of uc(?:\s*&\s*|\s+and\s+)uc san diego|memberships)\b/i,
+    );
+  }
+  if (slice === 'II_memberships_awards') {
+    return linesBetween(
+      lines,
+      /\b(memberships|professional societies|honors and awards)\b/i,
+      /\b(contracts and grants|research support|external professional activities)\b/i,
+    );
+  }
+  if (slice === 'II_teaching') {
+    return linesBetween(
+      lines,
+      /\b(student instructional activities|educational activities|teaching and mentoring)\b/i,
+      /\b(external reviews of primary creative work|section iii)\b/i,
+    );
+  }
+  if (slice === 'II_grants') {
+    return linesBetween(
+      lines,
+      /\b(contracts and grants|current research support|past research support)\b/i,
+      /\b(external professional activities|professional service activities)\b/i,
     );
   }
   if (slice.startsWith('II_presentations')) {
     return linesBetween(
       lines,
-      /\b(invited lectures at national and international meetings|invited lectures at institutions)\b/i,
-      /\babstracts and contributed talks\b/i,
+      /\b(invited lectures at national and international meetings|invited lectures at institutions|presentations at national and international meetings|other invited presentations)\b/i,
+      /\b(abstracts and contributed talks|most significant contributions to promoting diversity)\b/i,
     );
   }
   if (slice === 'II_external') {
-    return linesBetween(lines, /\bprofessional service activities\b/i, /\beducational activities\b/i);
+    return linesBetween(
+      lines,
+      /\b(professional service activities|external professional activities)\b/i,
+      /\b(educational activities|presentations at national and international meetings|most significant contributions to promoting diversity)\b/i,
+    );
+  }
+  if (slice === 'II_diversity_other') {
+    return linesBetween(
+      lines,
+      /\b(most significant contributions to promoting diversity|contributions to diversity|outreach)\b/i,
+      /\b(student instructional activities|educational activities|section iii)\b/i,
+    );
   }
   if (slice.startsWith('III_abstracts')) {
     return linesBetween(lines, /\babstracts and contributed talks\b/i);

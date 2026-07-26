@@ -2,7 +2,12 @@ import JSZip from 'jszip';
 import { parseCV, stripGeneratedReviewSummary } from '../lib/docx/reader';
 import { generateBioBibDocx } from '../lib/docx/writer';
 import { LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../lib/constants';
-import { mergeSlices, modelCandidatesForSlice, PartialResult } from '../lib/pipeline/converter';
+import {
+  compactCvTextForSlice,
+  mergeSlices,
+  modelCandidatesForSlice,
+  PartialResult,
+} from '../lib/pipeline/converter';
 import { SLICE_KEYS } from '../lib/pipeline/slices';
 import { ConversionResult, PublicationEntry } from '../lib/types';
 
@@ -52,6 +57,60 @@ async function main() {
   record(
     'Model routing omits unavailable providers',
     onPremOnlyRoute.length === 1 && onPremOnlyRoute[0]?.provider === 'onPrem',
+  );
+  const generatedBioBibText = [
+    'Section I: Employment History and Education',
+    'UNRELATED EMPLOYMENT SHOULD NOT REACH SECTION II SLICES',
+    'Section II: Professional Data',
+    '(a) University Service',
+    'Departmental Service',
+    'Search Committee (2009)',
+    '(b) Memberships',
+    'Society Member (2010)',
+    '(c) Honors and Awards',
+    'Teaching Award (2011)',
+    '(d) Contracts and Grants',
+    'Research Support (2012)',
+    '(e) External Professional Activities',
+    'Professional Committee Service and Conference Organization',
+    'Conference Organizer (2013)',
+    'Reviewer for External Academic Files, Funding Agencies, and Journals',
+    'Journal Reviewer (2014)',
+    'Presentations at National and International Meetings',
+    'Invited Presentation (2015)',
+    '(f) Most Significant Contributions to Promoting Diversity',
+    'Diversity Program (2016)',
+    '(g) Other Activities',
+    'Public Outreach (2017)',
+    '(h) Student Instructional Activities',
+    'Former Ph.D. Students',
+    'Student A (2018)',
+    '(i) External Reviews of Primary Creative Work',
+    'None submitted with file.',
+    'Section III – Bibliography',
+    'UNRELATED PUBLICATION SHOULD NOT REACH SECTION II SLICES',
+  ].join('\n');
+  const generatedServiceExcerpt = compactCvTextForSlice(generatedBioBibText, 'II_service_pre_2010');
+  const generatedExternalExcerpt = compactCvTextForSlice(generatedBioBibText, 'II_external');
+  const generatedTeachingExcerpt = compactCvTextForSlice(generatedBioBibText, 'II_teaching');
+  record(
+    'Generated BioBib headings bound service reprocessing input',
+    generatedServiceExcerpt.includes('Search Committee (2009)') &&
+      !generatedServiceExcerpt.includes('Society Member (2010)') &&
+      !generatedServiceExcerpt.includes('UNRELATED EMPLOYMENT'),
+  );
+  record(
+    'Generated BioBib headings bound external-activity reprocessing input',
+    generatedExternalExcerpt.includes('Conference Organizer (2013)') &&
+      generatedExternalExcerpt.includes('Journal Reviewer (2014)') &&
+      !generatedExternalExcerpt.includes('Invited Presentation (2015)') &&
+      !generatedExternalExcerpt.includes('UNRELATED PUBLICATION'),
+  );
+  record(
+    'Generated BioBib headings bound teaching reprocessing input',
+    generatedTeachingExcerpt.includes('Student A (2018)') &&
+      !generatedTeachingExcerpt.includes('Diversity Program (2016)') &&
+      !generatedTeachingExcerpt.includes('UNRELATED PUBLICATION'),
   );
 
   const merged = mergeSlices([buildPartialResult()]);

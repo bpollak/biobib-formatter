@@ -72,7 +72,7 @@ const SLICE_GROUPS = [
 
 const RELEASE_NOTES = [
   {
-    releasedAt: 'July 25, 2026, 6:44 PM PDT',
+    releasedAt: 'July 25, 2026, 8:15 PM PDT',
     title: 'Safe Reprocessing and Duplicate Prevention Update',
     changes: [
       'Made generated BioBib drafts safer to process again by excluding the conversion-review appendix from subsequent CV extraction.',
@@ -80,6 +80,7 @@ const RELEASE_NOTES = [
       'Improved bibliography cleanup so repeated citations do not accumulate within publication sections or Work in Progress.',
       'Added two-pass release verification to confirm generated documents retain the expected formatting and do not introduce new high-confidence duplicates when reprocessed.',
       'Split long university-service histories into smaller review periods so service-heavy CVs can complete more reliably.',
+      'Generated BioBibs now use their own standardized section headings to bound reprocessing tasks, preventing long records from being silently skipped on a second pass.',
     ],
   },
   {
