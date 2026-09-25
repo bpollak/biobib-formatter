@@ -59,6 +59,8 @@ export interface ServiceEntry {
 }
 
 export interface PublicationEntry {
+  /** Immutable input record IDs used to verify extraction coverage. */
+  sourceIds?: string[];
   number: number;
   citation: string; // Preserve original format from CV
   type: 'journal' | 'review' | 'book' | 'chapter' | 'proceedings' | 'abstract' | 'popular' | 'other';
@@ -161,5 +163,6 @@ export interface ConversionResult {
     title: string;
     processedAt: string;
     reviewPeriodStart?: string;
+    extractionCoverage?: { required: number; preserved: number; sourceRecords: number };
   };
 }

@@ -22,11 +22,11 @@ const PIPELINE_STEPS = [
   },
   {
     title: '2. The CV is split into smaller review tasks',
-    body: 'Large faculty CVs can be too much to handle all at once, so the app divides the BioBib into 23 smaller parts. Different parts look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
+    body: 'The app divides the BioBib into 23 review tasks and processes long sections in smaller batches of complete source records. Different tasks look for employment, education, service, grants, teaching, presentations, publications, abstracts, patents, and other BioBib sections.',
   },
   {
     title: '3. UCSD TritonAI reviews each part',
-    body: 'The app sends each smaller part through UCSD TritonAI using model routing matched to the section type. Higher-fidelity sections use the cloud model first, while more mechanical sections can use an on-prem model with cloud fallback.',
+    body: 'The app sends each smaller part to GLM 5.3 Flash through the UCSD TritonAI gateway. All extraction sections use the on-prem model.',
   },
   {
     title: '4. Progress is tracked while the work runs',
@@ -34,7 +34,7 @@ const PIPELINE_STEPS = [
   },
   {
     title: '5. The app assembles the BioBib',
-    body: 'After the smaller parts finish, the app combines the results, removes common duplicates, keeps many non-employment roles out of employment history, renumbers publication lists, and creates a new BioBib Word document.',
+    body: 'After the smaller parts finish, the app combines the results, copies citation text from the source, removes common duplicates, and checks that detected bibliography records survived assembly. An unresolved bibliography omission prevents the document from being marked complete.',
   },
   {
     title: '6. You download the draft',
@@ -73,9 +73,9 @@ const SLICE_GROUPS = [
 ];
 
 const OUTPUT_RULES = [
-  'Keeps citation text as close as possible to the way it appears in the CV.',
-  'Uses routed UCSD TritonAI models for the section review work.',
-  'Breaks long journal, abstract, and presentation lists into smaller date ranges so large CVs are more likely to finish.',
+  'Copies bibliography text from the source records, preserving citation wording and annotations.',
+  'Uses on-prem GLM 5.3 Flash through UCSD TritonAI for all section review work.',
+  'Processes long sections in bounded batches and retries missing source records before assembly.',
   'Avoids adding extra publication details unless the CV clearly provides them.',
   'Removes many duplicate entries after the sections are combined.',
   'Tries to keep fellowships, visiting titles, senate offices, and service roles out of Section I employment when they are not true employment history.',
@@ -103,7 +103,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'What AI model does it use?',
-    a: 'The current version uses routed UCSD TritonAI review. Higher-fidelity sections use the cloud model first, while eligible mechanical extraction sections can use an on-prem model with cloud fallback.',
+    a: 'All CV extraction sections use GLM 5.3 Flash, hosted on premises through UCSD TritonAI. The application does not automatically switch to a cloud model.',
   },
   {
     q: 'What does the app fill in?',

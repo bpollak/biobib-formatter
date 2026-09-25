@@ -1,7 +1,8 @@
 import JSZip from 'jszip';
+import { inspectTableValues } from './docx-table-checks';
 import { parseCV, stripGeneratedReviewSummary } from '../lib/docx/reader';
 import { generateBioBibDocx } from '../lib/docx/writer';
-import { LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../lib/constants';
+import { LITELLM_ON_PREM_MODEL } from '../lib/constants';
 import {
   compactCvTextForSlice,
   mergeSlices,
@@ -25,6 +26,17 @@ function record(name: string, pass: boolean, detail?: string) {
 }
 
 async function main() {
+  const tableXml = (values: string[]) => `<w:tbl><w:tr>${values.map(value =>
+    `<w:tc><w:p><w:r><w:t>${value}</w:t></w:r></w:p></w:tc>`,
+  ).join('')}</w:tr></w:tbl>`;
+  record('Complete tables do not require an invented missing-value marker',
+    inspectTableValues(tableXml(['2017', 'Example University', 'Example City', 'Professor'])).pass);
+  record('An unexplained empty table cell fails even when another cell says Not listed',
+    !inspectTableValues(tableXml(['Not listed', ''])).pass);
+  record('Explicit missing-value markers satisfy table-cell review',
+    inspectTableValues(tableXml(['Not listed', 'Professor'])).pass);
+  record('Intentional review dividers do not count as missing data cells',
+    inspectTableValues(tableXml(['New since last review', '', '']) + tableXml(['Source value'])).pass);
   record(
     'Long service histories are split into bounded extraction slices',
     SLICE_KEYS.length === 23 &&
@@ -33,39 +45,30 @@ async function main() {
       SLICE_KEYS.includes('II_service_post_2020') &&
       SLICE_KEYS.includes('II_memberships_awards'),
   );
-  const highFidelityRoute = modelCandidatesForSlice('III_journals_late', { cloud: true, onPrem: true });
-  const feedbackSensitiveRoute = modelCandidatesForSlice('II_memberships_awards', { cloud: true, onPrem: true });
-  const presentationRoute = modelCandidatesForSlice('II_presentations_post_2020', { cloud: true, onPrem: true });
-  const mechanicalRoute = modelCandidatesForSlice('II_service_post_2020', { cloud: true, onPrem: true });
-  const onPremOnlyRoute = modelCandidatesForSlice('meta_and_I', { cloud: false, onPrem: true });
-
-  record(
-    'High-fidelity bibliography slices prefer cloud with on-prem fallback',
-    highFidelityRoute[0]?.provider === 'cloud' &&
-      highFidelityRoute[0]?.model === LITELLM_MODEL &&
-      highFidelityRoute[1]?.provider === 'onPrem' &&
-      highFidelityRoute[1]?.model === LITELLM_ON_PREM_MODEL,
+  const allRoutes = SLICE_KEYS.map(slice =>
+    modelCandidatesForSlice(slice, { cloud: true, onPrem: true }),
   );
   record(
-    'Feedback-sensitive honors and presentation slices prefer the high-fidelity route',
-    feedbackSensitiveRoute[0]?.provider === 'cloud' &&
-      feedbackSensitiveRoute[1]?.provider === 'onPrem' &&
-      presentationRoute[0]?.provider === 'cloud' &&
-      presentationRoute[1]?.provider === 'onPrem',
+    'Every extraction section uses only the selected on-prem model',
+    allRoutes.every(route => route.length === 1 &&
+      route[0].provider === 'onPrem' && route[0].model === LITELLM_ON_PREM_MODEL),
   );
   record(
-    'Mechanical extraction slices prefer on-prem with cloud fallback',
-    mechanicalRoute[0]?.provider === 'onPrem' &&
-      mechanicalRoute[0]?.model === LITELLM_ON_PREM_MODEL &&
-      mechanicalRoute[1]?.provider === 'cloud',
+    'Legacy cloud credentials cannot provide an implicit fallback',
+    SLICE_KEYS.every(slice => modelCandidatesForSlice(slice, { cloud: true, onPrem: false }).length === 0),
   );
   record(
-    'On-prem fallback route has larger completion budget than cloud route',
-    (mechanicalRoute[0]?.maxTokens ?? 0) > (mechanicalRoute[1]?.maxTokens ?? 0),
+    'On-prem extraction retains its full completion budget',
+    allRoutes.every(route => route[0].maxTokens >= 32768),
   );
   record(
-    'Model routing omits unavailable providers',
-    onPremOnlyRoute.length === 1 && onPremOnlyRoute[0]?.provider === 'onPrem',
+    'GLM extraction bounds reasoning to leave room for complete JSON',
+    !/^(?:api-)?glm-5\.3(?:-flash)?$/i.test(LITELLM_ON_PREM_MODEL) ||
+      allRoutes.every(route => route[0].reasoningEffort === 'high'),
+  );
+  record(
+    'On-prem routing works without a cloud credential',
+    modelCandidatesForSlice('meta_and_I', { cloud: false, onPrem: true }).length === 1,
   );
   const generatedBioBibText = [
     'Section I: Employment History and Education',
@@ -137,6 +140,8 @@ async function main() {
   );
   const appointmentHonorsExcerpt = compactCvTextForSlice([
     'Faculty CV',
+    'Education: B.A., Example University, 1983',
+    'Graduated with departmental honors.',
     'Appointments',
     'Professor, Example University 1999-present',
     'Kurt Shuler Scholar in Physical Chemistry 2006-2011',
@@ -147,6 +152,11 @@ async function main() {
     'Contracts and Grants',
     'UNRELATED GRANT',
   ].join('\n'), 'II_memberships_awards');
+  record(
+    'Education honors and their degree year survive awards excerpt selection',
+    appointmentHonorsExcerpt.includes('Graduated with departmental honors.') &&
+      appointmentHonorsExcerpt.includes('Education: B.A., Example University, 1983'),
+  );
   record(
     'Appointment sections are included when extracting honorific awards',
     appointmentHonorsExcerpt.includes('Kurt Shuler Scholar') &&
@@ -195,6 +205,20 @@ async function main() {
   record(
     'Honorific awards with extra location wording do not render twice',
     merged.sections.awards.filter(item => item.includes('Visiting Scientist') && item.includes('Sandia')).length === 1,
+  );
+  const honorVariants = mergeSlices([{ sections: { awards: [
+    'Visiting Scientist, Energy Research Facility, Example Nat’l Laboratory, Harbor City, CA 2000',
+    'Visiting Scientist, Energy Research Facility, Example National Laboratory 2000',
+    'Visiting Scientist, Energy Research Facility, Example National Laboratory 2001',
+    'Visiting Scientist, Energy Research Facility, Example National Laboratory 2000 – 2002',
+    'Example University Faculty Fellow, 2017',
+    'Example University Faculty Fellow, Example University 2017',
+  ] } }]);
+  record(
+    'Abbreviated honor institutions merge only when appointment dates match',
+    honorVariants.sections.awards.length === 4 &&
+      honorVariants.sections.awards.some(item => item.endsWith('2001')) &&
+      honorVariants.sections.awards.some(item => item.endsWith('2000 – 2002')),
   );
   record(
     'Potential duplicate Section II placements are flagged for review',

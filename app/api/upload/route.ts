@@ -45,16 +45,20 @@ function isAllowedUploadUrl(value: string): boolean {
 }
 
 export async function POST(req: NextRequest) {
+  const body: unknown = await req.json().catch(() => null);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'A JSON object is required.' }, { status: 400 });
+  }
   const {
     blobUrl,
     fileName,
     sinceYear: rawSinceYear,
     reviewPeriodStart: rawReviewPeriodStart,
-  } = (await req.json().catch(() => ({}))) as {
-    blobUrl?: string;
-    fileName?: string;
+  } = body as {
+    blobUrl?: unknown;
+    fileName?: unknown;
     sinceYear?: unknown;
-    reviewPeriodStart?: string;
+    reviewPeriodStart?: unknown;
   };
   const requestedSinceYear =
     typeof rawSinceYear === 'number' &&
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest) {
       : undefined;
   const reviewPeriodStart = normalizeReviewPeriodStart(rawReviewPeriodStart);
 
-  if (!blobUrl || !fileName) {
+  if (typeof blobUrl !== 'string' || !blobUrl || typeof fileName !== 'string' || !fileName) {
     return NextResponse.json({ error: 'blobUrl and fileName are required.' }, { status: 400 });
   }
   if (!fileName.toLowerCase().endsWith('.docx')) {
@@ -168,7 +172,9 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ jobId }, { status: 202 });
 }
 
-function normalizeReviewPeriodStart(value: string | undefined): string | false {
+function normalizeReviewPeriodStart(value: unknown): string | false {
+  if (value === undefined) return '';
+  if (typeof value !== 'string') return false;
   const trimmed = value?.trim();
   if (!trimmed) return '';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return false;

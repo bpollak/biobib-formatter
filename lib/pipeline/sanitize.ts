@@ -138,6 +138,9 @@ function sanitizePublications(value: unknown): PublicationEntry[] {
         ? (item.type as PublicationEntry['type'])
         : 'other',
     };
+    if (Array.isArray(item.sourceIds) && item.sourceIds.every(id => typeof id === 'string')) {
+      entry.sourceIds = [...new Set(item.sourceIds as string[])];
+    }
     const articleKind = asString(item.articleKind);
     if (['research', 'review', 'creative', 'other'].includes(articleKind)) {
       entry.articleKind = articleKind as PublicationEntry['articleKind'];
