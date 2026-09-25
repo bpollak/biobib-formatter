@@ -24,6 +24,9 @@ import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
 import { put } from '@vercel/blob';
 import JSZip from 'jszip';
+import mammoth from 'mammoth';
+import { sourceIdentifierChecks } from './source-acceptance';
+import { inspectTableValues } from './docx-table-checks';
 import { MAX_FILE_SIZE_BYTES } from '../lib/constants';
 import {
   normalizeRecordForComparison,
@@ -240,6 +243,9 @@ async function main() {
   }
 
   const sec = lastStatus.result?.sections ?? {};
+  for (const check of sourceIdentifierChecks((await mammoth.extractRawText({ buffer: fileBytes })).value, sec, profile)) {
+    record(`First pass: ${check.name}`, check.pass, check.detail);
+  }
   const emp = (sec.employment as unknown[] | undefined)?.length ?? 0;
   const edu = (sec.education as unknown[] | undefined)?.length ?? 0;
   const pubs = (sec.peerReviewedJournals as unknown[] | undefined)?.length ?? 0;
@@ -287,7 +293,7 @@ async function main() {
       record('Generated DOCX does not expose BioBib section metadata', !/\bBioBib section:/i.test(outputText));
       record('Generated DOCX does not expose review-material metadata', !/\breview material:/i.test(outputText));
       record('Generated DOCX does not render duplicate article labels', !/\bARTICLE\s+ARTICLE\b/i.test(outputText));
-      record('Generated DOCX uses explicit review text for unavailable table values', outputText.includes('Not listed'));
+      await recordTableValues(buf, 'Generated DOCX');
       if (reviewPeriodStart) {
         record(
           'Generated DOCX displays the exact review-period start date',
@@ -359,6 +365,9 @@ async function runRoundtripVerification({
   const secondCounts = sectionCounts(secondSections);
   const firstResult = firstPass.status.result;
   const secondResult = secondPass.status.result;
+  for (const check of sourceIdentifierChecks((await mammoth.extractRawText({ buffer: await readFile(sourcePath) })).value, secondSections, profile)) {
+    record(`Second pass: ${check.name}`, check.pass, check.detail);
+  }
   if (profile) {
     recordProfileChecks(profile, secondSections, secondResult?.metadata, 'Second pass');
   }
@@ -639,7 +648,15 @@ async function recordDocxChecks(buffer: Buffer, label: string): Promise<void> {
   record(`${label}: DOCX does not expose BioBib section metadata`, !/\bBioBib section:/i.test(outputText));
   record(`${label}: DOCX does not expose review-material metadata`, !/\breview material:/i.test(outputText));
   record(`${label}: DOCX does not render duplicate article labels`, !/\bARTICLE\s+ARTICLE\b/i.test(outputText));
-  record(`${label}: DOCX uses explicit review text for unavailable table values`, outputText.includes('Not listed'));
+  await recordTableValues(buffer, `${label}: DOCX`);
+}
+
+async function recordTableValues(buffer: Buffer, label: string): Promise<void> {
+  const zip = await JSZip.loadAsync(buffer);
+  const xml = await zip.file('word/document.xml')?.async('string') ?? '';
+  const result = inspectTableValues(xml);
+  record(`${label} table cells contain source values or explicit review text`, result.pass,
+    `${result.cells} data cells checked; ${result.blanks} unexplained blanks`);
 }
 
 function sectionCounts(sections: Record<string, unknown[]>): Record<string, number> & {

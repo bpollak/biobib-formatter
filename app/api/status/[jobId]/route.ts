@@ -10,7 +10,7 @@
  * delay), this route fires a fallback /api/finalize call.
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { computeStatus } from '@/lib/jobs/store';
 import { getInternalFetchHeaders } from '@/lib/jobs/auth';
 
@@ -26,14 +26,18 @@ export async function GET(
     }
 
     if (status.needsFinalizeKick) {
-      try {
-        fetch(`${req.nextUrl.origin}/api/finalize/${jobId}`, {
-          method: 'POST',
-          headers: getInternalFetchHeaders(),
-        }).catch(err => console.error(`[/api/status ${jobId}] finalize kick failed:`, err));
-      } catch (e) {
-        console.error(`[/api/status ${jobId}] cannot kick finalize:`, (e as Error).message);
-      }
+      // Keep the recovery request alive after the polling response is sent.
+      after(async () => {
+        try {
+          const response = await fetch(`${req.nextUrl.origin}/api/finalize/${jobId}`, {
+            method: 'POST',
+            headers: getInternalFetchHeaders(),
+          });
+          if (!response.ok) throw new Error(`Finalize returned HTTP ${response.status}`);
+        } catch (e) {
+          console.error(`[/api/status ${jobId}] finalize kick failed:`, e);
+        }
+      });
     }
 
     // Don't leak the internal flag to the client.

@@ -91,6 +91,15 @@ function evaluateContinetti(sections: Sections, metadata: Metadata): ProfileChec
 
   return [
     {
+      name: 'Faculty thesis title from education survives in the bibliography',
+      pass: countAnchorMatches(publicationCitations(sections.theses), 'Vibrational State-Resolved Differential Cross Sections for the Reaction') === 1,
+    },
+    {
+      name: 'Faraday journal articles remain in journals despite associated meetings',
+      pass: ['Dynamics of endoergic aromatic substitution reactions', 'Excited state dynamics in clusters of oxygen', 'Transition state dynamics of the OH + H2O hydrogen exchange reaction'].every(anchor =>
+        countAnchorMatches(publicationCitations(sections.peerReviewedJournals), anchor) === 1),
+    },
+    {
       name: 'Profile identifies the expected faculty CV',
       pass: stringValue(metadata.name).includes('Continetti'),
       detail: stringValue(metadata.name) || 'name missing',
@@ -143,6 +152,11 @@ function evaluateNieh(sections: Sections, metadata: Metadata): ProfileCheck[] {
   const numberedAbstracts = abstracts.filter(item => /^\s*(?:\(\d+\)|\d+[.)])/.test(item));
 
   return [
+    {
+      name: 'Both source protocol papers are retained exactly once in the bibliography',
+      pass: ['37638302', '39093704'].every(id =>
+        Object.values(sections).flatMap(items => publicationCitations(items)).filter(citation => citation.includes(id)).length === 1),
+    },
     {
       name: 'Profile identifies the expected faculty CV',
       pass: stringValue(metadata.name).includes('Nieh'),

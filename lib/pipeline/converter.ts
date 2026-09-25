@@ -19,9 +19,13 @@ import {
   BioBibReviewNote,
   PublicationEntry,
 } from '../types';
-import { LITELLM_BASE_URL, LITELLM_MODEL, LITELLM_ON_PREM_MODEL } from '../constants';
+import { LITELLM_BASE_URL, LITELLM_ON_PREM_MODEL } from '../constants';
+import { fetchWithRateLimitRetry } from './fetch-with-retry';
+import { buildResponseSchema } from './response-schema';
 import { SliceKey } from './slices';
 import { sanitizePartialResult } from './sanitize';
+import { batchSourceRecords, recordsForSlice, sourceRecords, isBibliographyRecord, type SourceRecord } from './source-records';
+import { validateCoveredResult, combineCoveredParts, CoverageError, type SourceCoverage } from './coverage';
 import {
   dedupeBy,
   dedupeComparableStrings,
@@ -113,6 +117,7 @@ const PRESENTATION_LATE_END = 2020;
 const PRESENTATION_POST_2020_START = 2021;
 
 export interface PartialResult {
+  coverage?: SourceCoverage;
   sections: Partial<BioBibSections>;
   gaps?: BioBibGap[];
   reviewNotes?: BioBibReviewNote[];
@@ -130,60 +135,56 @@ export interface SliceModelCandidate {
   provider: ModelProvider;
   model: string;
   maxTokens: number;
+  reasoningEffort?: 'low' | 'high';
 }
 
-const CLOUD_MAX_TOKENS = 12000;
-const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 16000);
-
-const HIGH_FIDELITY_SLICES = new Set<SliceKey>([
-  'meta_and_I',
-  'II_memberships_awards',
-  'II_teaching',
-  'II_presentations_pre_2000',
-  'II_presentations_2000_2010',
-  'II_presentations_2011_2020',
-  'II_presentations_post_2020',
-  'III_journals_pre_2000',
-  'III_journals_2000_2010',
-  'III_journals_late',
-  'III_other_a',
-  'III_other_proc',
-]);
+const ON_PREM_MAX_TOKENS = Number(process.env.LITELLM_ON_PREM_MAX_TOKENS || 32768);
 
 export function modelCandidatesForSlice(
-  slice: SliceKey,
+  _slice: SliceKey,
   available: Partial<Record<ModelProvider, boolean>> = { cloud: true, onPrem: true },
 ): SliceModelCandidate[] {
-  const highFidelityOrder: SliceModelCandidate[] = [
-    { provider: 'cloud', model: LITELLM_MODEL, maxTokens: CLOUD_MAX_TOKENS },
-    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL, maxTokens: ON_PREM_MAX_TOKENS },
+  // Use the selected on-prem model for every section, even if a legacy cloud
+  // credential remains configured in the deployment environment.
+  return available.onPrem === false ? [] : [
+    {
+      provider: 'onPrem', model: LITELLM_ON_PREM_MODEL, maxTokens: ON_PREM_MAX_TOKENS,
+      // GLM 5.3 defaults to maximum reasoning, which can consume the budget
+      // before a long extraction's JSON is complete. Other models may not
+      // support this parameter, so only send it to the verified GLM family.
+      ...(/^(?:api-)?glm-5\.3(?:-flash)?$/i.test(LITELLM_ON_PREM_MODEL)
+        ? { reasoningEffort: 'high' as const } : {}),
+    },
   ];
-  const costControlledOrder: SliceModelCandidate[] = [
-    { provider: 'onPrem', model: LITELLM_ON_PREM_MODEL, maxTokens: ON_PREM_MAX_TOKENS },
-    { provider: 'cloud', model: LITELLM_MODEL, maxTokens: CLOUD_MAX_TOKENS },
-  ];
-  const ordered = HIGH_FIDELITY_SLICES.has(slice) ? highFidelityOrder : costControlledOrder;
-  return ordered.filter(candidate => available[candidate.provider] !== false);
 }
 
 const PRESENTATION_RULES = `
 - Extract invited/keynote/plenary seminars, invited departmental seminars, named lectures, and selected national/international meeting presentations.
 - Put items under CV headings like "Invited Lectures at National and International Meetings", "National and International Meetings", conference presentations, symposium presentations, workshop presentations, and society meeting presentations in "presentations".
 - Put items under CV headings like "Invited Lectures at Institutions", "Invited Departmental Seminars", "Institutional Seminars", university seminars, departmental seminars, and named campus lectures in "invitedPresentations".
-- Prefer presentations explicitly marked new or dated 7/2018-present when the CV indicates a review-period subset.
+- Extract every eligible presentation in this slice's requested date range. A source "New" marker or last-review divider labels records; it does not authorize dropping older records. Apply a narrower review period only when the user-provided review-period restriction below explicitly requires it.
 - Exclude posters, contributed talks, conference abstracts, co-author abstracts, and numbered abstract lists; those belong in Section III abstracts, not Section II.
 - Exclude grant review panels, editorial boards, conference organization, and professional committee service; those belong in externalProfessionalActivities or reviewerActivities.
 - Return concise presentation strings without leading source numbering such as "1." or "23.".
 - If a source presentation starts with a date, move that date to the end of the returned record.
 - Preserve the source date at its original precision when moving it. For example, "May 20, 1995" must remain "May 20, 1995" at the end, not be shortened to "1995".
+- Copy the source date wording literally, including month abbreviations; do not expand an abbreviated month or substitute a different date format.
 `.trim();
 
 const SERVICE_RULES = `
 - Extract University Service and Public Service only. Do not extract professional society service, external reviewing, memberships, honors, awards, grants, teaching, or presentations.
+- Retain administrative leadership of grant-funded training programs when the CV lists those roles under university service. A director or co-director service appointment is distinct from the grant funding record; preserve each separate service period without copying grant amounts or funding details.
 - Keep service entries concise: description in "description", bare year/range in "dates" without surrounding parentheses.
 - Do not prefix service descriptions with their category name; use "Graduate Recruitment Committee", not "Departmental Graduate Recruitment Committee".
 - Chronological order means oldest first by the initial date of service; for date ranges, use the first date in the range.
 - Put dates in the "dates" field when a structured service record has one. For string-only public-service records, put the date at the end.
+`.trim();
+
+// Journal and review slices must agree on ownership, or each can exclude the
+// same record as belonging to the other and it silently leaves the document.
+const JOURNAL_RULES = `
+- The source heading decides ownership. Every record in this date window listed under a journal-article or research-paper heading (for example "Peer-reviewed Research Papers", "Journal Articles", "Refereed Publications") belongs in peerReviewedJournals, even when its content is a review, synthesis, perspective, or commentary. Set articleKind to "review" when the record is evidently a review; do not exclude it.
+- Leave records to the Review and Invited Articles task only when the source lists them under a separate review or invited-article heading.
 `.trim();
 
 const SERVICE_SCHEMA = `{
@@ -215,6 +216,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - Employment: use only true employment, academic appointments, and research/teaching assistantships from the CV's employment/appointments history.
 - Include Teaching Assistant and Research Assistant roles when listed in the CV, with their exact intermittent/month-level dates.
 - Preserve separate UCSD professor rank/step periods instead of collapsing them into one long Professor row.
+- Preserve Distinguished Professor appointments as their own employment rows, including the complete title, institution, and date range; do not shorten them to Professor or merge them into a concurrent Professor appointment.
 - Exclude honors/fellowships/scholar designations, sabbaticals, visiting lecture/fellow titles, committee/service roles, Academic Senate offices, grant roles, and future chair designations unless the CV explicitly lists them in employment history.
 - Do not put Professore Visitatore, Wilsmore Fellow, Aarhus University Faculty Fellow, Kurt Shuler Scholar, Academic Senate Chair, Department Chair, Senior Associate Vice Chancellor, or Distinguished Chair in employment unless the CV's employment section says they are employment appointments.
 - Education: preserve exact attendance ranges, locations, major fields, degree names, and date received exactly as shown; do not reduce "9/79 - 5/83" to just "1983".
@@ -238,8 +240,11 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
 - Memberships must include scholarly societies, professional boards, civic/professional organizations, elected fellow memberships, and honor societies when listed.
 - Do not omit general society memberships such as AGU, RSC, AAAS, APS, ACS, or Phi Beta Kappa when present.
 - Honors and awards should include fellowships, awards, named honors, elected fellow distinctions, and honorific or short-term visiting appointments with dates.
+- Include academic and graduation honors listed under Education, preserving the associated degree year when explicitly provided.
+- Include Distinguished Professor distinctions with their complete title, institution, and date range, including when listed under Appointments. Retain this honor even when the same appointment also belongs in employment history; do not confuse it with an ordinary Professor rank.
 - When the CV lists appointment-like honors under an "Appointments" heading, classify Visiting Scientist, Professore Visitatore, named Scholar, named Fellow, visiting faculty fellow, and sabbatical/short-term honorific appointments as Honors and Awards unless the CV clearly presents them as ordinary employment.
-- It is acceptable for an elected fellow distinction to appear both as a membership and as an honor/award when the CV supports both uses.
+- Retain EVERY record explicitly listed under the source CV's Honors and Awards headings in awards, even if it also describes a society membership. Do not move an honor out of awards solely because its organization also appears in memberships.
+- Elected fellow distinctions and honor-society elections belong in awards with their source dates as well as memberships when both uses are supported. Their membership entry does not replace the dated award entry.
 - Do not extract university service, public service, external professional activities, grants, teaching, or presentations.
 - Sort memberships and awards chronologically by their initial date and put dates at the end of each string record.
 `.trim(),
@@ -379,6 +384,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_journals_pre_2000: {
     fields: `Section III peerReviewedJournals ONLY — refereed journal articles published in ${JOURNAL_PRE_2000_END} or earlier. Skip articles published in ${JOURNAL_MID_START} or later. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    rules: JOURNAL_RULES,
     schema: `{
   "sections": {
     "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
@@ -389,6 +395,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_journals_2000_2010: {
     fields: `Section III peerReviewedJournals ONLY — refereed journal articles published from ${JOURNAL_MID_START} through ${JOURNAL_MID_END}, inclusive. Skip articles outside that date range. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    rules: JOURNAL_RULES,
     schema: `{
   "sections": {
     "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
@@ -399,6 +406,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   },
   III_journals_late: {
     fields: `Section III peerReviewedJournals ONLY — refereed journal articles published AFTER ${JOURNAL_MID_END}. Skip articles published in ${JOURNAL_MID_END} or earlier. Put submitted, in-progress, under-review, in-review, or undated journal items in workInProgress instead of peerReviewedJournals. Number the articles you extract sequentially starting from 1 (numbering will be re-done at merge). Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.`,
+    rules: JOURNAL_RULES,
     schema: `{
   "sections": {
     "peerReviewedJournals": [{"number": 1, "citation": "", "type": "journal"}],
@@ -410,6 +418,7 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
   III_other_a: {
     fields:
       'Section III subset A: reviewAndInvited (review and invited articles), books, chapters, and otherArticles. Put submitted, in-progress, under-review, in-review, or undated items in workInProgress instead of published categories. Number sequentially within each subsection starting at 1. Include optional articleKind, contributionNote, previouslyListedAs, reviewMaterialUrl, and isNewSinceLastReview ONLY when the CV explicitly provides that information.',
+    rules: '- Include reviewAndInvited only for records listed under a review or invited-article heading, or explicitly labeled as review/invited within a general publications list without a separate journal-article heading. Records under a journal-article or research-paper heading belong to the journal task; exclude them here with that reason.',
     schema: `{
   "sections": {
     "reviewAndInvited": [{"number": 1, "citation": "", "type": "review"}],
@@ -528,7 +537,7 @@ Review period restriction — IMPORTANT:
 const buildSliceUserPrompt = (
   cv: ParsedCV,
   slice: SliceKey,
-  provider: ModelProvider = 'cloud',
+  provider: ModelProvider = 'onPrem',
   sinceYear?: number,
 ): string => {
   const { fields, schema, rules } = SLICE_PROMPTS[slice];
@@ -559,7 +568,9 @@ Output rules — IMPORTANT:
 
 Content rules:
 - Only populate the fields listed above. Do not include keys for other sections.
+- Extract EVERY eligible record in the requested section and date window, including records before source "New" markers or last-review dividers. Do not sample, summarize a list, select only recent records, or stop partway through the source. Section III remains cumulative; source review markers are labels, not exclusion rules.
 - Preserve citation text exactly — do not reformat or standardize.
+- Retain the complete citation, including trailing editorial distinctions such as "Featured in", cover selections, highlighted articles, and linked notes. Do not stop copying at the publication year or DOI when the source citation continues.
 - Employment must be chronological (oldest first), preserve month-level dates, and include academic assistantships/appointments when the CV lists them.
 - Publications must be chronological oldest first by initial date and numbered sequentially within each subsection. Keep labels such as "New", asterisks, "RESEARCH ARTICLE", "REVIEW ARTICLE", "previously B.1", contribution notes, and URLs if present.
 - Section II string records should put dates at the end of the record, not at the beginning.
@@ -569,160 +580,8 @@ Content rules:
 - severity: "required" = BioBib cannot be submitted without it, "recommended" = strongly advised, "optional" = at faculty discretion.${reviewPeriodRule(slice, sinceYear)}`;
 };
 
-interface YearWindow {
-  start?: number;
-  end?: number;
-  includeUndatedProgress?: boolean;
-}
-
-function yearWindowForSlice(slice: SliceKey): YearWindow | null {
-  if (slice === 'II_service_pre_2010') return { end: 2010 };
-  if (slice.endsWith('_pre_2000')) return { end: 1999 };
-  if (slice.endsWith('_2000_2010')) return { start: 2000, end: 2010 };
-  if (slice.endsWith('_2011_2020')) return { start: 2011, end: 2020 };
-  if (slice.endsWith('_post_2020')) return { start: 2021 };
-  if (slice === 'III_journals_late') return { start: 2011, includeUndatedProgress: true };
-  return null;
-}
-
 export function compactCvTextForSlice(rawText: string, slice: SliceKey): string {
-  const lines = rawText
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-  const sourceLines = sourceLinesForSlice(lines, slice);
-  const window = yearWindowForSlice(slice);
-  if (!window) {
-    if (sourceLines.length === lines.length) return rawText;
-    return [
-      `Source CV excerpt prefiltered for slice "${slice}".`,
-      'Use this excerpt as source evidence; keep only items matching the requested section rules.',
-      sourceLines.join('\n'),
-    ].join('\n\n');
-  }
-  const keep = new Set<number>();
-
-  sourceLines.forEach((line, index) => {
-    if (lineHasYearInWindow(line, window) || (window.includeUndatedProgress && isWorkInProgressLine(line))) {
-      for (let i = Math.max(0, index - 2); i <= Math.min(sourceLines.length - 1, index + 1); i += 1) {
-        keep.add(i);
-      }
-    } else if (isLikelySourceHeading(line, slice)) {
-      keep.add(index);
-    }
-  });
-
-  if (keep.size === 0) return rawText;
-
-  const compacted = [...keep]
-    .sort((a, b) => a - b)
-    .map(index => sourceLines[index])
-    .join('\n');
-
-  return [
-    `Source CV excerpt prefiltered for slice "${slice}".`,
-    'Use this excerpt as source evidence; keep only items matching the requested date window and section rules.',
-    compacted,
-  ].join('\n\n');
-}
-
-function sourceLinesForSlice(lines: string[], slice: SliceKey): string[] {
-  if (slice.startsWith('II_service_')) {
-    return linesBetween(
-      lines,
-      /\b(departmental and university service activities|service to uc(?:\s*&\s*|\s+and\s+)uc san diego|university service)\b/i,
-      /\b(professional service activities|service outside of uc(?:\s*&\s*|\s+and\s+)uc san diego|memberships)\b/i,
-    );
-  }
-  if (slice === 'II_memberships_awards') {
-    return linesBetween(
-      lines,
-      /\b(appointments|memberships|professional societies|professional affiliations|honors(?:,\s*|\s+and\s+)awards(?:\s+and\s+fellowships)?|awards and fellowships|honors and fellowships)\b/i,
-      /\b(contracts and grants|research support|external professional activities)\b/i,
-    );
-  }
-  if (slice === 'II_teaching') {
-    return linesBetween(
-      lines,
-      /\b(student instructional activities|educational activities|teaching and mentoring)\b/i,
-      /\b(external reviews of primary creative work|section iii)\b/i,
-    );
-  }
-  if (slice === 'II_grants') {
-    return linesBetween(
-      lines,
-      /\b(contracts and grants|current research support|past research support)\b/i,
-      /\b(external professional activities|professional service activities)\b/i,
-    );
-  }
-  if (slice.startsWith('II_presentations')) {
-    return linesBetween(
-      lines,
-      /\b(invited lectures at national and international meetings|invited lectures at institutions|presentations at national and international meetings|other invited presentations)\b/i,
-      /\b(abstracts and contributed talks|most significant contributions to promoting diversity)\b/i,
-    );
-  }
-  if (slice === 'II_external') {
-    return linesBetween(
-      lines,
-      /\b(professional service activities|external professional activities)\b/i,
-      /\b(educational activities|presentations at national and international meetings|most significant contributions to promoting diversity)\b/i,
-    );
-  }
-  if (slice === 'II_diversity_other') {
-    return linesBetween(
-      lines,
-      /\b(most significant contributions to promoting diversity|contributions to diversity|outreach)\b/i,
-      /\b(student instructional activities|educational activities|section iii)\b/i,
-    );
-  }
-  if (slice.startsWith('III_abstracts')) {
-    return linesBetween(lines, /\babstracts and contributed talks\b/i);
-  }
-  if (slice.startsWith('III_journals')) {
-    return linesBetween(lines, /\bpeer-reviewed publications\b/i, /\bother publications\b/i);
-  }
-  return lines;
-}
-
-function linesBetween(lines: string[], startPattern: RegExp, endPattern?: RegExp): string[] {
-  const start = lines.findIndex(line => startPattern.test(line));
-  if (start === -1) return lines;
-  const end = endPattern
-    ? lines.findIndex((line, index) => index > start && endPattern.test(line))
-    : -1;
-  return lines.slice(start, end === -1 ? undefined : end);
-}
-
-function lineHasYearInWindow(line: string, window: YearWindow): boolean {
-  const years = line.match(/\b(?:19|20)\d{2}\b/g)?.map(Number) ?? [];
-  return years.some(year => {
-    if (window.start !== undefined && year < window.start) return false;
-    if (window.end !== undefined && year > window.end) return false;
-    return true;
-  });
-}
-
-function isWorkInProgressLine(line: string): boolean {
-  return /\b(submitted|in progress|under review|in review)\b/i.test(line);
-}
-
-function isLikelySourceHeading(line: string, slice: SliceKey): boolean {
-  if (line.length > 140) return false;
-  if (/^section\s/i.test(line)) return true;
-  if (slice.startsWith('II_service_')) {
-    return /\b(service|committee|council|senate|departmental|campus|university|systemwide)\b/i.test(line);
-  }
-  if (slice.startsWith('II_presentations')) {
-    return /\b(presentations?|lectures?|seminars?|meetings?)\b/i.test(line);
-  }
-  if (slice.startsWith('III_abstracts')) {
-    return /\babstracts?\b/i.test(line);
-  }
-  if (slice.startsWith('III_journals')) {
-    return /\b(refereed|journal|articles?|publications?)\b/i.test(line);
-  }
-  return false;
+  return recordsForSlice(rawText, slice).map(record => record.text).join('\n\n');
 }
 
 // ── Single-slice fetch ───────────────────────────────────────────────────────
@@ -751,21 +610,27 @@ async function callSliceOnce(
   candidate: SliceModelCandidate,
   apiKey: string,
   options: CallSliceOptions = {},
+  records?: SourceRecord[],
+  repairHint?: string,
 ): Promise<PartialResult> {
   const requestBody = {
     model: candidate.model,
     messages: [
       { role: 'system', content: BASE_SYSTEM },
-      { role: 'user', content: buildSliceUserPrompt(cv, slice, candidate.provider, options.sinceYear) },
+      { role: 'user', content: records ? buildCoveredPrompt(cv, slice, records, options.sinceYear, repairHint) : buildSliceUserPrompt(cv, slice, candidate.provider, options.sinceYear) },
     ],
-    // Keep the cloud cap conservative, but give on-prem fallback models more
-    // room because their reasoning can otherwise consume the completion budget.
+    // Allow enough room for long on-prem extraction responses and reasoning.
     max_tokens: candidate.maxTokens,
-    response_format: { type: 'json_object' },
+    ...(candidate.reasoningEffort ? { reasoning_effort: candidate.reasoningEffort } : {}),
+    response_format: records ? {
+      type: 'json_schema',
+      json_schema: { name: `biobib_${slice}`, strict: true,
+        schema: buildResponseSchema(coveredResponseExample(slice), records.map(record => record.id)) },
+    } : { type: 'json_object' },
     ...(supportsCustomTemperature(candidate.model) ? { temperature: 0.1 } : {}),
   };
 
-  const response = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
+  const response = await fetchWithRateLimitRetry(`${LITELLM_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -789,12 +654,17 @@ async function callSliceOnce(
     throw new Error(`Empty response from AI on slice "${slice}" with model "${candidate.model}"`);
   }
 
+  if (finishReason !== 'stop') {
+    throw new CoverageError(`Incomplete model response (${finishReason ?? 'unknown finish reason'}) for ${slice}.`, records?.map(record => record.id) ?? []);
+  }
   const cleaned = stripJsonFences(content);
   try {
     // Sanitize so a single malformed entry degrades to a dropped item
     // instead of crashing finalize after every slice has finished.
-    return sanitizePartialResult(JSON.parse(cleaned));
+    const raw = JSON.parse(cleaned);
+    return records ? validateCoveredResult(raw, records, Object.keys(JSON.parse(SLICE_PROMPTS[slice].schema).sections)) : sanitizePartialResult(raw);
   } catch (e) {
+    if (e instanceof CoverageError) throw e;
     const hint =
       finishReason === 'length'
         ? ` (response was truncated at max_tokens — slice "${slice}" is too large for the current output cap)`
@@ -803,6 +673,72 @@ async function callSliceOnce(
       `AI returned invalid JSON on slice "${slice}" with model "${candidate.model}"${hint}: ${(e as Error).message}`,
     );
   }
+}
+
+function coveredResponseExample(slice: SliceKey) {
+  const schema = JSON.parse(SLICE_PROMPTS[slice].schema);
+  for (const [key, value] of Object.entries(schema.sections)) {
+    if (Array.isArray(value)) schema.sections[key] = value.map(entry => typeof entry === 'string'
+      ? { text: entry, sourceIds: [] } : { ...entry, sourceIds: [] });
+    else schema.sections[key] = { text: value, sourceIds: [] };
+  }
+  if (schema.metadata) schema.metadata.sourceIds = [];
+  schema.excluded = [{ id: 'source ID', reason: 'specific exclusion reason' }];
+  return schema;
+}
+
+function buildCoveredPrompt(cv: ParsedCV, slice: SliceKey, records: SourceRecord[], sinceYear?: number, repairHint?: string): string {
+  const definition = SLICE_PROMPTS[slice];
+  const schema = coveredResponseExample(slice);
+  return `Extract and classify ONLY these fields: ${definition.fields}.
+${definition.rules ?? ''}
+${reviewPeriodRule(slice, sinceYear)}
+${cv.reviewPeriodStart ? `Mark new-since-review records from ${cv.reviewPeriodStart}; do not exclude older bibliography.` : ''}
+${repairHint ? `REPAIR REQUIRED: The previous response failed validation: ${repairHint.slice(0, 500)}. Correct that error for the supplied records. Keep gaps and reviewNotes outside sections. Every output entry must carry its own sourceIds array, including grouped student entries, metadata, and specialization.` : ''}
+
+SOURCE RECORDS (immutable IDs; heading context is evidence, not another record):
+${JSON.stringify(records.map(({ id, text, context, heading }) => ({ id, text, context, heading })))}
+
+Use this exact response schema (put source IDs directly on each entry): ${JSON.stringify(schema)}
+Every supplied source ID must either support an output entry via sourceIds or appear ONCE in "excluded" with a specific reason (heading, outside requested field/date window, or not faculty CV content). Never silently skip a record or invent an ID. Do not return a separate sources object. Empty output arrays remain empty.
+For string-valued lists return objects with text and sourceIds. For structured entries add sourceIds alongside their fields. Example: {"sections":{"awards":[{"text":"Teaching Award (2020)","sourceIds":["s100"]}]},"excluded":[{"id":"s0","reason":"Heading only"}]}.
+For studentInstructionalGroups, each group carries sourceIds for ALL student evidence it includes. Example: {"heading":"Doctoral Students","entries":["Student A","Student B"],"sourceIds":["s100","s200"]}. Preserve every student; splitting a long group into several groups with the same heading is allowed.
+Metadata and specialization each carry their own sourceIds. Only the identity slice may return metadata. Evidence used for an output must not also be excluded. Multiple distinct facts may cite the same source, but do not duplicate a fact within a field.
+For publications, return category/type and optional source-supported metadata, with citation="". The application reconstructs the COMPLETE citation from source IDs; reference only that citation and its continuation/annotation records. Do not include headings in citation references. Retain every eligible publication, including methods/protocol papers, before and after New markers. Do not exclude a peer-reviewed methods paper merely because it is a protocol.
+Numbered, citation-formatted records in a Conference Presentations bibliography belong in abstracts, including invited conference contributions. For abstracts slices, include these records within the requested year window even when no published abstract volume is stated. Separate institutional lectures and unnumbered talk lists remain Section II presentations. Never exclude a numbered conference citation merely because it says presentation or invited talk.
+For other fields, preserve complete source wording, dates and qualifications. Use neighboring records and heading context to join continuations/table rows. Include every item of grouped student lists, not a summary.
+Classify by the activity performed and explicit source heading: service outside UC to the public belongs in publicService; outreach and public education belong in outreach; professional society/editorial/conference service belongs in professionalActivities; consulting requires advisory/consulting work, not every external activity. Preserve a source's explicit category when compatible. Do not relabel public service as outreach solely because both benefit the public.
+Return ONE raw JSON object, without fences. No speculative facts or optional gaps. The task is exhaustive extraction, not summarization.`;
+}
+
+async function callCoveredSlice(cv: ParsedCV, slice: SliceKey, candidate: SliceModelCandidate, apiKey: string, options: CallSliceOptions): Promise<PartialResult> {
+  const records = recordsForSlice(cv.rawText, slice);
+  const parts: PartialResult[] = [];
+  // Sequential bounded batches within each independently scheduled slice avoid
+  // multiplying the gateway concurrency limit. Never retry completed batches.
+  async function extract(batch: SourceRecord[], depth = 0, repairHint?: string): Promise<void> {
+    try {
+      parts.push(await callSliceOnce(cv, slice, candidate, apiKey, options, batch, repairHint));
+    } catch (error) {
+      if (isAbortError(error) || options.signal?.aborted) throw error;
+      if (depth >= 2) throw error;
+      if (error instanceof CoverageError && error.partial) {
+        parts.push(error.partial);
+        await extract(batch.filter(record => error.unresolvedIds.includes(record.id)), depth + 1, error.message);
+        return;
+      }
+      // Smaller evidence sets also repair truncation and invalid JSON. No record
+      // is dropped, and failed batches do not contribute partial outputs.
+      const size = Math.max(1, Math.ceil(batch.length / 2));
+      for (let offset = 0; offset < batch.length; offset += size) {
+        await extract(batch.slice(offset, offset + size), depth + 1, (error as Error).message);
+      }
+    }
+  }
+  for (const batch of batchSourceRecords(records)) await extract(batch);
+  const result = combineCoveredParts(parts);
+  result.coverage!.required = sourceRecords(cv.rawText).filter(isBibliographyRecord).map(record => record.id);
+  return result;
 }
 
 function apiKeyForCandidate(candidate: SliceModelCandidate, credentials: ModelCredentials): string | undefined {
@@ -828,10 +764,10 @@ async function callSliceWithModelFallbacks(
   for (const candidate of candidates) {
     const apiKey = apiKeyForCandidate(candidate, credentials);
     if (!apiKey) continue;
-    const attempts = candidate.provider === 'onPrem' ? 2 : 1;
+    const attempts = 1;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
-        return await callSliceOnce(cv, slice, candidate, apiKey, options);
+        return await callCoveredSlice(cv, slice, candidate, apiKey, options);
       } catch (e) {
         if (isAbortError(e)) throw e;
         const message = (e as Error).message;
@@ -939,12 +875,16 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   }
 
   moveWorkInProgressPublications(sections);
+  preserveKnownJournalVenues(sections);
+  preservePublishedProceedings(sections);
   moveHonorificAppointmentsToAwards(sections);
   reclassifyOtherPublications(sections);
   normalizeSectionIIRecords(sections);
   normalizePublicationRecords(sections);
   reconcileSectionIIActivityBuckets(sections, reviewNotes);
   dedupePublicationRecords(sections);
+  reconcileSourcePublicationPlacements(sections, reviewNotes);
+  recoverDeclinedBibliography(sections, reviewNotes, parts);
 
   // Several publication categories are fed by multiple bounded slices, each
   // starting at number=1. Renumber sequentially across the merged list.
@@ -988,7 +928,90 @@ export function mergeSlices(parts: PartialResult[]): ConversionResult {
   addDuplicatePlacementReviewNotes(sections, reviewNotes);
   addStructuralReviewGaps(sections, gaps);
 
+  const required = new Set(parts.flatMap(part => part.coverage?.required ?? []));
+  if (required.size) {
+    const preserved = bibliographySourceIds(sections);
+    const missing = [...required].filter(id => !preserved.has(id));
+    if (missing.length) throw new Error(`Bibliography coverage incomplete after assembly: ${missing.length} source records (${missing.join(', ')}). Retry conversion or review the source; an incomplete document was not marked complete.`);
+    metadata.extractionCoverage = {
+      required: required.size, preserved: [...required].filter(id => preserved.has(id)).length,
+      sourceRecords: new Set(parts.flatMap(part => [...(part.coverage?.included ?? []), ...(part.coverage?.excluded ?? []).map(item => item.id)])).size,
+    };
+  }
+
   return { sections, gaps, reviewNotes: dedupeReviewNotes(reviewNotes), metadata };
+}
+
+function bibliographySourceIds(sections: BioBibSections): Set<string> {
+  return new Set(Object.values(sections).flatMap(value => Array.isArray(value)
+    ? value.flatMap(entry => typeof entry === 'object' && 'citation' in entry ? entry.sourceIds ?? [] : []) : []));
+}
+
+/**
+ * Each bibliography task can decline a record as another task's category, so
+ * a record can be excluded everywhere. Keep its source wording under other
+ * articles with a placement note instead of losing it or failing the document.
+ * Records no task accounted for still fail the coverage check below.
+ */
+function recoverDeclinedBibliography(sections: BioBibSections, reviewNotes: BioBibReviewNote[], parts: PartialResult[]): void {
+  const required = new Set(parts.flatMap(part => part.coverage?.required ?? []));
+  const preserved = bibliographySourceIds(sections);
+  const declined = new Map<string, string>();
+  for (const item of parts.flatMap(part => part.coverage?.excluded ?? [])) {
+    if (item.text && required.has(item.id) && !preserved.has(item.id)) declined.set(item.id, item.text);
+  }
+  for (const [id, citation] of declined) {
+    sections.otherArticles.push({ number: 0, citation, type: 'other', sourceIds: [id] });
+    reviewNotes.push({ section: 'Section III: Bibliography', topic: 'Publication placement',
+      instruction: `Choose the correct category for this source bibliography record; the automated review did not assign one, so it is listed under other articles: ${citation}` });
+  }
+}
+
+/** Repeated extraction of identical source evidence must not create two publications. */
+function reconcileSourcePublicationPlacements(sections: BioBibSections, reviewNotes: BioBibReviewNote[]): void {
+  const priority = ['abstracts', 'refereedProceedings', 'chapters', 'books', 'reviewAndInvited',
+    'patents', 'theses', 'peerReviewedJournals', 'otherProceedings', 'popularWorks',
+    'otherArticles', 'additionalProducts', 'workInProgress'] as const;
+  const seen = new Map<string, { entry: PublicationEntry; key: string }>();
+  for (const key of priority) {
+    sections[key] = sections[key].filter(entry => {
+      if (!entry.sourceIds?.length) return true; // legacy snapshots keep their established behavior
+      const fingerprint = `${[...entry.sourceIds].sort().join('|')}|${normalizePublicationCitation(entry.citation)}`;
+      const previous = seen.get(fingerprint);
+      if (!previous) { seen.set(fingerprint, { entry, key }); return true; }
+      Object.assign(previous.entry, mergeDuplicatePublication(previous.entry, entry, false));
+      if (previous.key !== key) {
+        const label = (value: string) => value.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+        reviewNotes.push({ section: 'Section III: Bibliography', topic: 'Publication placement',
+          instruction: `Confirm placement under ${label(previous.key)}; this record was also identified as ${label(key)}: ${entry.citation}` });
+      }
+      return false;
+    });
+  }
+}
+
+function preserveKnownJournalVenues(sections: BioBibSections): void {
+  // RSC identifies these current/historical titles as journals, despite their
+  // associated meetings: https://www.rsc.org/publishing/journals/faraday-discussions
+  const faradayJournal = /\b(?:Faraday\s+(?:Disc\.|Discussions)(?:\s+(?:Chem\.?|Chemical)\s+Soc(?:iety)?\.?)?|Discussions\s+of\s+(?:the\s+)?Faraday\s+Society)\s*,?\s*(?:No\.?\s*)?\d{1,3}\b/i;
+  for (const key of ['refereedProceedings', 'otherProceedings', 'otherArticles', 'abstracts'] as const) {
+    sections[key] = sections[key].filter(entry => {
+      if (!faradayJournal.test(entry.citation)) return true;
+      sections.peerReviewedJournals.push({ ...entry, type: 'journal' });
+      return false;
+    });
+  }
+}
+
+function preservePublishedProceedings(sections: BioBibSections): void {
+  sections.abstracts = sections.abstracts.filter(entry => {
+    // Published proceedings with explicit pages or a proceedings-series venue
+    // are full bibliography records, even if another slice calls them abstracts.
+    if (!looksLikeRefereedProceeding(entry.citation)
+      || !/\bpp?\.\s*\d+|\bj\.?\s*phys\.?\s*b\.?\s*conf\.?\s*proc\.?|\brarefied\s+gas\s+dynamics\b/i.test(entry.citation)) return true;
+    sections.refereedProceedings.push({ ...entry, type: 'proceedings' });
+    return false;
+  });
 }
 
 function moveHonorificAppointmentsToAwards(sections: BioBibSections): void {
@@ -996,13 +1019,36 @@ function moveHonorificAppointmentsToAwards(sections: BioBibSections): void {
     .filter(entry => isHonorificAppointment(entry))
     .map(formatHonorificAppointmentAward)
     .filter(Boolean);
-  const awards = dedupeStrings(sections.awards);
-  for (const candidate of awardCandidates) {
-    if (!awards.some(existing => likelySameCitation(existing, candidate))) {
+  const awards: string[] = [];
+  for (const candidate of [...sections.awards, ...awardCandidates]) {
+    if (!awards.some(existing => sameHonorificAward(existing, candidate))) {
       awards.push(candidate);
     }
   }
   sections.awards = awards;
+}
+
+function sameHonorificAward(left: string, right: string): boolean {
+  const canonical = (value: string) => normalizeForComparison(
+    value.replace(/\bnat[’']?l\b/gi, 'national')
+      .replace(/\[new\s+since\s+[^\]]+\]/gi, '')
+      .replace(/^\s*new\s*:\s*/i, '')
+      .replace(/\btenure\b/gi, ''),
+  );
+  const a = canonical(left);
+  const b = canonical(right);
+  if (a === b) return true;
+  // Location suffixes may differ, but a distinct year or appointment period
+  // must never disappear just because most of the title matches.
+  const dates = (value: string) => value.match(/\b(?:\d{4}|present|current)\b/g)?.join('|') ?? '';
+  if (!dates(a) || dates(a) !== dates(b)) return false;
+  const aTokens = new Set(a.split(' '));
+  const bTokens = new Set(b.split(' '));
+  const [smaller, larger] = aTokens.size <= bTokens.size ? [aTokens, bTokens] : [bTokens, aTokens];
+  // Repeating an institution already present in a short fellowship title does
+  // not create a new honor (the token sets are then exactly the same).
+  return (smaller.size === larger.size || smaller.size >= 6) &&
+    [...smaller].every(token => larger.has(token));
 }
 
 function isHonorificAppointment(entry: BioBibSections['employment'][number]): boolean {
@@ -1279,6 +1325,9 @@ function publicationFingerprint(citation: string): string {
 }
 
 function normalizePublicationContribution(item: PublicationEntry): PublicationEntry {
+  // Source-backed citations already contain the authoritative annotation text.
+  // Keep it intact rather than allowing model metadata to replace that wording.
+  if (item.sourceIds?.length) return item;
   const split = splitTrailingContribution(item.citation);
   if (!split.contributionNote || item.contributionNote) return item;
   return {
@@ -1309,15 +1358,16 @@ function mergeDuplicatePublication(
 ): PublicationEntry {
   const left = normalizePublicationContribution(first);
   const right = normalizePublicationContribution(second);
-  const citation = left.citation.length <= right.citation.length
-    ? left.citation
-    : right.citation;
+  const sourceBacked = Boolean(left.sourceIds?.length || right.sourceIds?.length);
+  const citation = (sourceBacked ? left.citation.length >= right.citation.length : left.citation.length <= right.citation.length)
+    ? left.citation : right.citation;
   const type = preferSpecificType
     ? preferredPublicationType(left.type, right.type)
     : left.type;
 
   return {
     ...left,
+    ...((left.sourceIds || right.sourceIds) ? { sourceIds: [...new Set([...(left.sourceIds ?? []), ...(right.sourceIds ?? [])])] } : {}),
     citation,
     type,
     articleKind: left.articleKind ?? right.articleKind,

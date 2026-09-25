@@ -12,8 +12,8 @@ change:
 npm run test:release
 ```
 
-The command runs the document-quality regression suite, TypeScript checks,
-linting, and a production build. GitHub Actions runs the same command on every
+The command runs route/retry, source-coverage, and document-quality regression
+suites, TypeScript checks, linting, and a production build. GitHub Actions runs the same command on every
 pull request and every push to `main`.
 
 ## 2. Conversion-affecting changes: live real-CV gate
@@ -50,7 +50,18 @@ The live gate automatically:
 The semantic profiles cover the previously documented honors and honorific
 appointments, distinct visiting-professor years, refereed-proceedings placement,
 abstract/presentation deduplication, full presentation dates, and removal of
-inherited abstract numbering.
+inherited abstract numbering. Source-based checks also require every DOI and
+PMID in each original CV to survive in the bibliography. The Nieh profile checks
+each numbered conference citation separately and verifies that the two protocol
+papers appear exactly once. The Continetti profile checks journal placement for
+meeting-associated Faraday articles.
+
+Document reprocessing uses the embedded structured snapshot; it does not measure
+fresh model consistency. For model reliability releases, run both acceptance CVs
+from their original sources at least three times each, using the same profile and
+`--roundtrip` option on every run. Record completeness, classification differences,
+and elapsed time separately from second-pass stability. Keep the cloud baseline's
+date, code differences, and known duplicates explicit when comparing models.
 
 ## 3. Material pipeline releases: five-CV cohort
 

@@ -11,6 +11,41 @@ export interface ReleaseNote {
  */
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    releasedAt: 'September 24, 2026, 5:45 PM PDT',
+    releasedAtIso: '2026-09-24T17:45:00-07:00',
+    title: 'Source-Verified GLM Extraction',
+    changes: [
+      'Process CV sections in smaller batches while preserving complete source records and citation annotations.',
+      'Constrain model responses to the expected document fields to reduce formatting failures.',
+      'Copy bibliography wording from the source and check that detected bibliography records survive document assembly.',
+      'Repair missing extraction records and reject incomplete model responses instead of silently dropping entries.',
+      'Use source evidence to reconcile repeated bibliography entries and clarify activity placement.',
+      'Keep translation notes and multi-line editor lists with their book and chapter citations, and place records under review-article headings in Review and Invited Articles.',
+    ],
+  },
+  {
+    releasedAt: 'September 24, 2026, 10:25 AM PDT',
+    releasedAtIso: '2026-09-24T10:25:00-07:00',
+    title: 'On-Prem GLM Flash Conversion',
+    changes: [
+      'Use GLM 5.3 Flash through UCSD TritonAI for every CV extraction section, with on-prem processing throughout and no automatic cloud fallback.',
+      'Preserve distinguished-professor honors and reconcile abbreviated institution names without collapsing appointments from different years.',
+      'Include graduation honors from education histories and retain training-program leadership listed as university service.',
+      'Reserve more output space for long CV sections and retain trailing publication distinctions and notes.',
+      'Keep older eligible records across source review dividers and preserve presentation dates exactly as written.',
+    ],
+  },
+  {
+    releasedAt: 'September 24, 2026, 9:48 AM PDT',
+    releasedAtIso: '2026-09-24T09:48:00-07:00',
+    title: 'Conversion Completion Reliability',
+    changes: [
+      'Kept document-assembly requests active until the server acknowledges them, including recovery requests triggered by the progress screen, to reduce conversions getting stuck after section review finishes.',
+      'Return a clear validation response for malformed upload details or review dates instead of an unexpected server error.',
+      'Retry temporarily rate-limited section requests within the existing processing timeout so a busy model gateway is less likely to leave an incomplete draft.',
+    ],
+  },
+  {
     releasedAt: 'July 26, 2026, 12:45 PM PDT',
     releasedAtIso: '2026-07-26T12:45:00-07:00',
     title: 'Release Verification and Abstract Placement Update',

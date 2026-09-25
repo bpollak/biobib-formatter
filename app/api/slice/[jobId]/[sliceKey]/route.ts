@@ -43,12 +43,11 @@ export async function POST(
   }
 
   const modelCredentials = {
-    cloudApiKey: process.env.LITELLM_API_KEY,
     onPremApiKey: process.env.LITELLM_ON_PREM_API_KEY,
   };
-  if (!modelCredentials.cloudApiKey && !modelCredentials.onPremApiKey) {
+  if (!modelCredentials.onPremApiKey) {
     return NextResponse.json(
-      { error: 'No LiteLLM model provider API key configured.' },
+      { error: 'The on-prem model API key is not configured.' },
       { status: 500 },
     );
   }
@@ -109,9 +108,12 @@ async function maybeTriggerFinalize(
   );
   if (!probes.every(Boolean)) return;
 
-  fetch(`${origin}/api/finalize/${jobId}`, {
+  // The enclosing after() must remain pending until dispatch is acknowledged.
+  await fetch(`${origin}/api/finalize/${jobId}`, {
     method: 'POST',
     headers: getInternalFetchHeaders(secret),
+  }).then(response => {
+    if (!response.ok) throw new Error(`Finalize returned HTTP ${response.status}`);
   }).catch(err => console.error(`[slice] finalize dispatch failed:`, err));
 }
 

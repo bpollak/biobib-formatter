@@ -14,7 +14,7 @@ Built by ITS Workplace Technology & Infrastructure Services.
 
 ## Stack
 
-- Next.js 15 (App Router) + TypeScript
+- Next.js 16 (App Router) + TypeScript
 - Material UI
 - mammoth (CV parsing)
 - docx npm (BioBib generation)
@@ -25,7 +25,7 @@ Built by ITS Workplace Technology & Infrastructure Services.
 
 ```bash
 cp .env.example .env.local
-# Add your LITELLM_API_KEY
+# Add your LITELLM_ON_PREM_API_KEY
 npm install
 npm run dev
 ```
@@ -36,15 +36,23 @@ Open [http://localhost:3000](http://localhost:3000)
 
 | Variable | Description |
 |---|---|
-| `LITELLM_API_KEY` | TritonAI API key |
+| `LITELLM_ON_PREM_API_KEY` | TritonAI on-prem API key, required for all extraction sections |
 | `LITELLM_BASE_URL` | Gateway URL (default: https://tritonai-api.ucsd.edu) |
-| `LITELLM_MODEL` | Model to use (default: gpt-5.5) |
+| `LITELLM_ON_PREM_MODEL` | On-prem model (default: api-glm-5.3-flash); no automatic cloud fallback |
 
 ## Deployment
 
 Push to `main` → Vercel auto-deploys. Set env vars in Vercel dashboard.
 
 ## Required Regression Gate
+
+The GLM pipeline inventories complete source records, sends bounded batches with
+strict JSON Schema constraints on output fields and source identifiers,
+requires source references or explicit exclusions, and repairs missing records.
+Bibliography wording is reconstructed from the source. Truncated responses and
+loss during sanitization fail validation; detected bibliography records must
+survive final assembly. These checks complement faculty review: automatic record
+boundaries and category decisions still need verification against the source.
 
 Run `npm run test:release` for every change. Changes that can affect conversion
 behavior or generated Word output also require the live real-CV and second-pass
