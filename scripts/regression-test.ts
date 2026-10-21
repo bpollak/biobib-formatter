@@ -2,18 +2,17 @@
  * Regression test for the BioBib Formatter async pipeline.
  *
  * Mirrors the browser flow:
- *   1. Upload the .docx CV directly to Vercel Blob via server-side put()
- *      (requires BLOB_READ_WRITE_TOKEN).
+ *   1. Upload the .docx CV through the deployed app's /api/upload-token flow.
  *   2. POST { blobUrl, fileName } to /api/upload → expect { jobId } in <2s.
  *   3. Poll /api/status/<jobId> every 3s up to 12 minutes until terminal.
  *   4. Download /api/download/<jobId> and verify the .docx zip signature.
  *
  * Usage:
- *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx
- *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx --roundtrip
- *   BLOB_READ_WRITE_TOKEN=... npm run test:regression -- path/to/cv.docx \
- *     --roundtrip --profile continetti --review-period-start 2020-01-01
- *   BIOBIB_URL=https://biobib-formatter.vercel.app BLOB_READ_WRITE_TOKEN=... \
+ *   npm run test:regression -- path/to/cv.docx
+ *   npm run test:regression -- path/to/cv.docx --roundtrip
+ *   npm run test:regression -- path/to/cv.docx --roundtrip \
+ *     --profile continetti --review-period-start 2020-01-01
+ *   BIOBIB_URL=https://biobib-formatter.vercel.app \
  *     npm run test:regression -- path/to/cv.docx
  *
  * Exit code 0 = pass, 1 = fail.
@@ -22,7 +21,7 @@
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
-import { put } from '@vercel/blob';
+import { upload as clientUpload } from '@vercel/blob/client';
 import JSZip from 'jszip';
 import mammoth from 'mammoth';
 import { sourceIdentifierChecks } from './source-acceptance';
@@ -108,11 +107,6 @@ async function main() {
     );
     process.exit(2);
   }
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    console.error('BLOB_READ_WRITE_TOKEN must be set (pull from Vercel: `vercel env pull`).');
-    process.exit(2);
-  }
-
   const { roundtrip, profile, reviewPeriodStart } = options;
   const absPath = resolve(options.cvPath);
   const baseUrl = (process.env.BIOBIB_URL || 'http://localhost:3000').replace(/\/$/, '');
@@ -127,19 +121,15 @@ async function main() {
   record('CV file exists and is .docx', absPath.endsWith('.docx') && info.isFile(), `${sizeMb.toFixed(2)} MB`);
   record(`CV under app size limit (${MAX_FILE_SIZE_BYTES / 1024 / 1024} MB)`, info.size <= MAX_FILE_SIZE_BYTES);
 
-  // 2. Upload to Vercel Blob (simulating the browser client-direct upload)
+  // 2. Upload through the deployed app's public client-direct upload flow.
   const fileBytes = await readFile(absPath);
   let blobUrl: string;
   try {
-    const blob = await put(basename(absPath), fileBytes, {
-      access: 'public',
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      addRandomSuffix: true,
-    });
+    const blob = await uploadThroughApp(basename(absPath), fileBytes, baseUrl);
     blobUrl = blob.url;
-    record('Uploaded CV to Vercel Blob', true, blobUrl);
+    record('Uploaded CV through the app upload flow', true, blobUrl);
   } catch (e) {
-    record('Uploaded CV to Vercel Blob', false, (e as Error).message);
+    record('Uploaded CV through the app upload flow', false, (e as Error).message);
     finish();
     return;
   }
@@ -532,15 +522,11 @@ async function runPipelinePass(
 ): Promise<PipelineRun | null> {
   let blobUrl: string;
   try {
-    const blob = await put(fileName, fileBytes, {
-      access: 'public',
-      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      addRandomSuffix: true,
-    });
+    const blob = await uploadThroughApp(fileName, fileBytes, baseUrl);
     blobUrl = blob.url;
-    record(`${label}: uploaded generated DOCX`, true, blobUrl);
+    record(`${label}: uploaded generated DOCX through the app flow`, true, blobUrl);
   } catch (error) {
-    record(`${label}: uploaded generated DOCX`, false, (error as Error).message);
+    record(`${label}: uploaded generated DOCX through the app flow`, false, (error as Error).message);
     return null;
   }
 
@@ -590,6 +576,18 @@ async function runPipelinePass(
   if (!isDocx) return null;
   await recordDocxChecks(output, label);
   return { jobId, status, output };
+}
+
+async function uploadThroughApp(
+  fileName: string,
+  fileBytes: Buffer,
+  baseUrl: string,
+): Promise<{ url: string }> {
+  return clientUpload(fileName, new Blob([new Uint8Array(fileBytes)]), {
+    access: 'public',
+    handleUploadUrl: `${baseUrl}/api/upload-token`,
+    contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
 }
 
 async function pollForTerminalStatus(

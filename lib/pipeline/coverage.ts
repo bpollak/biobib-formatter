@@ -145,7 +145,7 @@ function unpackAttributedEntries(value: unknown): unknown {
         if (!object(entry)) return entry;
         const { sourceIds: _sourceIds, ...data } = entry;
         void _sourceIds;
-        return 'text' in data ? data.text : data;
+        return 'text' in data && Object.keys(data).length === 1 ? data.text : data;
       });
     }
   }

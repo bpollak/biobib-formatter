@@ -29,7 +29,6 @@ documents.
 
 ```bash
 BIOBIB_URL=https://biobib-formatter.vercel.app \
-BLOB_READ_WRITE_TOKEN='...' \
 CONTINETTI_CV_PATH='/absolute/path/to/Continetti source CV.docx' \
 NIEH_CV_PATH='/absolute/path/to/Nieh source CV.docx' \
 npm run test:release:live
@@ -75,7 +74,6 @@ BIOBIB_ADDITIONAL_CV_PATHS="$(printf '%s\n' \
   '/absolute/path/to/additional-cv-2.docx' \
   '/absolute/path/to/additional-cv-3.docx')" \
 BIOBIB_URL=https://biobib-formatter.vercel.app \
-BLOB_READ_WRITE_TOKEN='...' \
 CONTINETTI_CV_PATH='/absolute/path/to/Continetti source CV.docx' \
 NIEH_CV_PATH='/absolute/path/to/Nieh source CV.docx' \
 npm run test:release:live

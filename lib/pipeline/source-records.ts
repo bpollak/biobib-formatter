@@ -10,7 +10,7 @@ export interface SourceRecord {
   end: number;
 }
 
-const HEADING = /^(?:(?:section\s+[ivx]+|\(?[a-z0-9]+(?:\.\d+)*\)?)[.\s:–—-]+)?(?:academic positions?|current positions?|past positions?|positions|employment|appointments|education|research interests|specialization|honors.*|awards.*|memberships.*|professional societies.*|certifications|.*(?:publications|research papers|methods papers|book chapters|books reviewed for|review articles|bibliography)|books|patents|u\.?s\.? patent|.*(?:abstracts|contributed talks)|.*(?:service activities|university service|professional activities)|service (?:to|outside of).*|editorial service|technical service.*|outreach.*|.*(?:contracts and grants|research support)|contracts.*|grants reviewed for|.*(?:invited lectures|invited presentations|conference presentations)|presentations at.*|teaching|educational activities|.*(?:student instructional activities|doctoral students|ph\.?d\.? students|masters? students|m\.?s\.? students|postdoctoral associates|undergraduate research students|visiting scientists and graduate students)|.*contributions.*diversity.*|other activities|external reviews of primary creative work|manuscripts reviewed for|letters provided for.*)\s*:?(?:\s*\([^)]*\))?$/i;
+const HEADING = /^(?:(?:section\s+[ivx]+|\(?[a-z0-9]+(?:\.\d+)*\)?)[.\s:–—-]+)?(?:academic positions?|current positions?|past positions?|positions|employment|appointments|education|research interests|specialization|honors.*|awards.*|memberships.*|professional societies.*|certifications|.*(?:publications|research papers|methods papers|book chapters|books reviewed for|review articles|bibliography)|books|patents|u\.?s\.? patent|.*(?:abstracts|contributed talks)|.*(?:service activities|university service|professional activities)|service|service (?:to|outside of).*|editorial service|technical service.*|outreach.*|.*(?:contracts and grants|research support)|contracts.*|grants reviewed for|.*(?:invited lectures|invited presentations|conference presentations)|presentations at.*|teaching|teaching(?:\s*(?:\/|and|&)\s*mentoring)?(?:\s+experience)?|educational activities|.*(?:student instructional activities|doctoral students|ph\.?d\.? students|masters? students|m\.?s\.? students|postdoctoral associates|undergraduate research students|visiting scientists and graduate students)|.*contributions.*diversity.*|other activities|external reviews of primary creative work|manuscripts reviewed for|letters provided for.*)\s*:?(?:\s*\([^)]*\))?$/i;
 
 export function isSourceHeading(text: string): boolean {
   if (text.length >= 180) return false;
@@ -104,6 +104,56 @@ export function batchSourceRecords(records: SourceRecord[], maxRecords = 40, max
   return batches;
 }
 
+const GRANT_EVIDENCE_BLOCK_SIZE = 8;
+
+function looksLikeFlattenedGrantTable(records: SourceRecord[]): boolean {
+  if (records.length < 6) return false;
+  const hasAmount = records.some(record => /\$\s?[\d,.]+/.test(record.text));
+  const hasPeriod = records.some(record => /\b(?:19|20)\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(record.text));
+  const hasRole = records.some(record => /\b(?:pi|co-?pi|co-i|pd\/pi|program director|project director)\b/i.test(record.text));
+  const shortCells = records.filter(record => record.text.length <= 140).length;
+  return hasAmount && hasPeriod && hasRole && shortCells >= Math.ceil(records.length / 2);
+}
+
+function groupedGrantRecord(records: SourceRecord[]): SourceRecord {
+  const first = records[0];
+  const last = records[records.length - 1];
+  return {
+    id: first.id,
+    text: records.map(record => record.text).join('\n'),
+    context: first.context,
+    heading: false,
+    start: first.start,
+    end: last.end,
+  };
+}
+
+/** Mammoth flattens Word table cells to one line each; keep nearby cells together. */
+function groupGrantEvidence(records: SourceRecord[]): SourceRecord[] {
+  const result: SourceRecord[] = [];
+  let run: SourceRecord[] = [];
+  const flush = () => {
+    if (looksLikeFlattenedGrantTable(run)) {
+      for (let index = 0; index < run.length; index += GRANT_EVIDENCE_BLOCK_SIZE) {
+        result.push(groupedGrantRecord(run.slice(index, index + GRANT_EVIDENCE_BLOCK_SIZE)));
+      }
+    } else {
+      result.push(...run);
+    }
+    run = [];
+  };
+  for (const record of records) {
+    if (record.heading) {
+      flush();
+      result.push(record);
+      continue;
+    }
+    run.push(record);
+  }
+  flush();
+  return result;
+}
+
 /** A conservative citation candidate: keep source headings and prose out of the gate. */
 export function isBibliographyRecord(record: SourceRecord): boolean {
   if (!record.heading && /conference presentations/i.test(record.context)
@@ -121,7 +171,7 @@ export function recordsForSlice(rawText: string, slice: SliceKey): SourceRecord[
   const patterns: [RegExp, RegExp][] = [
     [/^meta_and_I$/, /\beducation\b|employment|appointments|positions?|research interests|specialization|basic information/i],
     [/^II_memberships_awards$/, /\beducation\b|employment|appointments|positions?|memberships|societies|honors|awards|fellowships/i],
-    [/^II_service_/, /university.*service|department.*service|service to|service outside|public service|faculty service|academic service|community service/i],
+    [/^II_service_/, /^service$|university.*service|department.*service|service to|service outside|public service|faculty service|academic service|community service/i],
     [/^II_grants$/, /grants|research.*support/i],
     [/^II_teaching$/, /teaching|educational activities|students|postdoc|instructional|visiting scientists|mentoring|advising/i],
     [/^II_external$/, /professional|editorial|technical service|consulting|reviewed for|reviewer|career reviews|external reviews|service outside/i],
@@ -131,6 +181,7 @@ export function recordsForSlice(rawText: string, slice: SliceKey): SourceRecord[
   ];
   const context = patterns.find(([key]) => key.test(slice))?.[1];
   let selected = all.filter(record => (!record.context && slice === 'meta_and_I') || !context || context.test(record.context));
+  if (slice === 'II_grants') selected = groupGrantEvidence(selected);
   // Faculty thesis titles often appear with their degree rather than in the
   // bibliography. Include the education context to distinguish the faculty's
   // own thesis from dissertations supervised later in the CV.

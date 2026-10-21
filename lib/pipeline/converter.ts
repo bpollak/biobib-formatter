@@ -283,6 +283,8 @@ const SLICE_PROMPTS: Record<SliceKey, { fields: string; schema: string; rules?: 
     rules: `
 - Current grants are active or future-ending awards; past grants are completed awards.
 - Preserve the CV's title, agency, total-cost wording, dates, PI/co-PI role, and co-PI share when available.
+- Word tables are often flattened into one line per cell. Treat grouped, newline-separated source evidence as one or more complete awards, not as separate standalone grants.
+- Every grants object must describe an actual award. Do not emit an empty placeholder to account for a heading or continuation-only source; either cite that evidence on the award it supports or exclude it with a specific reason.
 - Do not include fellowships or awards unless they are explicitly listed as research support/contracts/grants.
 - Sort current and past grants chronologically by the initial date in the grant period when the CV provides one. Sparse dates are still useful; preserve them.
 `.trim(),
@@ -707,6 +709,7 @@ Metadata and specialization each carry their own sourceIds. Only the identity sl
 For publications, return category/type and optional source-supported metadata, with citation="". The application reconstructs the COMPLETE citation from source IDs; reference only that citation and its continuation/annotation records. Do not include headings in citation references. Retain every eligible publication, including methods/protocol papers, before and after New markers. Do not exclude a peer-reviewed methods paper merely because it is a protocol.
 Numbered, citation-formatted records in a Conference Presentations bibliography belong in abstracts, including invited conference contributions. For abstracts slices, include these records within the requested year window even when no published abstract volume is stated. Separate institutional lectures and unnumbered talk lists remain Section II presentations. Never exclude a numbered conference citation merely because it says presentation or invited talk.
 For other fields, preserve complete source wording, dates and qualifications. Use neighboring records and heading context to join continuations/table rows. Include every item of grouped student lists, not a summary.
+For grouped grant evidence, one source record may contain several awards or table rows. Cite that same source ID on every grant it supports; do not invent cell-level IDs.
 Classify by the activity performed and explicit source heading: service outside UC to the public belongs in publicService; outreach and public education belong in outreach; professional society/editorial/conference service belongs in professionalActivities; consulting requires advisory/consulting work, not every external activity. Preserve a source's explicit category when compatible. Do not relabel public service as outreach solely because both benefit the public.
 Return ONE raw JSON object, without fences. No speculative facts or optional gaps. The task is exhaustive extraction, not summarization.`;
 }

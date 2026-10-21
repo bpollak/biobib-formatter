@@ -2,7 +2,6 @@
  * Mandatory live release gate for production-visible conversion changes.
  *
  * Required environment:
- *   BLOB_READ_WRITE_TOKEN
  *   CONTINETTI_CV_PATH
  *   NIEH_CV_PATH
  *
@@ -36,9 +35,6 @@ async function main(): Promise<void> {
     .map(path => ({ path }));
   const cases = [...required, ...additional];
 
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error('BLOB_READ_WRITE_TOKEN must be set.');
-  }
   await Promise.all(cases.map(async testCase => {
     const info = await stat(resolve(testCase.path));
     if (!info.isFile()) throw new Error(`CV path is not a file: ${testCase.path}`);

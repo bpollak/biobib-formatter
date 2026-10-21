@@ -203,14 +203,28 @@ function sanitizeService(value: unknown): ServiceEntry[] {
 
 function sanitizeGrants(value: unknown): GrantEntry[] {
   return asArray(value).flatMap(item => {
+    if (typeof item === 'string') {
+      const title = asString(item);
+      return title ? [{
+        title,
+        funder: '',
+        period: '',
+        status: 'past',
+      }] : [];
+    }
     if (!isRecord(item)) return [];
     const entry: GrantEntry = {
-      title: asString(item.title),
+      title: asString(item.title) || asString(item.text),
       funder: asString(item.funder),
       period: asString(item.period),
       status: item.status === 'current' ? 'current' : 'past',
     };
-    if (!entry.title && !entry.funder) return [];
+    const hasSubstantiveData = Boolean(
+      entry.title || entry.funder || entry.period
+      || asString(item.role) || asString(item.amount)
+      || asString(item.totalAward) || asString(item.coPIsShare),
+    );
+    if (!hasSubstantiveData) return [];
     copyOptionalString(item, entry, 'amount');
     copyOptionalString(item, entry, 'totalAward');
     copyOptionalString(item, entry, 'role');
